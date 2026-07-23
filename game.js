@@ -73,7 +73,7 @@ class FactoryGame {
     await this.showBootSequence();
   }
 
-  /** 加载动画结束后：开机闪屏 → 主菜单 */
+  /** 加载结束后直接进入主菜单（无中间闪屏） */
   async showBootSequence() {
     const loading = document.getElementById('boot-loading');
     const splash = document.getElementById('boot-splash');
@@ -81,16 +81,51 @@ class FactoryGame {
     const ver = document.getElementById('main-menu-version');
     if (ver) ver.textContent = 'v' + (window.__TRIBE_VERSION__ || '1.0.0');
 
-    loading?.classList.add('hidden');
-    splash?.classList.remove('hidden');
-    await new Promise((r) => setTimeout(r, 1600));
     splash?.classList.add('hidden');
+    this.prepareMainMenuEnter();
+    loading?.classList.add('hidden');
     main?.classList.remove('hidden');
     this.showMainMenuHome();
     await this.refreshMainMenuLoadButton();
+    this.playMainMenuEnterAnim();
     this._ensureMenuBgmUnlock();
     this.sounds?.ensureContext?.();
     this.startMenuBgm({ forceNew: true });
+  }
+
+  /** 显示主菜单前先锁在左侧隐形，避免目标位闪现 */
+  prepareMainMenuEnter() {
+    const main = document.getElementById('main-menu');
+    if (!main) return;
+    if (this._mmEnterTimer) {
+      clearTimeout(this._mmEnterTimer);
+      this._mmEnterTimer = null;
+    }
+    main.classList.remove('mm-enter-play', 'mm-enter-done');
+    main.classList.add('mm-enter-prep');
+  }
+
+  /** 主菜单左侧元素自上而下、自左滑入渐显 */
+  playMainMenuEnterAnim() {
+    const main = document.getElementById('main-menu');
+    if (!main) return;
+    if (this._mmEnterTimer) {
+      clearTimeout(this._mmEnterTimer);
+      this._mmEnterTimer = null;
+    }
+    main.classList.remove('mm-enter-done', 'mm-enter-play');
+    main.classList.add('mm-enter-prep');
+    void main.offsetWidth;
+    requestAnimationFrame(() => {
+      main.classList.remove('mm-enter-prep');
+      main.classList.add('mm-enter-play');
+      // 末项 delay 0.82s + 时长 0.62s
+      this._mmEnterTimer = setTimeout(() => {
+        main.classList.remove('mm-enter-play');
+        main.classList.add('mm-enter-done');
+        this._mmEnterTimer = null;
+      }, 2000);
+    });
   }
 
   showMainMenuHome() {
@@ -111,17 +146,32 @@ class FactoryGame {
   }
 
   async refreshMainMenuLoadButton() {
-    const btn = document.getElementById('mm-load');
-    if (!btn) return;
+    const loadBtn = document.getElementById('mm-load');
+    const startBtn = document.getElementById('mm-start');
     const has = await this.hasSaveData();
-    btn.disabled = !has;
-    btn.title = has ? '继续已有存档' : '暂无存档';
+    if (loadBtn) {
+      loadBtn.disabled = !has;
+      loadBtn.title = has ? '继续已有存档' : '暂无存档';
+      loadBtn.classList.toggle('main-menu-btn-primary', has);
+      loadBtn.classList.toggle('main-menu-btn-dim', false);
+    }
+    if (startBtn) {
+      startBtn.classList.toggle('main-menu-btn-primary', !has);
+      startBtn.classList.toggle('main-menu-btn-dim', has);
+      startBtn.title = has ? '将覆盖当前存档开始新游戏' : '开始新游戏';
+    }
+    // 入场结束统一不透明；暗/禁用态靠底色与字色区分，避免整钮透明度被遮罩吞掉
+    document.querySelectorAll('#main-menu .mm-reveal').forEach((el) => {
+      el.style.setProperty('--mm-end-o', '1');
+    });
   }
 
-  enterGameShell() {
+  enterGameShell({ holdForComic = false } = {}) {
     this._atMainMenu = false;
     document.getElementById('boot-shell')?.classList.add('hidden');
     document.getElementById('app')?.classList.remove('app-beneath-shell');
+    if (holdForComic) this.holdAppForComic(true);
+    else this.holdAppForComic(false);
   }
 
   leaveGameToMainMenuShell() {
@@ -133,6 +183,8 @@ class FactoryGame {
     document.getElementById('boot-transition')?.classList.add('hidden');
     document.getElementById('boot-transition')?.classList.remove('boot-transition-play');
     document.getElementById('defense-intro')?.classList.add('hidden');
+    document.getElementById('defense-intro')?.classList.remove('comic-outro');
+    document.getElementById('app')?.classList.remove('app-awaiting-comic', 'app-fade-in');
     document.getElementById('tutorial-overlay')?.classList.add('hidden');
     document.getElementById('game-over')?.classList.add('hidden');
     document.getElementById('victory-screen')?.classList.add('hidden');
@@ -144,9 +196,11 @@ class FactoryGame {
     document.getElementById('boot-shell')?.classList.remove('hidden');
     document.getElementById('boot-loading')?.classList.add('hidden');
     document.getElementById('boot-splash')?.classList.add('hidden');
+    this.prepareMainMenuEnter();
     document.getElementById('main-menu')?.classList.remove('hidden');
     this.showMainMenuHome();
     void this.refreshMainMenuLoadButton();
+    this.playMainMenuEnterAnim();
     this.startMenuBgm({ forceNew: true });
   }
 
@@ -168,6 +222,7 @@ class FactoryGame {
   }
 
   stopMenuBgm() {
+    this._cancelMenuBgmFade();
     const a = this._menuBgmAudio;
     this._menuBgmAudio = null;
     if (!a) return;
@@ -177,30 +232,114 @@ class FactoryGame {
     } catch (_) { /* ignore */ }
   }
 
-  /** 主界面循环 BGM：Wish5 / Deep_Woods 每次随机选一首 */
+  _cancelMenuBgmFade() {
+    if (this._menuBgmFadeTimer) {
+      clearInterval(this._menuBgmFadeTimer);
+      this._menuBgmFadeTimer = null;
+    }
+  }
+
+  /** 主菜单 BGM 音量渐变到目标 */
+  _fadeMenuBgmTo(target, durationMs = 2400) {
+    const a = this._menuBgmAudio;
+    if (!a) return;
+    this._cancelMenuBgmFade();
+    const start = Math.max(0, Math.min(1, Number(a.volume) || 0));
+    const end = Math.max(0, Math.min(1, Number(target) || 0));
+    if (durationMs <= 0 || Math.abs(end - start) < 0.008) {
+      a.volume = end;
+      return;
+    }
+    const t0 = performance.now();
+    this._menuBgmFadeTimer = setInterval(() => {
+      if (this._menuBgmAudio !== a) {
+        this._cancelMenuBgmFade();
+        return;
+      }
+      const t = Math.min(1, (performance.now() - t0) / durationMs);
+      const ease = 1 - (1 - t) * (1 - t);
+      a.volume = start + (end - start) * ease;
+      if (t >= 1) this._cancelMenuBgmFade();
+    }, 40);
+  }
+
+  /** 主界面循环 BGM 曲库 */
   _menuBgmTracks() {
     return [
-      '可愛らしいハープのワルツ「Wish5」_PerituneMaterial_Wish5_HarpOnly.mp3',
-      '淋しげな森のBGM「Deep_Woods」_PerituneMaterial_Deep_Woods_loop.mp3',
+      {
+        file: '可愛らしいハープのワルツ「Wish5」_PerituneMaterial_Wish5_HarpOnly.mp3',
+        name: 'Wish5 · 可爱竖琴圆舞曲',
+      },
+      {
+        file: '淋しげな森のBGM「Deep_Woods」_PerituneMaterial_Deep_Woods_loop.mp3',
+        name: 'Deep Woods · 淋しげな森',
+      },
     ];
   }
 
-  _pickMenuBgmFile() {
+  _pickMenuBgmIndex(preferNext = false) {
     const list = this._menuBgmTracks();
-    return list[Math.floor(Math.random() * list.length)] || list[0];
+    if (!list.length) return 0;
+    if (preferNext) {
+      const cur = Number.isFinite(this._menuBgmIndex) ? this._menuBgmIndex : -1;
+      return (cur + 1) % list.length;
+    }
+    if (Number.isFinite(this._menuBgmIndex) && this._menuBgmIndex >= 0 && this._menuBgmIndex < list.length) {
+      return this._menuBgmIndex;
+    }
+    return Math.floor(Math.random() * list.length);
   }
 
-  startMenuBgm({ forceNew = false } = {}) {
+  _updateMenuBgmNowLabel() {
+    const el = document.getElementById('mm-bgm-now');
+    if (!el) return;
+    const list = this._menuBgmTracks();
+    const off = this.settings?.playBgm === false;
+    el.classList.toggle('is-off', off);
+    el.disabled = off || list.length === 0;
+    if (off) {
+      el.textContent = '♪ BGM 已关闭';
+      el.title = '请在设置中开启 BGM';
+      return;
+    }
+    const track = list[this._menuBgmIndex];
+    if (!track) {
+      el.textContent = '♪ —';
+      el.title = '点击切换 BGM';
+      return;
+    }
+    el.textContent = `♪ ${track.name}`;
+    el.title = list.length > 1 ? '点击切换下一首 BGM' : '当前 BGM';
+  }
+
+  /** 手动切换主菜单 BGM */
+  cycleMenuBgm() {
+    if (!this._atMainMenu) return;
+    if (this.settings?.playBgm === false) return;
+    const list = this._menuBgmTracks();
+    if (list.length < 2) return;
+    this._menuBgmIndex = this._pickMenuBgmIndex(true);
+    this.startMenuBgm({ forceNew: true, keepIndex: true });
+  }
+
+  startMenuBgm({ forceNew = false, keepIndex = false } = {}) {
     if (!this._atMainMenu) return;
     if (this.settings?.playBgm === false) {
       this.stopMenuBgm();
+      this._updateMenuBgmNowLabel();
       return;
     }
+    const targetVol = this._menuBgmVolume();
     if (this._menuBgmAudio && !forceNew) {
       try {
-        this._menuBgmAudio.volume = this._menuBgmVolume();
+        this._updateMenuBgmNowLabel();
         if (this._menuBgmAudio.paused) {
-          void this._menuBgmAudio.play().catch(() => {});
+          this._menuBgmAudio.volume = 0;
+          void this._menuBgmAudio.play().then(() => {
+            this._fadeMenuBgmTo(targetVol, 2400);
+          }).catch(() => {});
+        } else {
+          this._fadeMenuBgmTo(targetVol, 900);
         }
         return;
       } catch (_) {
@@ -209,17 +348,32 @@ class FactoryGame {
     }
     if (forceNew) this.stopMenuBgm();
 
-    const file = this._pickMenuBgmFile();
+    const list = this._menuBgmTracks();
+    if (!list.length) {
+      this._updateMenuBgmNowLabel();
+      return;
+    }
+    if (!keepIndex || !Number.isFinite(this._menuBgmIndex)) {
+      this._menuBgmIndex = Math.floor(Math.random() * list.length);
+    }
+    this._menuBgmIndex = Math.max(0, Math.min(list.length - 1, this._menuBgmIndex | 0));
+    const track = list[this._menuBgmIndex];
+    if (!track) {
+      this._updateMenuBgmNowLabel();
+      return;
+    }
     const url = typeof window.tribeMusicUrl === 'function'
-      ? window.tribeMusicUrl(file)
-      : ('music/' + file);
+      ? window.tribeMusicUrl(track.file)
+      : ('music/' + track.file);
     const a = new Audio(url);
     a.loop = true;
     a.preload = 'auto';
-    a.volume = this._menuBgmVolume();
+    a.volume = 0;
     this._menuBgmAudio = a;
+    this._updateMenuBgmNowLabel();
     void a.play().then(() => {
-      console.log('[BGM] 主界面音轨选用:', file);
+      console.log('[BGM] 主界面音轨选用:', track.name);
+      this._fadeMenuBgmTo(this._menuBgmVolume(), 2400);
     }).catch(() => {
       // 等用户手势再播
     });
@@ -274,7 +428,8 @@ class FactoryGame {
     }
     this.stopMenuBgm();
     await this.playBootTransition('正在读取存档…');
-    this.enterGameShell();
+    const needComic = !this.state.defense?.introSeen;
+    this.enterGameShell({ holdForComic: needComic });
     this._inGameSession = true;
     this.paused = false;
     this.sounds.ensureContext();
@@ -288,14 +443,14 @@ class FactoryGame {
     const text = document.getElementById('boot-transition-text');
     if (text) text.textContent = message;
     if (!el) {
-      await new Promise((r) => setTimeout(r, 400));
+      await new Promise((r) => setTimeout(r, 1200));
       return;
     }
     el.classList.remove('hidden');
     el.classList.remove('boot-transition-play');
     void el.offsetWidth;
     el.classList.add('boot-transition-play');
-    await new Promise((r) => setTimeout(r, 1450));
+    await new Promise((r) => setTimeout(r, 3200));
     el.classList.add('hidden');
     el.classList.remove('boot-transition-play');
   }
@@ -309,7 +464,7 @@ class FactoryGame {
     this.applyNewGameTutorialPreference();
     this.stopMenuBgm();
     await this.playBootTransition(fromMenu ? '正在进入村落…' : '正在重新开始…');
-    this.enterGameShell();
+    this.enterGameShell({ holdForComic: true });
     this._inGameSession = true;
     this.paused = false;
     this.sounds.ensureContext();
@@ -317,11 +472,19 @@ class FactoryGame {
     this.resumeAfterDifficultySetup();
   }
 
-  returnToMainMenu({ skipConfirm = false } = {}) {
+  async returnToMainMenu({ skipConfirm = false } = {}) {
+    if (this._returningToMainMenu) return;
     if (!skipConfirm && !confirm('返回主界面？当前进度将自动保存。')) return;
-    if (this._inGameSession) this.save();
-    this.stopGameBgm();
-    this.leaveGameToMainMenuShell();
+    this._returningToMainMenu = true;
+    try {
+      if (this._inGameSession) this.save();
+      this.setPauseMenuOpen(false);
+      this.stopGameBgm();
+      await this.playBootTransition('正在返回主界面…');
+      this.leaveGameToMainMenuShell();
+    } finally {
+      this._returningToMainMenu = false;
+    }
   }
 
   quitApp() {
@@ -365,6 +528,11 @@ class FactoryGame {
       this.showMainMenuHome();
     });
     document.getElementById('mm-quit')?.addEventListener('click', () => this.quitApp());
+    document.getElementById('mm-bgm-now')?.addEventListener('click', (e) => {
+      e.stopPropagation();
+      this.cycleMenuBgm();
+    });
+    this._updateMenuBgmNowLabel();
 
     const showMainSettingsTab = (tab) => {
       const key = (tab === 'audio' || tab === 'game') ? tab : 'display';
@@ -1234,19 +1402,141 @@ class FactoryGame {
     this.showDifficultySelect();
   }
 
-  // ========== 背景介绍 / 新手教程 ==========
+  // ========== 背景介绍（两页漫画）/ 新手教程 ==========
+  getComicTotalPanels() {
+    return 9; // 第1页 5 格 + 第2页 4 格
+  }
+
+  setComicPage(page) {
+    const root = document.getElementById('defense-intro');
+    if (!root) return;
+    root.querySelectorAll('.comic-page').forEach((el) => {
+      el.classList.toggle('is-active', Number(el.dataset.page) === page);
+    });
+  }
+
+  resetComicIntro() {
+    this._comicPanelIndex = 1;
+    this._comicDismissing = false;
+    const root = document.getElementById('defense-intro');
+    if (!root) return;
+    root.classList.remove('comic-outro');
+    this.setComicPage(1);
+    root.querySelectorAll('.comic-panel').forEach((panel) => {
+      const n = Number(panel.dataset.panel || 0);
+      panel.classList.toggle('is-visible', n === 1);
+      panel.classList.remove('is-shaking');
+    });
+    const hint = document.getElementById('comic-hint');
+    if (hint) hint.textContent = '点击继续';
+  }
+
+  shakeComicPanel(panel) {
+    if (!panel) return;
+    panel.classList.remove('is-shaking');
+    // 强制重触发动画
+    void panel.offsetWidth;
+    panel.classList.add('is-shaking');
+    const onEnd = () => {
+      panel.classList.remove('is-shaking');
+      panel.removeEventListener('animationend', onEnd);
+    };
+    panel.addEventListener('animationend', onEnd);
+  }
+
+  /** 漫画页期间压住主界面，结束后再渐显 */
+  holdAppForComic(hold) {
+    const app = document.getElementById('app');
+    if (!app) return;
+    app.classList.remove('app-fade-in');
+    app.classList.toggle('app-awaiting-comic', !!hold);
+  }
+
+  revealAppAfterComic() {
+    const app = document.getElementById('app');
+    if (!app) return;
+    app.classList.remove('app-awaiting-comic');
+    app.classList.remove('app-fade-in');
+    void app.offsetWidth;
+    app.classList.add('app-fade-in');
+    const onEnd = () => {
+      app.classList.remove('app-fade-in');
+      app.removeEventListener('animationend', onEnd);
+    };
+    app.addEventListener('animationend', onEnd);
+  }
+
   showDefenseIntroIfNeeded() {
-    if (this.state.defense?.introSeen) return;
+    if (this.state.defense?.introSeen) {
+      this.holdAppForComic(false);
+      return;
+    }
     if (!this.state.defense) this.state.defense = this.createDefaultDefenseState();
-    document.getElementById('defense-intro')?.classList.remove('hidden');
+    this.holdAppForComic(true);
+    this.resetComicIntro();
+    const root = document.getElementById('defense-intro');
+    root?.classList.remove('hidden');
+    const first = root?.querySelector('.comic-panel[data-panel="1"]');
+    requestAnimationFrame(() => this.shakeComicPanel(first));
+  }
+
+  advanceComicIntro() {
+    const root = document.getElementById('defense-intro');
+    if (!root || root.classList.contains('hidden') || this._comicDismissing) return;
+    const total = this.getComicTotalPanels();
+    const idx = this._comicPanelIndex || 1;
+    if (idx >= total) {
+      this.dismissDefenseIntro();
+      return;
+    }
+    const next = idx + 1;
+    this._comicPanelIndex = next;
+    // 第 6 格起切到第二页
+    if (next === 6) this.setComicPage(2);
+    const panel = root.querySelector(`.comic-panel[data-panel="${next}"]`);
+    if (panel) {
+      panel.classList.add('is-visible');
+      this.shakeComicPanel(panel);
+    }
+    const hint = document.getElementById('comic-hint');
+    if (hint) hint.textContent = next >= total ? '点击开始重建' : '点击继续';
   }
 
   dismissDefenseIntro() {
+    if (this._comicDismissing) return;
     if (!this.state.defense) this.state.defense = this.createDefaultDefenseState();
     this.state.defense.introSeen = true;
-    document.getElementById('defense-intro')?.classList.add('hidden');
-    this.save();
-    this.startTutorialIfNeeded();
+    this._comicDismissing = true;
+    const root = document.getElementById('defense-intro');
+    if (!root || root.classList.contains('hidden')) {
+      this.holdAppForComic(false);
+      this._comicDismissing = false;
+      this.save();
+      this.startTutorialIfNeeded();
+      return;
+    }
+    let finished = false;
+    const finish = () => {
+      if (finished) return;
+      finished = true;
+      root.classList.add('hidden');
+      root.classList.remove('comic-outro');
+      this.revealAppAfterComic();
+      this._comicDismissing = false;
+      this.save();
+      this.startTutorialIfNeeded();
+    };
+    root.classList.add('comic-outro');
+    const onFade = (e) => {
+      if (e.target !== root || e.propertyName !== 'opacity') return;
+      root.removeEventListener('transitionend', onFade);
+      finish();
+    };
+    root.addEventListener('transitionend', onFade);
+    setTimeout(() => {
+      root.removeEventListener('transitionend', onFade);
+      finish();
+    }, 700);
   }
 
   isTutorialActive() {
@@ -5912,7 +6202,16 @@ class FactoryGame {
       });
     });
 
-    document.getElementById('defense-intro-ok')?.addEventListener('click', () => this.dismissDefenseIntro());
+    document.getElementById('defense-intro')?.addEventListener('click', (e) => {
+      if (e.button !== 0) return;
+      if (e.target.closest('#comic-skip')) return;
+      this.advanceComicIntro();
+    });
+    document.getElementById('comic-skip')?.addEventListener('click', (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      this.dismissDefenseIntro();
+    });
     document.getElementById('tutorial-skip')?.addEventListener('click', () => this.skipTutorial());
     document.getElementById('tutorial-next')?.addEventListener('click', () => this.advanceTutorialStep());
 
@@ -6288,6 +6587,8 @@ class FactoryGame {
       } else {
         this.settings = { ...defaults };
       }
+      // 缺省或非法值时默认开启 BGM
+      if (typeof this.settings.playBgm !== 'boolean') this.settings.playBgm = true;
     } catch (_) {
       this.settings = { ...defaults };
     }
@@ -6337,6 +6638,7 @@ class FactoryGame {
     if (this._atMainMenu) {
       if (s.playBgm !== false) this.startMenuBgm();
       else this.stopMenuBgm();
+      this._updateMenuBgmNowLabel();
     }
   }
 
@@ -6460,7 +6762,7 @@ class FactoryGame {
       showPage('pause-menu-home');
     });
     document.getElementById('pause-to-main')?.addEventListener('click', () => {
-      this.returnToMainMenu();
+      void this.returnToMainMenu();
     });
     document.getElementById('pause-quit')?.addEventListener('click', () => {
       this.quitApp();

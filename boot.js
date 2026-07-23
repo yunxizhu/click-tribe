@@ -33,7 +33,7 @@
 
   const cfg = window.__TRIBE_CONFIG_BASE__;
   // 改脚本/配置后递增，避免浏览器强缓存
-  const bust = '?v=20260723aa';
+  const bust = '?v=20260723bg';
 
   /** 外置配置（须在 game.js 之前加载；顺序可影响互相依赖） */
   const EXTERNAL_CONFIGS = [
@@ -44,24 +44,45 @@
   ];
   window.__TRIBE_EXTERNAL_CONFIGS__ = EXTERNAL_CONFIGS.slice();
 
-  const scripts = EXTERNAL_CONFIGS.map((f) => cfg + f + bust).concat([
-    'sounds.js' + bust,
-    'game.js' + bust,
-    'tech-tree-editor.js' + bust,
-    'defense.js' + bust,
-    'bgm.js' + bust,
-  ]);
+  const scriptGroups = [
+    {
+      pct: 30,
+      label: '正在加载配置…',
+      holdMs: 480,
+      files: EXTERNAL_CONFIGS.map((f) => cfg + f + bust),
+    },
+    {
+      pct: 70,
+      label: '正在加载游戏核心…',
+      holdMs: 560,
+      files: ['sounds.js' + bust, 'game.js' + bust],
+    },
+    {
+      pct: 95,
+      label: '正在准备界面…',
+      holdMs: 520,
+      files: [
+        'tech-tree-editor.js' + bust,
+        'defense.js' + bust,
+        'bgm.js' + bust,
+      ],
+    },
+  ];
 
-  function setBootProgress(done, total, label) {
-    const pct = total > 0 ? Math.round((done / total) * 100) : 0;
+  function setBootProgressPct(pct, label) {
+    const n = Math.max(0, Math.min(100, Math.round(Number(pct) || 0)));
     const bar = document.getElementById('boot-progress-bar');
     const progress = document.getElementById('boot-progress');
     const pctEl = document.getElementById('boot-loading-pct');
     const text = document.getElementById('boot-loading-text');
-    if (bar) bar.style.width = pct + '%';
-    if (progress) progress.setAttribute('aria-valuenow', String(pct));
-    if (pctEl) pctEl.textContent = pct + '%';
+    if (bar) bar.style.width = n + '%';
+    if (progress) progress.setAttribute('aria-valuenow', String(n));
+    if (pctEl) pctEl.textContent = n + '%';
     if (text && label) text.textContent = label;
+  }
+
+  function sleep(ms) {
+    return new Promise((r) => setTimeout(r, Math.max(0, ms || 0)));
   }
 
   function loadScript(src) {
@@ -75,27 +96,23 @@
     });
   }
 
-  function shortName(src) {
-    try {
-      const path = String(src).split('?')[0];
-      return path.split('/').pop() || path;
-    } catch (_) {
-      return '资源';
-    }
-  }
-
   (async function boot() {
     try {
-      const total = scripts.length;
-      setBootProgress(0, total, '正在加载资源…');
-      for (let i = 0; i < scripts.length; i++) {
-        const src = scripts[i];
-        setBootProgress(i, total, '正在加载：' + shortName(src));
-        await loadScript(src);
-        setBootProgress(i + 1, total, '已加载：' + shortName(src));
+      setBootProgressPct(0, '正在加载资源…');
+      await sleep(280);
+
+      for (const group of scriptGroups) {
+        setBootProgressPct(group.pct, group.label);
+        const started = Date.now();
+        for (const src of group.files) {
+          await loadScript(src);
+        }
+        const left = group.holdMs - (Date.now() - started);
+        if (left > 0) await sleep(left);
       }
 
-      setBootProgress(total, total, '正在初始化…');
+      setBootProgressPct(100, '加载完成');
+      await sleep(420);
 
       // 等 game.js / tech-tree-editor.js / defense.js 全部挂好补丁后再开壳
       if (typeof window.startFactoryGame === 'function') {
