@@ -8,7 +8,8 @@
   "license": "UNLICENSED",
   "scripts": {
     "start": "electron .",
-    "pack": "electron-packager . \"点击部落\" --platform=win32 --arch=x64 --out=dist --overwrite --asar --ignore=\"(node_modules|dist|\\\\.git|package-lock\\\\.json|\\\\.gitignore)\""
+    "pack": "node scripts/pack-game.js",
+    "pack:win": "node scripts/pack-game.js"
   },
   "devDependencies": {
     "electron": "^33.2.1",

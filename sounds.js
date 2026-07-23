@@ -4,18 +4,61 @@ class GameSounds {
     this.ctx = null;
     this._bound = false;
     this.masterGain = null;
+    this.bgm = null;
+    this._game = null; // FactoryGame 实例引用
+  }
+
+  /** 设置游戏实例引用（用于 BGM 获取游戏状态） */
+  setGame(game) {
+    this._game = game;
   }
 
   bindUnlock() {
     if (this._bound) return;
     this._bound = true;
+
+    // 立即尝试创建 AudioContext（浏览器可能返回 suspended 状态）
+    this.ensureContext();
+
+    // 监听 AudioContext 状态：一旦变为 running 就初始化 BGM
+    if (this.ctx) {
+      this.ctx.addEventListener('statechange', () => {
+        if (this.ctx.state === 'running' && !this.bgm) {
+          this._initBGM();
+        }
+      });
+      // 立即尝试 resume — 若浏览器允许自动播放（或之前授权过）会直接成功
+      if (this.ctx.state === 'suspended') {
+        this.ctx.resume().then(() => {
+          if (!this.bgm) this._initBGM();
+        }).catch(() => {});
+      }
+      if (this.ctx.state === 'running') {
+        this._initBGM();
+      }
+    }
+
     const unlock = () => {
       this.ensureContext();
+      if (!this.bgm) {
+        this._initBGM();
+      } else {
+        // BGM 已初始化但可能因自动播放策略被阻止，现在有用户手势了，强制刷新
+        if (this.bgm._tick) this.bgm._tick();
+      }
       document.removeEventListener('pointerdown', unlock);
       document.removeEventListener('keydown', unlock);
     };
     document.addEventListener('pointerdown', unlock, { passive: true });
     document.addEventListener('keydown', unlock);
+  }
+
+  /** 在 AudioContext 就绪后初始化 BGM */
+  _initBGM() {
+    if (!this.ctx || !this.masterGain || !this._game) return;
+    if (this.bgm) return; // 只初始化一次
+    this.bgm = new BGMPlayer();
+    this.bgm.init(this.ctx, this.masterGain, this._game);
   }
 
   ensureContext() {

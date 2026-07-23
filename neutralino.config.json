@@ -1,0 +1,48 @@
+{
+  "applicationId": "js.clicktribe.game",
+  "version": "1.0.0",
+  "defaultMode": "window",
+  "port": 0,
+  "documentRoot": "/resources/",
+  "url": "/",
+  "enableServer": true,
+  "enableNativeAPI": true,
+  "tokenSecurity": "one-time",
+  "logging": {
+    "enabled": false,
+    "writeToLogFile": false
+  },
+  "nativeAllowList": [
+    "app.*",
+    "window.*",
+    "os.*",
+    "filesystem.*",
+    "debug.log"
+  ],
+  "modes": {
+    "window": {
+      "title": "点击部落",
+      "width": 1400,
+      "height": 900,
+      "minWidth": 1000,
+      "minHeight": 700,
+      "fullScreen": false,
+      "alwaysOnTop": false,
+      "enableInspector": false,
+      "borderless": false,
+      "maximize": false,
+      "hidden": false,
+      "resizable": true,
+      "exitProcessOnClose": true,
+      "center": true
+    }
+  },
+  "cli": {
+    "binaryName": "点击部落",
+    "resourcesPath": "/resources/",
+    "extensionsPath": "/extensions/",
+    "clientLibrary": "/resources/neutralino.js",
+    "binaryVersion": "5.6.0",
+    "clientVersion": "5.6.0"
+  }
+}

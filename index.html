@@ -9,7 +9,7 @@
 <body>
   <div id="app">
     <header class="game-header">
-      <h1>🏕️ 点击部落</h1>
+      <h1>🏕️ 点击部落 <span id="diff-label" class="diff-badge"></span></h1>
       <div class="header-calendar-wrap" id="calendar-wrap">
         <div class="game-clock" id="game-clock" title="游戏内时钟（24小时）">
           <div class="game-clock-face">
@@ -22,8 +22,8 @@
             <div class="game-clock-center"></div>
           </div>
         </div>
-        <span id="calendar-display" class="header-calendar">第 1 天 00:00</span>
-        <div class="header-speed" id="header-speed" title="游戏时间加速（不影响手动点击单次收益）">
+        <span id="calendar-display" class="header-calendar">第 1 天 06:00</span>
+        <div class="header-speed" id="header-speed" title="游戏时间加速（不影响手动点击单次收益）。按 Tab 切换 1× / 2× / 4×">
           <span class="speed-thumb" id="speed-thumb" aria-hidden="true"></span>
           <button type="button" class="speed-btn active" data-speed="1" aria-label="正常速度 1×" title="正常速度">
             <span class="speed-tag">1×</span>
@@ -35,10 +35,11 @@
             <span class="speed-icon" aria-hidden="true">⏩</span><span class="speed-tag">4×</span>
           </button>
         </div>
+        <button type="button" id="tech-edit-exit-btn" class="tech-edit-exit-btn hidden" title="退出科技树编辑并保存">退出编辑模式并保存</button>
       </div>
       <div class="header-right">
         <span id="raid-status" class="raid-status" title="来袭状态">和平</span>
-        <span id="total-clicks-display">总点击: 0</span>
+        <span id="header-food" class="header-food" title="今日食物库存与预计消耗">🍎 食物 0 / 需 0</span>
         <div class="game-menu">
           <button id="menu-btn" class="btn-menu" title="菜单">☰</button>
           <div id="menu-dropdown" class="menu-dropdown hidden">
@@ -51,67 +52,138 @@
 
     <main class="game-main">
       <aside class="sidebar left">
-        <h3 id="forage-section-title">觅食</h3>
-        <div id="forage-list" class="station-list"></div>
-        <h3 id="gather-section-title">采集</h3>
-        <div id="gather-list" class="station-list"></div>
-        <h3 id="craft-section-title" class="section-title">生产中</h3>
-        <div id="craft-station-list" class="station-list"></div>
+        <div class="sidebar-section sidebar-section-static" id="chest-section" data-section="chest">
+          <h3 id="chest-section-title" class="section-title">宝箱</h3>
+          <div id="chest-list" class="station-list"></div>
+        </div>
+        <div class="sidebar-section" id="forage-section" data-section="forage">
+          <button type="button" id="forage-section-title" class="section-title section-title-toggle" data-section="forage" aria-expanded="true">
+            <span class="section-toggle-caret" aria-hidden="true">▼</span>
+            <span class="section-toggle-label">觅食</span>
+          </button>
+          <div id="forage-list" class="station-list"></div>
+        </div>
+        <div class="sidebar-section" id="gather-section" data-section="gather">
+          <button type="button" id="gather-section-title" class="section-title section-title-toggle" data-section="gather" aria-expanded="true">
+            <span class="section-toggle-caret" aria-hidden="true">▼</span>
+            <span class="section-toggle-label">采集</span>
+          </button>
+          <div id="gather-list" class="station-list"></div>
+        </div>
+        <div class="sidebar-section" id="craft-section" data-section="craft">
+          <button type="button" id="craft-section-title" class="section-title section-title-toggle" data-section="craft" aria-expanded="true">
+            <span class="section-toggle-caret" aria-hidden="true">▼</span>
+            <span class="section-toggle-label">生产</span>
+          </button>
+          <div id="craft-station-list" class="station-list"></div>
+        </div>
       </aside>
 
-      <section class="center-panel">
-        <div class="point-display">
-          <div id="point-icon" class="point-icon">🌲</div>
-          <h2 id="point-name">森林</h2>
-          <p id="point-desc" class="point-desc">砍伐树木获取木头</p>
-          <div class="point-stats">
-            <span id="click-power">点击效率: 1/次</span>
-            <span id="yield-info"></span>
-          </div>
+      <div id="tech-tree-overlay" class="tech-tree-overlay hidden">
+        <div class="tech-tree-canvas" id="tech-tree-canvas">
+          <svg class="tech-connectors" id="tech-connectors"></svg>
         </div>
-
-        <div id="click-area" class="click-area">
-          <div class="progress-container" id="progress-container">
-            <div id="progress-bar" class="progress-bar"></div>
-            <span id="progress-text" class="progress-text">0 / 10</span>
+        <div id="tech-tooltip" class="tech-tooltip hidden">
+          <div class="tech-tooltip-icon" id="tt-icon"></div>
+          <div class="tech-tooltip-body">
+            <div class="tech-tooltip-name" id="tt-name"></div>
+            <div class="tech-tooltip-desc" id="tt-desc"></div>
+            <div class="tech-tooltip-cost" id="tt-cost"></div>
           </div>
-          <div id="chest-open-ui" class="chest-open-ui hidden">
-            <div id="chest-visual" class="chest-visual progress-0">
-              <div class="chest-glow-ring" aria-hidden="true"></div>
-              <div class="chest-box">
-                <div class="chest-lid">
-                  <div class="chest-lid-top"></div>
-                  <div class="chest-lid-front"></div>
-                </div>
-                <div class="chest-base">
-                  <div class="chest-base-front"></div>
-                  <div class="chest-lock"></div>
-                </div>
-                <div class="chest-sparkles" id="chest-sparkles" aria-hidden="true"></div>
+          <button class="tech-tooltip-btn" id="tt-btn"></button>
+        </div>
+      </div>
+
+      <div id="defense-overlay" class="defense-overlay hidden">
+        <div class="defense-overlay-layout">
+          <div class="defense-stage battle-embed" id="battle-embed">
+            <div class="battle-embed-meters">
+              <div class="battle-force-row">
+                <span class="battle-force ally">我方 <span id="battle-ally-count">0</span></span>
+                <span class="battle-force enemy">敌方 <span id="battle-enemy-count">0</span></span>
+              </div>
+              <div class="progress-container battle-meter" title="城门耐久">
+                <div id="battle-embed-gate-bar" class="progress-bar battle-meter-gate"></div>
+                <span id="battle-embed-gate-text" class="progress-text">城门 —</span>
+              </div>
+              <div class="progress-container battle-meter" id="battle-embed-enemy-meter" title="残敌">
+                <div id="battle-embed-enemy-bar" class="progress-bar battle-meter-enemy"></div>
+                <span id="battle-embed-enemy-text" class="progress-text">残敌 —</span>
               </div>
             </div>
-            <p id="chest-open-hint" class="chest-open-hint">点击开启宝箱（0/4）</p>
-          </div>
-          <p class="click-hint">点击或按住采集，分配工人后才会自动累积进度</p>
-        </div>
 
-        <div id="point-upgrades" class="point-upgrades"></div>
-        <div id="point-workers" class="point-workers"></div>
+            <div class="battle-embed-field" id="battle-embed-field">
+              <div class="battle-field-label left">城内</div>
+              <div class="battle-field-label right">野外</div>
+              <div class="battle-embed-wall" id="battle-embed-wall" aria-hidden="true"></div>
+              <div class="battle-embed-units" id="battle-embed-units"></div>
+            </div>
+            <p class="click-hint" id="battle-embed-hint">左键框选/点选 · Ctrl+左键加减选 · 右键移动 · 中键列阵（鼠标处）</p>
+          </div>
+          <aside class="defense-side">
+            <div id="defense-overview" class="defense-overview"></div>
+          </aside>
+        </div>
+      </div>
+
+      <section class="center-panel">
+        <div class="center-point-content" id="center-point-content">
+          <div class="point-display">
+            <div id="point-icon" class="point-icon">🌲</div>
+            <h2 id="point-name">森林</h2>
+            <p id="point-desc" class="point-desc">砍伐树木获取木头</p>
+            <div class="point-stats">
+              <span id="click-power">点击效率: 1/次</span>
+              <span id="yield-info"></span>
+            </div>
+          </div>
+
+          <div id="click-area" class="click-area">
+            <div class="progress-container" id="progress-container">
+              <div id="progress-bar" class="progress-bar"></div>
+              <span id="progress-text" class="progress-text">0 / 10</span>
+            </div>
+            <div id="chest-open-ui" class="chest-open-ui hidden">
+              <div id="chest-visual" class="chest-visual progress-0">
+                <div class="chest-glow-ring" aria-hidden="true"></div>
+                <div class="chest-box">
+                  <div class="chest-lid">
+                    <div class="chest-lid-top"></div>
+                    <div class="chest-lid-front"></div>
+                  </div>
+                  <div class="chest-base">
+                    <div class="chest-base-front"></div>
+                    <div class="chest-lock"></div>
+                  </div>
+                  <div class="chest-sparkles" id="chest-sparkles" aria-hidden="true"></div>
+                </div>
+              </div>
+              <p id="chest-open-hint" class="chest-open-hint">点击开启宝箱（0/4）</p>
+            </div>
+            <p class="click-hint">点击或按住采集，分配工人后才会自动累积进度</p>
+          </div>
+
+          <div id="point-upgrades" class="point-upgrades"></div>
+          <div id="point-workers" class="point-workers"></div>
+        </div>
       </section>
 
       <aside class="sidebar right">
         <div class="sidebar-right-layout">
           <nav class="right-nav" aria-label="功能菜单">
-            <button type="button" class="tab-btn active" data-tab="tech" title="科技树">🔬<span>科技</span></button>
+            <button type="button" class="tab-btn active" data-tab="warehouse" title="仓库">📦<span>仓库</span></button>
+            <button type="button" class="tab-btn" data-tab="tech" title="科技树">🔬<span>科技</span></button>
             <button type="button" class="tab-btn" data-tab="craft" title="合成">⚗️<span>合成</span></button>
             <button type="button" class="tab-btn" data-tab="tools" id="tab-btn-tools" title="工具">🪓<span>工具</span></button>
             <button type="button" class="tab-btn" data-tab="workers" title="村民">👥<span>村民</span></button>
             <button type="button" class="tab-btn" data-tab="defense" title="防务">🛡️<span>防务</span></button>
-            <button type="button" class="tab-btn" data-tab="warehouse" title="仓库">📦<span>仓库</span></button>
           </nav>
 
           <div class="sidebar-panel-main">
-            <div id="tab-tech" class="tab-panel active">
+            <div id="tab-warehouse" class="tab-panel active">
+              <div id="warehouse-overview" class="warehouse-overview"></div>
+            </div>
+            <div id="tab-tech" class="tab-panel">
               <div id="tech-tree" class="tech-tree"></div>
             </div>
             <div id="tab-craft" class="tab-panel">
@@ -124,10 +196,7 @@
               <div id="worker-overview" class="worker-overview"></div>
             </div>
             <div id="tab-defense" class="tab-panel">
-              <div id="defense-overview" class="defense-overview"></div>
-            </div>
-            <div id="tab-warehouse" class="tab-panel">
-              <div id="warehouse-overview" class="warehouse-overview"></div>
+              <!-- 防务内容在 #defense-overlay（中+右合屏） -->
             </div>
           </div>
         </div>
@@ -151,13 +220,34 @@
       </div>
     </div>
 
+    <div id="story-dialog" class="story-dialog hidden" role="dialog" aria-modal="true" aria-labelledby="story-dialog-text">
+      <div class="story-dialog-panel">
+        <p id="story-dialog-text" class="story-dialog-text"></p>
+        <button type="button" id="story-dialog-ok" class="btn-craft">确定</button>
+      </div>
+    </div>
+
+    <div id="difficulty-select" class="defense-intro hidden">
+      <div class="defense-intro-dialog">
+        <h3>选择难度</h3>
+        <p>选择适合你的游戏难度</p>
+        <div class="difficulty-options" id="difficulty-options">
+          <button type="button" class="diff-btn" data-difficulty="peaceful">☮️ 和平</button>
+          <button type="button" class="diff-btn" data-difficulty="normal">⚖️ 正常</button>
+          <button type="button" class="diff-btn" data-difficulty="hard">💀 困难</button>
+          <button type="button" class="diff-btn" data-difficulty="hell">🔥 地狱</button>
+        </div>
+        <p id="diff-desc" class="diff-desc"></p>
+      </div>
+    </div>
+
     <div id="defense-intro" class="defense-intro hidden">
       <div class="defense-intro-dialog">
         <h3>魔王当道</h3>
         <p>魔王正在毁灭世界，所到之处化为焦土；又到处派出爪牙，荼毒生灵、掠夺村落。</p>
         <p>你们一路逃难，来到这片尚未被侵占的谷地，重建部落。魔王本人暂未现身，但其爪牙仍会寻踪而至——约在第 7 天首次来袭，第 5 天会有预警。</p>
-        <p>制作弓弩剑盾，编制远程与近战；用「防御/出击」指挥战斗。之后约每隔一到两周再来一次。</p>
-        <p class="dim">（更可怕的「无敌之姿」……日后再说。）</p>
+        <p>制作弓弩剑矛与盾，编制远程与近战；用「防御 / 出击 / 随军出击」指挥战斗。之后约每隔一到两周再来一次。</p>
+        <p class="dim">左侧会出现「魔王」资源点，神器未铸前它有无敌护盾。</p>
         <button type="button" id="defense-intro-ok" class="btn-craft">开始重建</button>
       </div>
     </div>
@@ -174,17 +264,20 @@
           <button type="button" id="battle-close" class="dev-close" title="收起画面（交战仍继续）">×</button>
         </div>
         <div class="battle-field" id="battle-field">
-          <div class="battle-field-label left">城门</div>
-          <div class="battle-field-label right">敌阵</div>
-          <div class="battle-gate-mark" title="城门">🚪</div>
+          <div class="battle-field-label left">城内</div>
+          <div class="battle-field-label right">野外</div>
+          <div class="battle-wall" id="battle-wall" aria-hidden="true"></div>
           <div class="battle-units" id="battle-units"></div>
         </div>
+        <div class="battle-stats-bar" id="battle-stats-bar">
+          <span id="battle-ally-count-popup" class="stat-chip ally">我方 0</span>
+          <span id="battle-enemy-count-popup" class="stat-chip enemy">敌方 0</span>
+        </div>
         <div class="battle-bars">
-          <div class="battle-bar-row"><label>大门</label><div class="bar-track"><div id="battle-gate-bar" class="bar-fill gate"></div></div></div>
-          <div class="battle-bar-row"><label>残敌</label><div class="bar-track"><div id="battle-enemy-bar" class="bar-fill enemy"></div></div></div>
+          <div class="battle-bar-row"><label>大门</label><div class="bar-track tall"><div id="battle-gate-bar" class="bar-fill gate"></div></div></div>
+          <div class="battle-bar-row"><label>残敌</label><div class="bar-track tall"><div id="battle-enemy-bar" class="bar-fill enemy"></div></div></div>
         </div>
         <div class="battle-actions">
-          <button type="button" class="btn-craft" id="battle-repair">修门</button>
           <button type="button" class="btn-craft" id="battle-open-defense">调整防务</button>
         </div>
         <ul class="battle-log" id="battle-log"></ul>
@@ -193,11 +286,20 @@
 
     <div id="game-over" class="game-over hidden">
       <div class="game-over-dialog">
-        <h3>部落覆灭</h3>
+        <h3 id="game-over-title">部落覆灭</h3>
         <p id="game-over-reason">村落无法再延续</p>
         <p id="game-over-pop" class="dim">幸存村民：0</p>
-        <p class="hint">人口只剩 0～1 人时，部落无法维系（饥荒或战败皆可导致）。</p>
+        <p class="hint">人口只剩 0～1 人时，部落无法维系（饥荒饿死或战败皆可导致）。</p>
         <button type="button" id="game-over-reset" class="btn-craft">重新开始</button>
+      </div>
+    </div>
+
+    <div id="victory-screen" class="game-over hidden">
+      <div class="game-over-dialog victory-dialog">
+        <h3>🎉 部落胜利</h3>
+        <p id="victory-text">魔王被击败了！无敌之姿已碎，灾祸之源已经消除。在你的带领下，部落走向了真正的自由与繁荣。</p>
+        <p id="victory-stats" class="dim"></p>
+        <button type="button" id="victory-reset" class="btn-craft">重新开始（新游戏）</button>
       </div>
     </div>
 
@@ -237,6 +339,14 @@
       </div>
 
       <div class="dev-section">
+        <h4>科技树</h4>
+        <div class="dev-btn-row">
+          <button class="dev-btn" id="dev-tech-edit" type="button">进入科技树调整模式</button>
+        </div>
+        <p class="dev-hint" style="margin-top:6px;">拖拽改位置；点选改依赖/费用；Esc 导出 config/tech-tree-table.js 并退出</p>
+      </div>
+
+      <div class="dev-section">
         <h4>快速解锁</h4>
         <div class="dev-btn-row">
           <button class="dev-btn" id="dev-unlock-resources">解锁资源类型</button>
@@ -255,12 +365,47 @@
       </div>
 
       <div class="dev-section">
+        <h4>工具 / 武器</h4>
+        <p class="dev-hint" style="margin-top:0;">采集工具与战斗装备均可直接改数量</p>
+        <div id="dev-tool-list" class="dev-resource-list dev-tool-list"></div>
+        <div class="dev-btn-row">
+          <button class="dev-btn" id="dev-add-tools-1" type="button">工具各等级 +1</button>
+          <button class="dev-btn" id="dev-add-weapons-1" type="button">武器各等级 +1</button>
+          <button class="dev-btn" id="dev-add-gear-10" type="button">全部装备 +10</button>
+        </div>
+      </div>
+
+      <div class="dev-section">
+        <h4>袭击来袭测试</h4>
+        <p class="dev-hint" style="margin-top:0;">自定义敌军数量后立即开战（不混入残敌）</p>
+        <div class="dev-raid-grid" id="dev-raid-grid">
+          <label class="dev-raid-row">流寇 <input type="number" id="dev-raid-bare" min="0" max="500" value="6" step="1"></label>
+          <label class="dev-raid-row">投石手 <input type="number" id="dev-raid-sling" min="0" max="500" value="0" step="1"></label>
+          <label class="dev-raid-row">持刃爪牙 <input type="number" id="dev-raid-raider" min="0" max="500" value="0" step="1"></label>
+          <label class="dev-raid-row">破门锤手 <input type="number" id="dev-raid-ram" min="0" max="500" value="0" step="1"></label>
+        </div>
+        <div class="dev-btn-row">
+          <button class="dev-btn" type="button" id="dev-raid-preset-scout">斥候预设</button>
+          <button class="dev-btn" type="button" id="dev-raid-preset-raiders">匪徒预设</button>
+          <button class="dev-btn" type="button" id="dev-raid-preset-warband">战团预设</button>
+        </div>
+        <div class="dev-btn-row">
+          <button class="dev-btn dev-btn-warn" type="button" id="dev-raid-start">立即来袭</button>
+          <button class="dev-btn" type="button" id="dev-raid-end-win">强制胜利</button>
+          <button class="dev-btn" type="button" id="dev-raid-end-lose">强制战败</button>
+        </div>
+      </div>
+
+      <div class="dev-section">
         <h4>其他</h4>
         <div class="dev-btn-row">
           <button class="dev-btn" id="dev-workers-10">工人 +10</button>
           <button class="dev-btn" id="dev-chest-1">宝箱 +1</button>
           <button class="dev-btn" id="dev-chest-10">宝箱 +10</button>
-          <button class="dev-btn" id="dev-simulate-1h">模拟离线 1 小时</button>
+          <button class="dev-btn" id="dev-simulate-1h">模拟推进 1 小时</button>
+        </div>
+        <div class="dev-btn-row">
+          <button class="dev-btn dev-btn-warn" id="dev-reset-game">存档重置</button>
         </div>
       </div>
     </div>
@@ -280,8 +425,7 @@
     </div>
   </div>
 
-  <script src="data.js"></script>
-  <script src="sounds.js"></script>
-  <script src="game.js"></script>
+  <script src="data.js?v=20260722m"></script>
+  <script src="boot.js?v=20260722m"></script>
 </body>
 </html>

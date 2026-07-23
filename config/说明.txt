@@ -1,0 +1,14 @@
+外置游戏配置（开发与打包共用）
+
+  tool-recipes.js     — 工具/武器/护甲制作配方、持工具效率(TOOL_EFFICIENCY)、工具耐久(TOOL_DURABILITY)
+  resource-points.js  — 各资源点初始计数值(baseMaxCount)与冷却(baseCooldown)
+  combat-units.js     — 敌我单位、武器表、铠甲、波次
+  tech-tree-table.js  — 科技树布局 / 依赖 / 费用
+
+打包后这些文件会出现在 exe 同级的 config/ 下，可单独替换。
+
+【新增配置文件时必须同步】
+  1. boot.js → EXTERNAL_CONFIGS
+  2. scripts/pack-game.js → CONFIG_FILES
+  3. 本说明文件
+  （打包脚本会校验 1 与 2 是否一致）
