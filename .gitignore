@@ -7,3 +7,5 @@ bin/
 *.log
 .DS_Store
 package-lock.json
+saves/*.json
+saves/*.tmp

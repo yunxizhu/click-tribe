@@ -40,7 +40,38 @@ class FactoryGame {
     this._chestSparkLoop = null;
     this.sounds = new GameSounds();
     this.sounds.setGame(this);
-    this.init();
+    // init 由 startFactoryGame 异步调用（Electron 存档在 saves/ 需 await）
+  }
+
+  /** Electron：saves/factoryGame.json；浏览器：localStorage */
+  _saveApi() {
+    return window.__TRIBE_SAVE_API__ || null;
+  }
+
+  async hasSaveData() {
+    const api = this._saveApi();
+    if (api?.exists) {
+      try {
+        if (await api.exists()) return true;
+      } catch (_) { /* fall through */ }
+    }
+    return localStorage.getItem('factoryGame') !== null;
+  }
+
+  init() {
+    // 兼容旧调用；实际启动走 initAsync
+    return this.initAsync();
+  }
+
+  async initAsync() {
+    await this.loadSettings();
+    const hasSave = await this.load();
+    if (!hasSave) {
+      this.state.difficulty = 'normal';
+      this.showDifficultySelect();
+      return;
+    }
+    this.resumeAfterDifficultySetup();
   }
 
   getDefaultState() {
@@ -227,18 +258,6 @@ class FactoryGame {
     };
   }
 
-  init() {
-    this.load();
-    // 如果是新游戏（没有存档），弹出难度选择
-    const hasSave = localStorage.getItem('factoryGame') !== null;
-    if (!hasSave) {
-      this.state.difficulty = 'normal';
-      this.showDifficultySelect();
-      return;
-    }
-    this.resumeAfterDifficultySetup();
-  }
-
   /** 显示难度选择界面（无存档时调用） */
   showDifficultySelect() {
     const el = document.getElementById('difficulty-select');
@@ -401,20 +420,43 @@ class FactoryGame {
   // ========== 存档 ==========
   save() {
     this.state.lastSaveTime = Date.now();
+    const raw = JSON.stringify(this.state);
+    const api = this._saveApi();
+    if (api?.write) {
+      void api.write(raw).catch((e) => console.warn('[save]', e));
+      return;
+    }
     try {
-      localStorage.setItem('factoryGame', JSON.stringify(this.state));
+      localStorage.setItem('factoryGame', raw);
     } catch (e) { /* ignore */ }
   }
 
-  load() {
+  async load() {
     try {
-      const saved = localStorage.getItem('factoryGame');
+      let saved = null;
+      const api = this._saveApi();
+      if (api?.read) {
+        saved = await api.read();
+        // 首次切到目录存档：把旧 localStorage 迁过去
+        if (!saved) {
+          const legacy = localStorage.getItem('factoryGame');
+          if (legacy) {
+            await api.write(legacy);
+            try { localStorage.removeItem('factoryGame'); } catch (_) { /* ignore */ }
+            saved = legacy;
+          }
+        }
+      } else {
+        saved = localStorage.getItem('factoryGame');
+      }
       if (saved) {
         const parsed = JSON.parse(saved);
         this.state = { ...this.getDefaultState(), ...parsed };
         this.migrateState();
+        return true;
       }
     } catch (e) { /* ignore */ }
+    return false;
   }
 
   migrateState() {
@@ -810,7 +852,9 @@ class FactoryGame {
 
   reset({ skipConfirm = false } = {}) {
     if (!skipConfirm && !confirm('确定要重置所有进度吗？此操作不可撤销！')) return;
-    localStorage.removeItem('factoryGame');
+    const api = this._saveApi();
+    if (api?.clear) void api.clear().catch(() => {});
+    try { localStorage.removeItem('factoryGame'); } catch (_) { /* ignore */ }
     this.state = this.getDefaultState();
     this.state.difficulty = 'normal';
     this.timeScale = 1;
@@ -5836,6 +5880,310 @@ class FactoryGame {
     document.addEventListener('click', (e) => {
       if (!e.target.closest('.game-menu')) closeMenu();
     });
+
+    this.setupPauseMenu();
+  }
+
+  // ========== 设置（显示 / 音量）==========
+  getDefaultSettings() {
+    return {
+      displayMode: 'fullscreen',
+      width: 1920,
+      height: 1080,
+      playBgm: true,
+      masterVolume: 0.7,
+      sfxVolume: 1,
+    };
+  }
+
+  getDisplayResolutions() {
+    return [
+      { w: 1280, h: 720, label: '1280×720' },
+      { w: 1366, h: 768, label: '1366×768' },
+      { w: 1600, h: 900, label: '1600×900' },
+      { w: 1920, h: 1080, label: '1920×1080' },
+      { w: 2560, h: 1440, label: '2560×1440' },
+      { w: 3840, h: 2160, label: '3840×2160' },
+    ];
+  }
+
+  async loadSettings() {
+    const defaults = this.getDefaultSettings();
+    let raw = null;
+    const api = this._saveApi();
+    try {
+      if (api?.settingsRead) raw = await api.settingsRead();
+      if (!raw) raw = localStorage.getItem('clickTribeSettings');
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        this.settings = { ...defaults, ...parsed };
+      } else {
+        this.settings = { ...defaults };
+      }
+    } catch (_) {
+      this.settings = { ...defaults };
+    }
+    await this.applySettings({ persist: false, applyDisplay: true });
+  }
+
+  async saveSettings() {
+    if (!this.settings) this.settings = this.getDefaultSettings();
+    const raw = JSON.stringify(this.settings);
+    const api = this._saveApi();
+    try {
+      if (api?.settingsWrite) await api.settingsWrite(raw);
+    } catch (e) {
+      console.warn('[settings]', e);
+    }
+    try {
+      localStorage.setItem('clickTribeSettings', raw);
+    } catch (_) { /* ignore */ }
+  }
+
+  /**
+   * @param {{ persist?: boolean, applyDisplay?: boolean }} [opts]
+   */
+  async applySettings(opts = {}) {
+    if (!this.settings) this.settings = this.getDefaultSettings();
+    const s = this.settings;
+    this.sounds?.applyUserAudioSettings?.({
+      playBgm: s.playBgm !== false,
+      masterVolume: Number(s.masterVolume),
+      sfxVolume: Number(s.sfxVolume),
+    });
+    if (opts.applyDisplay !== false) {
+      const api = this._saveApi();
+      if (api?.displaySet) {
+        try {
+          await api.displaySet({
+            mode: s.displayMode === 'windowed' ? 'windowed' : 'fullscreen',
+            width: s.width,
+            height: s.height,
+          });
+        } catch (e) {
+          console.warn('[display]', e);
+        }
+      }
+    }
+    if (opts.persist !== false) await this.saveSettings();
+  }
+
+  syncSettingsForm() {
+    const s = this.settings || this.getDefaultSettings();
+    const modeSel = document.getElementById('set-display-mode');
+    if (modeSel) modeSel.value = s.displayMode === 'windowed' ? 'windowed' : 'fullscreen';
+
+    const resSel = document.getElementById('set-display-res');
+    if (resSel && !resSel.dataset.ready) {
+      resSel.dataset.ready = '1';
+      resSel.innerHTML = '';
+      this.getDisplayResolutions().forEach((r) => {
+        const opt = document.createElement('option');
+        opt.value = `${r.w}x${r.h}`;
+        opt.textContent = r.label;
+        resSel.appendChild(opt);
+      });
+    }
+    if (resSel) {
+      const key = `${s.width}x${s.height}`;
+      const has = [...resSel.options].some((o) => o.value === key);
+      if (!has) {
+        const opt = document.createElement('option');
+        opt.value = key;
+        opt.textContent = `${s.width}×${s.height}`;
+        resSel.appendChild(opt);
+      }
+      resSel.value = key;
+    }
+
+    const hint = document.getElementById('pause-display-hint');
+    if (hint) {
+      hint.textContent = this._saveApi()?.displaySet
+        ? '全屏时分辨率选项仅在切回窗口化后生效。'
+        : '浏览器打开时无法改窗口大小，设置仍会保存。';
+    }
+
+    const bgm = document.getElementById('set-bgm-enabled');
+    if (bgm) bgm.checked = s.playBgm !== false;
+    const master = document.getElementById('set-vol-master');
+    const masterVal = document.getElementById('set-vol-master-val');
+    if (master) master.value = String(Math.round((s.masterVolume ?? 0.7) * 100));
+    if (masterVal) masterVal.textContent = `${master?.value || 70}%`;
+    const sfx = document.getElementById('set-vol-sfx');
+    const sfxVal = document.getElementById('set-vol-sfx-val');
+    if (sfx) sfx.value = String(Math.round((s.sfxVolume ?? 1) * 100));
+    if (sfxVal) sfxVal.textContent = `${sfx?.value || 100}%`;
+  }
+
+  setupPauseMenu() {
+    const root = document.getElementById('pause-menu');
+    if (!root || this._pauseMenuBound) return;
+    this._pauseMenuBound = true;
+
+    const pages = [
+      'pause-menu-home',
+      'pause-menu-settings',
+      'pause-menu-dev',
+    ];
+    const showPage = (id) => {
+      pages.forEach((pid) => {
+        document.getElementById(pid)?.classList.toggle('hidden', pid !== id);
+      });
+      if (id === 'pause-menu-settings') {
+        this.showSettingsTab(this._settingsTab || 'display');
+        this.syncSettingsForm();
+      }
+    };
+
+    const showSettingsTab = (tab) => {
+      const key = tab === 'audio' ? 'audio' : 'display';
+      this._settingsTab = key;
+      document.querySelectorAll('.pause-settings-tab').forEach((btn) => {
+        const on = btn.dataset.settingsTab === key;
+        btn.classList.toggle('active', on);
+        btn.setAttribute('aria-selected', on ? 'true' : 'false');
+      });
+      document.querySelectorAll('.pause-settings-pane').forEach((pane) => {
+        pane.classList.toggle('hidden', pane.dataset.settingsPane !== key);
+      });
+    };
+    this.showSettingsTab = showSettingsTab;
+
+    document.getElementById('pause-resume')?.addEventListener('click', () => {
+      this.setPauseMenuOpen(false);
+    });
+    document.getElementById('pause-settings')?.addEventListener('click', () => {
+      this._settingsTab = 'display';
+      showPage('pause-menu-settings');
+    });
+    document.getElementById('pause-settings-back')?.addEventListener('click', () => {
+      showPage('pause-menu-home');
+    });
+    document.querySelectorAll('.pause-settings-tab').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        showSettingsTab(btn.dataset.settingsTab);
+        this.syncSettingsForm();
+      });
+    });
+    document.getElementById('pause-dev')?.addEventListener('click', () => {
+      showPage('pause-menu-dev');
+    });
+    document.getElementById('pause-dev-back')?.addEventListener('click', () => {
+      showPage('pause-menu-home');
+    });
+    document.getElementById('pause-quit')?.addEventListener('click', () => {
+      const api = this._saveApi();
+      this.save();
+      if (api?.quit) {
+        void api.quit();
+        return;
+      }
+      window.close();
+    });
+
+    document.getElementById('set-display-mode')?.addEventListener('change', (e) => {
+      this.settings.displayMode = e.target.value === 'windowed' ? 'windowed' : 'fullscreen';
+      void this.applySettings({ applyDisplay: true });
+      this.syncSettingsForm();
+    });
+    document.getElementById('set-display-res')?.addEventListener('change', (e) => {
+      const m = String(e.target.value || '').match(/^(\d+)x(\d+)$/i);
+      if (!m) return;
+      this.settings.width = Number(m[1]);
+      this.settings.height = Number(m[2]);
+      void this.applySettings({ applyDisplay: this.settings.displayMode === 'windowed' });
+      this.syncSettingsForm();
+    });
+    document.getElementById('set-bgm-enabled')?.addEventListener('change', (e) => {
+      this.settings.playBgm = !!e.target.checked;
+      void this.applySettings({ applyDisplay: false });
+    });
+    document.getElementById('set-vol-master')?.addEventListener('input', (e) => {
+      const pct = Number(e.target.value) || 0;
+      this.settings.masterVolume = Math.max(0, Math.min(1, pct / 100));
+      const label = document.getElementById('set-vol-master-val');
+      if (label) label.textContent = `${pct}%`;
+      void this.applySettings({ applyDisplay: false });
+    });
+    document.getElementById('set-vol-sfx')?.addEventListener('input', (e) => {
+      const pct = Number(e.target.value) || 0;
+      this.settings.sfxVolume = Math.max(0, Math.min(1, pct / 100));
+      const label = document.getElementById('set-vol-sfx-val');
+      if (label) label.textContent = `${pct}%`;
+      void this.applySettings({ applyDisplay: false });
+    });
+
+    root.addEventListener('click', (e) => {
+      if (e.target === root) this.setPauseMenuOpen(false);
+    });
+    this._showPauseMenuHome = () => showPage('pause-menu-home');
+    this._showPauseMenuPage = showPage;
+  }
+
+  isPauseMenuOpen() {
+    const el = document.getElementById('pause-menu');
+    return !!(el && !el.classList.contains('hidden'));
+  }
+
+  setPauseMenuOpen(open) {
+    const el = document.getElementById('pause-menu');
+    if (!el) return;
+    const show = !!open;
+    el.classList.toggle('hidden', !show);
+    if (show) {
+      this._showPauseMenuHome?.();
+      if (!this._pausedByMenu) {
+        this._pausedByMenu = true;
+        this._pauseMenuPrevPaused = !!this.paused;
+      }
+      this.paused = true;
+      document.getElementById('menu-dropdown')?.classList.add('hidden');
+      document.getElementById('menu-btn')?.classList.remove('active');
+    } else if (this._pausedByMenu) {
+      this.paused = this._pauseMenuPrevPaused;
+      this._pausedByMenu = false;
+      this._pauseMenuPrevPaused = false;
+      this._showPauseMenuHome?.();
+    }
+  }
+
+  /** Esc：优先关掉上层弹层，否则开关暂停菜单 */
+  handleGlobalEscape() {
+    if (this._techEditMode) return;
+    const picker = document.getElementById('dev-picker');
+    if (picker && !picker.classList.contains('hidden')) {
+      this.closeDevPicker();
+      return;
+    }
+    const devPanel = document.getElementById('dev-panel');
+    if (devPanel && !devPanel.classList.contains('hidden')) {
+      this.toggleDevPanel(false);
+      return;
+    }
+    const ach = document.getElementById('achievements-panel');
+    if (ach && !ach.classList.contains('hidden')) {
+      this.closeAchievementsPanel();
+      return;
+    }
+    const defenseHidden = document.getElementById('defense-overlay')?.classList.contains('hidden');
+    if (!defenseHidden && this._selectedUnitIds?.size) {
+      this._setFormationSelection?.([]);
+      return;
+    }
+    const pauseOpen = this.isPauseMenuOpen();
+    if (pauseOpen) {
+      const settings = document.getElementById('pause-menu-settings');
+      const dev = document.getElementById('pause-menu-dev');
+      if (settings && !settings.classList.contains('hidden')) {
+        this._showPauseMenuHome?.();
+        return;
+      }
+      if (dev && !dev.classList.contains('hidden')) {
+        this._showPauseMenuHome?.();
+        return;
+      }
+    }
+    this.setPauseMenuOpen(!pauseOpen);
   }
 
   // ========== Dev 后门 ==========
@@ -5852,14 +6200,7 @@ class FactoryGame {
 
     document.addEventListener('keydown', (e) => {
       if (e.key === 'Escape') {
-        // 科技树编辑模式不响应 Esc（需点时钟旁「退出编辑模式并保存」）
-        if (this._techEditMode) return;
-        const picker = document.getElementById('dev-picker');
-        if (picker && !picker.classList.contains('hidden')) {
-          this.closeDevPicker();
-        } else {
-          this.toggleDevPanel(false);
-        }
+        this.handleGlobalEscape();
       }
     });
 
@@ -5966,7 +6307,9 @@ class FactoryGame {
 
     document.getElementById('dev-reset-game')?.addEventListener('click', () => {
       if (!confirm('确定要重置游戏吗？所有进度将丢失！')) return;
-      localStorage.removeItem('factoryGame');
+      const api = this._saveApi();
+      if (api?.clear) void api.clear().catch(() => {});
+      try { localStorage.removeItem('factoryGame'); } catch (_) { /* ignore */ }
       if (this.sounds.bgm) {
         this.sounds.bgm.stop();
         this.sounds.bgm = null;
@@ -9045,10 +9388,12 @@ class FactoryGame {
 }
 
 let game;
-function startFactoryGame() {
-  if (game) return;
+async function startFactoryGame() {
+  if (game) return game;
   game = new FactoryGame();
   window.game = game;
+  await game.initAsync();
+  return game;
 }
 window.startFactoryGame = startFactoryGame;
 // 不在此自动启动：须等 boot.js 加载完 defense.js 等补丁后再调用 startFactoryGame()

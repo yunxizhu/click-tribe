@@ -4,13 +4,47 @@ class GameSounds {
     this.ctx = null;
     this._bound = false;
     this.masterGain = null;
+    this.sfxGain = null;
     this.bgm = null;
-    this._game = null; // FactoryGame 实例引用
+    this._game = null;
+    this._masterVolume = 0.7;
+    this._sfxVolume = 1;
+    this._playBgm = true;
   }
 
   /** 设置游戏实例引用（用于 BGM 获取游戏状态） */
   setGame(game) {
     this._game = game;
+  }
+
+  /**
+   * @param {{ masterVolume?: number, sfxVolume?: number, playBgm?: boolean }} opts
+   * master/sfx: 0~1
+   */
+  applyUserAudioSettings(opts = {}) {
+    if (opts.masterVolume != null) {
+      const n = Number(opts.masterVolume);
+      this._masterVolume = Math.max(0, Math.min(1, Number.isFinite(n) ? n : 0.7));
+    }
+    if (opts.sfxVolume != null) {
+      const n = Number(opts.sfxVolume);
+      this._sfxVolume = Math.max(0, Math.min(1, Number.isFinite(n) ? n : 1));
+    }
+    if (opts.playBgm != null) this._playBgm = !!opts.playBgm;
+    this.ensureContext();
+    if (this.masterGain) {
+      // 允许静音到 0（WebAudio 用极小值避免部分浏览器异常）
+      this.masterGain.gain.value = this._masterVolume <= 0 ? 0.0001 : this._masterVolume;
+    }
+    if (this.sfxGain) {
+      this.sfxGain.gain.value = this._sfxVolume <= 0 ? 0.0001 : this._sfxVolume;
+    }
+    if (this.bgm && typeof this.bgm.applyUserAudioSettings === 'function') {
+      this.bgm.applyUserAudioSettings({
+        playBgm: this._playBgm,
+        masterVolume: this._masterVolume,
+      });
+    }
   }
 
   bindUnlock() {
@@ -59,6 +93,10 @@ class GameSounds {
     if (this.bgm) return; // 只初始化一次
     this.bgm = new BGMPlayer();
     this.bgm.init(this.ctx, this.masterGain, this._game);
+    this.bgm.applyUserAudioSettings({
+      playBgm: this._playBgm,
+      masterVolume: this._masterVolume,
+    });
   }
 
   ensureContext() {
@@ -67,8 +105,11 @@ class GameSounds {
       if (!Ctx) return null;
       this.ctx = new Ctx();
       this.masterGain = this.ctx.createGain();
-      this.masterGain.gain.value = 0.7;
+      this.masterGain.gain.value = Math.max(0.0001, this._masterVolume);
       this.masterGain.connect(this.ctx.destination);
+      this.sfxGain = this.ctx.createGain();
+      this.sfxGain.gain.value = Math.max(0.0001, this._sfxVolume);
+      this.sfxGain.connect(this.masterGain);
     }
     if (this.ctx.state === 'suspended') {
       this.ctx.resume();
@@ -84,7 +125,7 @@ class GameSounds {
     detune = 0,
   } = {}) {
     const ctx = this.ensureContext();
-    if (!ctx || !this.masterGain) return;
+    if (!ctx || !this.sfxGain) return;
 
     const osc = ctx.createOscillator();
     const gain = ctx.createGain();
@@ -92,7 +133,7 @@ class GameSounds {
     osc.frequency.setValueAtTime(freq, start);
     osc.detune.setValueAtTime(detune, start);
     osc.connect(gain);
-    gain.connect(this.masterGain);
+    gain.connect(this.sfxGain);
 
     const peak = Math.max(0.0001, volume);
     gain.gain.setValueAtTime(0.0001, start);
@@ -105,7 +146,7 @@ class GameSounds {
 
   noiseBurst(start, duration, volume = 0.06) {
     const ctx = this.ensureContext();
-    if (!ctx || !this.masterGain) return;
+    if (!ctx || !this.sfxGain) return;
 
     const bufferSize = Math.floor(ctx.sampleRate * duration);
     const buffer = ctx.createBuffer(1, bufferSize, ctx.sampleRate);
@@ -126,7 +167,7 @@ class GameSounds {
 
     source.connect(filter);
     filter.connect(gain);
-    gain.connect(this.masterGain);
+    gain.connect(this.sfxGain);
     source.start(start);
     source.stop(start + duration);
   }

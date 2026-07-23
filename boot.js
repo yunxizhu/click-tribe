@@ -32,6 +32,10 @@
 
   window.__TRIBE_IS_ELECTRON__ = isElectron;
 
+  if (isElectron || useTribe) {
+    document.documentElement.classList.add('electron-shell');
+  }
+
   window.__TRIBE_CONFIG_BASE__ = useTribe ? 'tribe://config/' : 'config/';
 
   window.__TRIBE_MUSIC_BASE__ = useTribe ? 'tribe://music/' : 'music/';
@@ -54,7 +58,7 @@
 
   // 改脚本/配置后递增，避免浏览器强缓存
 
-  const bust = '?v=20260722m';
+  const bust = '?v=20260723n';
 
 
 
@@ -128,7 +132,7 @@
 
       if (typeof window.startFactoryGame === 'function') {
 
-        window.startFactoryGame();
+        await window.startFactoryGame();
 
       } else {
 

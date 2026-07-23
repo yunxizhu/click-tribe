@@ -3042,6 +3042,8 @@
   };
 
   P._startFormationBoxSelect = function _startFormationBoxSelect(e, field, marquee) {
+    e.preventDefault();
+    try { window.getSelection()?.removeAllRanges(); } catch (_) { /* ignore */ }
     const startX = e.clientX;
     const startY = e.clientY;
     const fieldRect = field.getBoundingClientRect();

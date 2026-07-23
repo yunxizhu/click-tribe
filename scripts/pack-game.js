@@ -212,12 +212,34 @@ async function main() {
     'utf8'
   );
 
+  console.log('[pack] 准备外置 saves/（始终空档，不拷贝开发存档）…');
+  const savesDest = path.join(built, 'saves');
+  ensureDir(savesDest);
+  // 清空目录内一切内容，保证发行包固定为空存档
+  for (const name of fs.readdirSync(savesDest)) {
+    fs.rmSync(path.join(savesDest, name), { recursive: true, force: true });
+  }
+  fs.writeFileSync(
+    path.join(savesDest, '说明.txt'),
+    [
+      '游戏存档目录（与 exe 同级）',
+      '',
+      '  factoryGame.json  — 主存档（运行后自动生成）',
+      '  settings.json     — 显示/音量设置（运行后自动生成）',
+      '',
+      '打包时此目录为空；首次运行后生成上述文件。',
+      '备份/换机：复制本文件夹即可。删除 json 等于清空进度或重置设置。',
+      '',
+    ].join('\r\n'),
+    'utf8'
+  );
+
   fs.writeFileSync(
     path.join(built, '外置资源说明.txt'),
     [
       '点击部落 — Electron 版',
       '',
-      '【可单独替换】config/  music/',
+      '【可单独替换】config/  music/  saves/',
       '【勿改】exe 与 resources/ 等运行库',
       '',
       '替换配置或音乐后请完全关闭再重新打开。',
