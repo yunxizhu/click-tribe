@@ -64,14 +64,377 @@ class FactoryGame {
   }
 
   async initAsync() {
+    this._atMainMenu = true;
+    this._inGameSession = false;
+    this.paused = true;
     await this.loadSettings();
-    const hasSave = await this.load();
-    if (!hasSave) {
-      this.state.difficulty = 'normal';
-      this.showDifficultySelect();
+    this.setupMainMenu();
+    this.setupPauseMenu();
+    await this.showBootSequence();
+  }
+
+  /** 加载动画结束后：开机闪屏 → 主菜单 */
+  async showBootSequence() {
+    const loading = document.getElementById('boot-loading');
+    const splash = document.getElementById('boot-splash');
+    const main = document.getElementById('main-menu');
+    const ver = document.getElementById('main-menu-version');
+    if (ver) ver.textContent = 'v' + (window.__TRIBE_VERSION__ || '1.0.0');
+
+    loading?.classList.add('hidden');
+    splash?.classList.remove('hidden');
+    await new Promise((r) => setTimeout(r, 1600));
+    splash?.classList.add('hidden');
+    main?.classList.remove('hidden');
+    this.showMainMenuHome();
+    await this.refreshMainMenuLoadButton();
+    this._ensureMenuBgmUnlock();
+    this.sounds?.ensureContext?.();
+    this.startMenuBgm({ forceNew: true });
+  }
+
+  showMainMenuHome() {
+    document.getElementById('main-menu-home')?.classList.remove('hidden');
+    document.getElementById('main-menu-settings')?.classList.add('hidden');
+    document.getElementById('main-menu-dev')?.classList.add('hidden');
+  }
+
+  showMainMenuPage(id) {
+    const pages = ['main-menu-home', 'main-menu-settings', 'main-menu-dev'];
+    pages.forEach((pid) => {
+      document.getElementById(pid)?.classList.toggle('hidden', pid !== id);
+    });
+    if (id === 'main-menu-settings') {
+      this.showMainSettingsTab(this._mmSettingsTab || 'display');
+      this.syncSettingsForm();
+    }
+  }
+
+  async refreshMainMenuLoadButton() {
+    const btn = document.getElementById('mm-load');
+    if (!btn) return;
+    const has = await this.hasSaveData();
+    btn.disabled = !has;
+    btn.title = has ? '继续已有存档' : '暂无存档';
+  }
+
+  enterGameShell() {
+    this._atMainMenu = false;
+    document.getElementById('boot-shell')?.classList.add('hidden');
+    document.getElementById('app')?.classList.remove('app-beneath-shell');
+  }
+
+  leaveGameToMainMenuShell() {
+    this._atMainMenu = true;
+    this._inGameSession = false;
+    this.paused = true;
+    this.setPauseMenuOpen(false);
+    document.getElementById('difficulty-select')?.classList.add('hidden');
+    document.getElementById('boot-transition')?.classList.add('hidden');
+    document.getElementById('boot-transition')?.classList.remove('boot-transition-play');
+    document.getElementById('defense-intro')?.classList.add('hidden');
+    document.getElementById('tutorial-overlay')?.classList.add('hidden');
+    document.getElementById('game-over')?.classList.add('hidden');
+    document.getElementById('victory-screen')?.classList.add('hidden');
+    document.getElementById('story-dialog')?.classList.add('hidden');
+    document.getElementById('battle-screen')?.classList.add('hidden');
+    document.getElementById('achievements-panel')?.classList.add('hidden');
+    document.getElementById('dev-panel')?.classList.add('hidden');
+    document.getElementById('app')?.classList.add('app-beneath-shell');
+    document.getElementById('boot-shell')?.classList.remove('hidden');
+    document.getElementById('boot-loading')?.classList.add('hidden');
+    document.getElementById('boot-splash')?.classList.add('hidden');
+    document.getElementById('main-menu')?.classList.remove('hidden');
+    this.showMainMenuHome();
+    void this.refreshMainMenuLoadButton();
+    this.startMenuBgm({ forceNew: true });
+  }
+
+  async clearSaveFiles() {
+    const api = this._saveApi();
+    if (api?.clear) {
+      try { await api.clear(); } catch (_) { /* ignore */ }
+    }
+    try { localStorage.removeItem('factoryGame'); } catch (_) { /* ignore */ }
+  }
+
+  stopGameBgm() {
+    try {
+      if (this.sounds?.bgm) {
+        this.sounds.bgm.stop?.();
+        this.sounds.bgm = null;
+      }
+    } catch (_) { /* ignore */ }
+  }
+
+  stopMenuBgm() {
+    const a = this._menuBgmAudio;
+    this._menuBgmAudio = null;
+    if (!a) return;
+    try {
+      a.pause();
+      a.src = '';
+    } catch (_) { /* ignore */ }
+  }
+
+  /** 主界面循环 BGM：Wish5 / Deep_Woods 每次随机选一首 */
+  _menuBgmTracks() {
+    return [
+      '可愛らしいハープのワルツ「Wish5」_PerituneMaterial_Wish5_HarpOnly.mp3',
+      '淋しげな森のBGM「Deep_Woods」_PerituneMaterial_Deep_Woods_loop.mp3',
+    ];
+  }
+
+  _pickMenuBgmFile() {
+    const list = this._menuBgmTracks();
+    return list[Math.floor(Math.random() * list.length)] || list[0];
+  }
+
+  startMenuBgm({ forceNew = false } = {}) {
+    if (!this._atMainMenu) return;
+    if (this.settings?.playBgm === false) {
+      this.stopMenuBgm();
       return;
     }
+    if (this._menuBgmAudio && !forceNew) {
+      try {
+        this._menuBgmAudio.volume = this._menuBgmVolume();
+        if (this._menuBgmAudio.paused) {
+          void this._menuBgmAudio.play().catch(() => {});
+        }
+        return;
+      } catch (_) {
+        this.stopMenuBgm();
+      }
+    }
+    if (forceNew) this.stopMenuBgm();
+
+    const file = this._pickMenuBgmFile();
+    const url = typeof window.tribeMusicUrl === 'function'
+      ? window.tribeMusicUrl(file)
+      : ('music/' + file);
+    const a = new Audio(url);
+    a.loop = true;
+    a.preload = 'auto';
+    a.volume = this._menuBgmVolume();
+    this._menuBgmAudio = a;
+    void a.play().then(() => {
+      console.log('[BGM] 主界面音轨选用:', file);
+    }).catch(() => {
+      // 等用户手势再播
+    });
+  }
+
+  _menuBgmVolume() {
+    const master = Math.max(0, Math.min(1, Number(this.settings?.masterVolume ?? 0.7)));
+    return Math.max(0, Math.min(1, master * 0.4));
+  }
+
+  /** 绑定主菜单首次交互以解锁自动播放 */
+  _ensureMenuBgmUnlock() {
+    if (this._menuBgmUnlockBound) return;
+    this._menuBgmUnlockBound = true;
+    const unlock = () => {
+      this.sounds?.ensureContext?.();
+      if (this._atMainMenu) this.startMenuBgm();
+      document.removeEventListener('pointerdown', unlock);
+      document.removeEventListener('keydown', unlock);
+    };
+    document.addEventListener('pointerdown', unlock, { passive: true });
+    document.addEventListener('keydown', unlock);
+  }
+
+  async startNewGameFromMenu() {
+    const has = await this.hasSaveData();
+    if (has && !confirm('开始新游戏将覆盖当前存档，确定吗？')) return;
+    await this.clearSaveFiles();
+    this.state = this.getDefaultState();
+    this.state.difficulty = 'normal';
+    this.timeScale = 1;
+    this.devTimeScale = 1;
+    this._starvationDialogOpen = false;
+    this._pendingStarvationAlert = null;
+    this.clearTutorialHighlights?.();
+    // 仍留在主菜单壳上选难度，选完经中转后再正式进游戏
+    this._inGameSession = false;
+    this._atMainMenu = true;
+    this._difficultyFromMainMenu = true;
+    document.getElementById('main-menu-settings')?.classList.add('hidden');
+    document.getElementById('main-menu-dev')?.classList.add('hidden');
+    document.getElementById('main-menu-home')?.classList.add('hidden');
+    this.showDifficultySelect();
+  }
+
+  async loadGameFromMenu() {
+    const ok = await this.load();
+    if (!ok) {
+      alert('没有可用存档');
+      await this.refreshMainMenuLoadButton();
+      return;
+    }
+    this.stopMenuBgm();
+    await this.playBootTransition('正在读取存档…');
+    this.enterGameShell();
+    this._inGameSession = true;
+    this.paused = false;
+    this.sounds.ensureContext();
+    this.sounds._initBGM();
     this.resumeAfterDifficultySetup();
+  }
+
+  /** 选完难度后进入游戏的中转动画 */
+  async playBootTransition(message = '正在进入村落…') {
+    const el = document.getElementById('boot-transition');
+    const text = document.getElementById('boot-transition-text');
+    if (text) text.textContent = message;
+    if (!el) {
+      await new Promise((r) => setTimeout(r, 400));
+      return;
+    }
+    el.classList.remove('hidden');
+    el.classList.remove('boot-transition-play');
+    void el.offsetWidth;
+    el.classList.add('boot-transition-play');
+    await new Promise((r) => setTimeout(r, 1450));
+    el.classList.add('hidden');
+    el.classList.remove('boot-transition-play');
+  }
+
+  /** 难度确认后：中转 → 正式进入游戏 */
+  async beginGameAfterDifficulty() {
+    this._pickingDifficulty = false;
+    document.getElementById('difficulty-select')?.classList.add('hidden');
+    const fromMenu = !!this._difficultyFromMainMenu;
+    this._difficultyFromMainMenu = false;
+    this.applyNewGameTutorialPreference();
+    this.stopMenuBgm();
+    await this.playBootTransition(fromMenu ? '正在进入村落…' : '正在重新开始…');
+    this.enterGameShell();
+    this._inGameSession = true;
+    this.paused = false;
+    this.sounds.ensureContext();
+    this.sounds._initBGM();
+    this.resumeAfterDifficultySetup();
+  }
+
+  returnToMainMenu({ skipConfirm = false } = {}) {
+    if (!skipConfirm && !confirm('返回主界面？当前进度将自动保存。')) return;
+    if (this._inGameSession) this.save();
+    this.stopGameBgm();
+    this.leaveGameToMainMenuShell();
+  }
+
+  quitApp() {
+    if (this._inGameSession) this.save();
+    const api = this._saveApi();
+    if (api?.quit) {
+      void api.quit();
+      return;
+    }
+    window.close();
+  }
+
+  setupMainMenu() {
+    if (this._mainMenuBound) return;
+    this._mainMenuBound = true;
+
+    if (!this._globalEscBound) {
+      this._globalEscBound = true;
+      document.addEventListener('keydown', (e) => {
+        if (e.key === 'Escape') this.handleGlobalEscape();
+      });
+    }
+
+    document.getElementById('mm-start')?.addEventListener('click', () => {
+      void this.startNewGameFromMenu();
+    });
+    document.getElementById('mm-load')?.addEventListener('click', () => {
+      void this.loadGameFromMenu();
+    });
+    document.getElementById('mm-settings')?.addEventListener('click', () => {
+      this._mmSettingsTab = 'display';
+      this.showMainMenuPage('main-menu-settings');
+    });
+    document.getElementById('mm-settings-back')?.addEventListener('click', () => {
+      this.showMainMenuHome();
+    });
+    document.getElementById('mm-dev')?.addEventListener('click', () => {
+      this.showMainMenuPage('main-menu-dev');
+    });
+    document.getElementById('mm-dev-back')?.addEventListener('click', () => {
+      this.showMainMenuHome();
+    });
+    document.getElementById('mm-quit')?.addEventListener('click', () => this.quitApp());
+
+    const showMainSettingsTab = (tab) => {
+      const key = (tab === 'audio' || tab === 'game') ? tab : 'display';
+      this._mmSettingsTab = key;
+      document.querySelectorAll('[data-mm-settings-tab]').forEach((btn) => {
+        const on = btn.dataset.mmSettingsTab === key;
+        btn.classList.toggle('active', on);
+        btn.setAttribute('aria-selected', on ? 'true' : 'false');
+      });
+      document.querySelectorAll('[data-mm-settings-pane]').forEach((pane) => {
+        pane.classList.toggle('hidden', pane.dataset.mmSettingsPane !== key);
+      });
+    };
+    this.showMainSettingsTab = showMainSettingsTab;
+
+    document.querySelectorAll('[data-mm-settings-tab]').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        showMainSettingsTab(btn.dataset.mmSettingsTab);
+        this.syncSettingsForm();
+      });
+    });
+
+    document.getElementById('mm-set-display-mode')?.addEventListener('change', (e) => {
+      this.settings.displayMode = e.target.value === 'windowed' ? 'windowed' : 'fullscreen';
+      void this.applySettings({ applyDisplay: true });
+      this.syncSettingsForm();
+    });
+    document.getElementById('mm-set-display-res')?.addEventListener('change', (e) => {
+      const m = String(e.target.value || '').match(/^(\d+)x(\d+)$/i);
+      if (!m) return;
+      this.settings.width = Number(m[1]);
+      this.settings.height = Number(m[2]);
+      void this.applySettings({ applyDisplay: this.settings.displayMode === 'windowed' });
+      this.syncSettingsForm();
+    });
+    document.getElementById('mm-set-bgm-enabled')?.addEventListener('change', (e) => {
+      this.settings.playBgm = !!e.target.checked;
+      void this.applySettings({ applyDisplay: false });
+    });
+    document.getElementById('mm-set-vol-master')?.addEventListener('input', (e) => {
+      const pct = Number(e.target.value) || 0;
+      this.settings.masterVolume = Math.max(0, Math.min(1, pct / 100));
+      const label = document.getElementById('mm-set-vol-master-val');
+      if (label) label.textContent = `${pct}%`;
+      void this.applySettings({ applyDisplay: false });
+    });
+    document.getElementById('mm-set-vol-sfx')?.addEventListener('input', (e) => {
+      const pct = Number(e.target.value) || 0;
+      this.settings.sfxVolume = Math.max(0, Math.min(1, pct / 100));
+      const label = document.getElementById('mm-set-vol-sfx-val');
+      if (label) label.textContent = `${pct}%`;
+      void this.applySettings({ applyDisplay: false });
+    });
+    document.getElementById('mm-set-enable-tutorial')?.addEventListener('change', (e) => {
+      this.settings.enableTutorial = !!e.target.checked;
+      void this.applySettings({ applyDisplay: false });
+      this.syncSettingsForm();
+    });
+  }
+
+  /** 新开局时按设置决定是否跳过新手教程 */
+  applyNewGameTutorialPreference() {
+    if (!this.state.tutorial) this.state.tutorial = this.createDefaultTutorialState();
+    if (this.settings?.enableTutorial === false) {
+      this.state.tutorial.skipped = true;
+      this.state.tutorial.completed = true;
+      this.state.tutorial.stepIndex = 0;
+    } else {
+      this.state.tutorial = this.createDefaultTutorialState();
+    }
   }
 
   getDefaultState() {
@@ -174,7 +537,7 @@ class FactoryGame {
       day: 1,
       dayProgress: (() => {
         const dayMs = GAME_DATA.calendar?.dayDurationMs || 900000;
-        const hour = GAME_DATA.calendar?.startHour ?? 6;
+        const hour = GAME_DATA.calendar?.startHour ?? 8;
         return (Math.max(0, Math.min(23, hour)) / 24) * dayMs;
       })(),
       hungryCount: 0,
@@ -258,11 +621,12 @@ class FactoryGame {
     };
   }
 
-  /** 显示难度选择界面（无存档时调用） */
+  /** 显示难度选择界面（主菜单开新局 / 重置存档） */
   showDifficultySelect() {
     const el = document.getElementById('difficulty-select');
     if (el) el.classList.remove('hidden');
     this.paused = true;
+    this._pickingDifficulty = true;
 
     // 默认显示正常的因子说明
     const normalDef = GAME_DATA.difficulty?.levels?.normal;
@@ -286,17 +650,16 @@ class FactoryGame {
         const cur = this.state.difficulty || 'normal';
         document.getElementById('diff-desc').textContent = this._formatDiffDetails(cur);
       });
-      // 点击直接开始
+      // 选定难度 → 中转动画 → 正式进游戏
       btn.addEventListener('click', () => {
+        if (this._difficultyConfirming) return;
+        this._difficultyConfirming = true;
         const diff = btn.dataset.difficulty;
         this.state.difficulty = diff;
         this.applyDifficultyStartingLoadout();
-        this.paused = false;
-        document.getElementById('difficulty-select')?.classList.add('hidden');
-        // 用户点击时创建 AudioContext 并初始化 BGM
-        this.sounds.ensureContext();
-        this.sounds._initBGM();
-        this.resumeAfterDifficultySetup();
+        void this.beginGameAfterDifficulty().finally(() => {
+          this._difficultyConfirming = false;
+        });
       });
     });
   }
@@ -376,6 +739,7 @@ class FactoryGame {
 
   /** 难度选择后继续初始化流程 */
   resumeAfterDifficultySetup() {
+    this._pickingDifficulty = false;
     // 确保隐藏难度选择界面
     document.getElementById('difficulty-select')?.classList.add('hidden');
     // 开局/重置后固定落在森林采集，避免停在科技合屏导致点不到中间
@@ -419,6 +783,7 @@ class FactoryGame {
 
   // ========== 存档 ==========
   save() {
+    if (!this._inGameSession) return;
     this.state.lastSaveTime = Date.now();
     const raw = JSON.stringify(this.state);
     const api = this._saveApi();
@@ -864,7 +1229,8 @@ class FactoryGame {
     document.getElementById('defense-intro')?.classList.add('hidden');
     this._starvationDialogOpen = false;
     this._pendingStarvationAlert = null;
-    // 重置难度选择
+    // 重置难度选择（局内重置，不经主菜单）
+    this._difficultyFromMainMenu = false;
     this.showDifficultySelect();
   }
 
@@ -5893,6 +6259,8 @@ class FactoryGame {
       playBgm: true,
       masterVolume: 0.7,
       sfxVolume: 1,
+      /** 新开局是否启动新手教程（默认开） */
+      enableTutorial: true,
     };
   }
 
@@ -5966,25 +6334,26 @@ class FactoryGame {
       }
     }
     if (opts.persist !== false) await this.saveSettings();
+    if (this._atMainMenu) {
+      if (s.playBgm !== false) this.startMenuBgm();
+      else this.stopMenuBgm();
+    }
   }
 
   syncSettingsForm() {
     const s = this.settings || this.getDefaultSettings();
-    const modeSel = document.getElementById('set-display-mode');
-    if (modeSel) modeSel.value = s.displayMode === 'windowed' ? 'windowed' : 'fullscreen';
-
-    const resSel = document.getElementById('set-display-res');
-    if (resSel && !resSel.dataset.ready) {
-      resSel.dataset.ready = '1';
-      resSel.innerHTML = '';
-      this.getDisplayResolutions().forEach((r) => {
-        const opt = document.createElement('option');
-        opt.value = `${r.w}x${r.h}`;
-        opt.textContent = r.label;
-        resSel.appendChild(opt);
-      });
-    }
-    if (resSel) {
+    const fillResSelect = (resSel) => {
+      if (!resSel) return;
+      if (!resSel.dataset.ready) {
+        resSel.dataset.ready = '1';
+        resSel.innerHTML = '';
+        this.getDisplayResolutions().forEach((r) => {
+          const opt = document.createElement('option');
+          opt.value = `${r.w}x${r.h}`;
+          opt.textContent = r.label;
+          resSel.appendChild(opt);
+        });
+      }
       const key = `${s.width}x${s.height}`;
       const has = [...resSel.options].some((o) => o.value === key);
       if (!has) {
@@ -5994,25 +6363,44 @@ class FactoryGame {
         resSel.appendChild(opt);
       }
       resSel.value = key;
-    }
+    };
 
+    const modeSel = document.getElementById('set-display-mode');
+    if (modeSel) modeSel.value = s.displayMode === 'windowed' ? 'windowed' : 'fullscreen';
+    const mmMode = document.getElementById('mm-set-display-mode');
+    if (mmMode) mmMode.value = s.displayMode === 'windowed' ? 'windowed' : 'fullscreen';
+
+    fillResSelect(document.getElementById('set-display-res'));
+    fillResSelect(document.getElementById('mm-set-display-res'));
+
+    const hintText = this._saveApi()?.displaySet
+      ? '全屏时分辨率选项仅在切回窗口化后生效。'
+      : '浏览器打开时无法改窗口大小，设置仍会保存。';
     const hint = document.getElementById('pause-display-hint');
-    if (hint) {
-      hint.textContent = this._saveApi()?.displaySet
-        ? '全屏时分辨率选项仅在切回窗口化后生效。'
-        : '浏览器打开时无法改窗口大小，设置仍会保存。';
-    }
+    if (hint) hint.textContent = hintText;
+    const mmHint = document.getElementById('mm-pause-display-hint');
+    if (mmHint) mmHint.textContent = hintText;
 
-    const bgm = document.getElementById('set-bgm-enabled');
-    if (bgm) bgm.checked = s.playBgm !== false;
-    const master = document.getElementById('set-vol-master');
-    const masterVal = document.getElementById('set-vol-master-val');
-    if (master) master.value = String(Math.round((s.masterVolume ?? 0.7) * 100));
-    if (masterVal) masterVal.textContent = `${master?.value || 70}%`;
-    const sfx = document.getElementById('set-vol-sfx');
-    const sfxVal = document.getElementById('set-vol-sfx-val');
-    if (sfx) sfx.value = String(Math.round((s.sfxVolume ?? 1) * 100));
-    if (sfxVal) sfxVal.textContent = `${sfx?.value || 100}%`;
+    const syncAudio = (bgmId, masterId, masterValId, sfxId, sfxValId) => {
+      const bgm = document.getElementById(bgmId);
+      if (bgm) bgm.checked = s.playBgm !== false;
+      const master = document.getElementById(masterId);
+      const masterVal = document.getElementById(masterValId);
+      if (master) master.value = String(Math.round((s.masterVolume ?? 0.7) * 100));
+      if (masterVal) masterVal.textContent = `${master?.value || 70}%`;
+      const sfx = document.getElementById(sfxId);
+      const sfxVal = document.getElementById(sfxValId);
+      if (sfx) sfx.value = String(Math.round((s.sfxVolume ?? 1) * 100));
+      if (sfxVal) sfxVal.textContent = `${sfx?.value || 100}%`;
+    };
+    syncAudio('set-bgm-enabled', 'set-vol-master', 'set-vol-master-val', 'set-vol-sfx', 'set-vol-sfx-val');
+    syncAudio('mm-set-bgm-enabled', 'mm-set-vol-master', 'mm-set-vol-master-val', 'mm-set-vol-sfx', 'mm-set-vol-sfx-val');
+
+    const tutOn = s.enableTutorial !== false;
+    const tut = document.getElementById('set-enable-tutorial');
+    if (tut) tut.checked = tutOn;
+    const mmTut = document.getElementById('mm-set-enable-tutorial');
+    if (mmTut) mmTut.checked = tutOn;
   }
 
   setupPauseMenu() {
@@ -6036,14 +6424,14 @@ class FactoryGame {
     };
 
     const showSettingsTab = (tab) => {
-      const key = tab === 'audio' ? 'audio' : 'display';
+      const key = (tab === 'audio' || tab === 'game') ? tab : 'display';
       this._settingsTab = key;
-      document.querySelectorAll('.pause-settings-tab').forEach((btn) => {
+      document.querySelectorAll('#pause-menu-settings [data-settings-tab]').forEach((btn) => {
         const on = btn.dataset.settingsTab === key;
         btn.classList.toggle('active', on);
         btn.setAttribute('aria-selected', on ? 'true' : 'false');
       });
-      document.querySelectorAll('.pause-settings-pane').forEach((pane) => {
+      document.querySelectorAll('#pause-menu-settings [data-settings-pane]').forEach((pane) => {
         pane.classList.toggle('hidden', pane.dataset.settingsPane !== key);
       });
     };
@@ -6059,7 +6447,7 @@ class FactoryGame {
     document.getElementById('pause-settings-back')?.addEventListener('click', () => {
       showPage('pause-menu-home');
     });
-    document.querySelectorAll('.pause-settings-tab').forEach((btn) => {
+    document.querySelectorAll('#pause-menu-settings [data-settings-tab]').forEach((btn) => {
       btn.addEventListener('click', () => {
         showSettingsTab(btn.dataset.settingsTab);
         this.syncSettingsForm();
@@ -6071,14 +6459,11 @@ class FactoryGame {
     document.getElementById('pause-dev-back')?.addEventListener('click', () => {
       showPage('pause-menu-home');
     });
+    document.getElementById('pause-to-main')?.addEventListener('click', () => {
+      this.returnToMainMenu();
+    });
     document.getElementById('pause-quit')?.addEventListener('click', () => {
-      const api = this._saveApi();
-      this.save();
-      if (api?.quit) {
-        void api.quit();
-        return;
-      }
-      window.close();
+      this.quitApp();
     });
 
     document.getElementById('set-display-mode')?.addEventListener('change', (e) => {
@@ -6111,6 +6496,11 @@ class FactoryGame {
       const label = document.getElementById('set-vol-sfx-val');
       if (label) label.textContent = `${pct}%`;
       void this.applySettings({ applyDisplay: false });
+    });
+    document.getElementById('set-enable-tutorial')?.addEventListener('change', (e) => {
+      this.settings.enableTutorial = !!e.target.checked;
+      void this.applySettings({ applyDisplay: false });
+      this.syncSettingsForm();
     });
 
     root.addEventListener('click', (e) => {
@@ -6150,6 +6540,44 @@ class FactoryGame {
   /** Esc：优先关掉上层弹层，否则开关暂停菜单 */
   handleGlobalEscape() {
     if (this._techEditMode) return;
+
+    if (this._atMainMenu) {
+      const settings = document.getElementById('main-menu-settings');
+      const dev = document.getElementById('main-menu-dev');
+      if (settings && !settings.classList.contains('hidden')) {
+        this.showMainMenuHome();
+        return;
+      }
+      if (dev && !dev.classList.contains('hidden')) {
+        this.showMainMenuHome();
+        return;
+      }
+      return;
+    }
+
+    const diffSel = document.getElementById('difficulty-select');
+    if (this._pickingDifficulty || (diffSel && !diffSel.classList.contains('hidden'))) {
+      this._pickingDifficulty = false;
+      this._difficultyConfirming = false;
+      document.getElementById('difficulty-select')?.classList.add('hidden');
+      if (this._difficultyFromMainMenu || this._atMainMenu) {
+        this._difficultyFromMainMenu = false;
+        this._inGameSession = false;
+        this._atMainMenu = true;
+        document.getElementById('boot-shell')?.classList.remove('hidden');
+        document.getElementById('main-menu')?.classList.remove('hidden');
+        this.showMainMenuHome();
+        void this.refreshMainMenuLoadButton();
+        this.startMenuBgm();
+      } else {
+        // 局内重置取消：回主界面更干净
+        this._inGameSession = false;
+        this.stopGameBgm();
+        this.leaveGameToMainMenuShell();
+      }
+      return;
+    }
+
     const picker = document.getElementById('dev-picker');
     if (picker && !picker.classList.contains('hidden')) {
       this.closeDevPicker();
@@ -6200,6 +6628,8 @@ class FactoryGame {
 
     document.addEventListener('keydown', (e) => {
       if (e.key === 'Escape') {
+        // 已在 setupMainMenu 全局绑定；此处保留兼容旧路径但不重复处理
+        if (this._globalEscBound) return;
         this.handleGlobalEscape();
       }
     });
@@ -6334,6 +6764,7 @@ class FactoryGame {
       }
       this._starvationDialogOpen = false;
       this._pendingStarvationAlert = null;
+      this._difficultyFromMainMenu = false;
       this.showDifficultySelect();
     });
 

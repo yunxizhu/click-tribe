@@ -1316,6 +1316,8 @@ const GAME_DATA = {
     dayDurationMs: 900000,
     foodPerVillager: 1,
     startingFood: 30,
+    /** 新开局游戏内时刻（避开 6:00 日出单次音乐，开局直接进白天持续轨） */
+    startHour: 8,
     /** 休息时段 [restStartHour, 24) ∪ [0, restEndHour) */
     restStartHour: 22,
     restEndHour: 6,

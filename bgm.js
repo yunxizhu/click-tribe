@@ -3,10 +3,10 @@
  * 不依赖 createMediaElementSource，兼容 file:// 协议。
  *
  * 独立时间线（可交叉重叠）：
- *   - 白天轨 6:00~18:00  Satie Gymnopedie No 1（双轨错位）
- *   - 黄昏轨 18:00~22:00 Satie Gymnopedie No 1（单轨）
+ *   - 白天轨 6:00~18:00  曲目随机（音量 0.3 / 倍速 1.1）
+ *   - 黄昏轨 18:00~22:00 曲目随机（音量 0.25 / 倍速 0.8）
  *   - 夜间轨 19:00~6:00  night_bgm.mp3
- *   - 休息轨 22:00~6:00  Satie Gymnopedie No 1（0.5x, 0.25 音量）
+ *   - 休息轨 22:00~6:00  Satie Gymnopedie No 1（0.5x, 0.20 音量）
  *   - 袭击轨 任意时段    Suspense7（叠加在背景轨之上；袭击期间暂停白天/黄昏轨）
  *   - 战斗轨 战斗期间      Fight（独占播放，暂停其他所有音轨）
  */
@@ -27,13 +27,24 @@
       this._loaded = false;
 
       // 独立音轨
-      this._dayAudio = null;       // [trackA, trackB] 白天双轨
-      this._dayAltAudio = null;
+      this._dayAudio = null;       // 白天单轨（Positive2/3 / Harvest2 随机）
+      this._dayAltAudio = null;    // 兼容旧槽位（不再使用）
       this._duskAudio = null;      // 黄昏单轨
       this._nightAudio = null;     // 夜间单轨
       this._restAudio = null;      // 休息单轨
       this._suspenseAudio = null;  // 袭击轨
       this._fightAudio = null;     // 战斗轨
+
+      this._dayTrackFiles = [
+        'ほのぼのした日常曲「Positive2」_PerituneMaterial_Positive2_loop.mp3',
+        'ほのぼのとした日常BGM「Positive3」_PerituneMaterial_Positive3_loop.mp3',
+        '牧歌的なケルト曲「Harvest2」_PerituneMaterial_Harvest2_loop.mp3',
+        '切ないケルト曲「Nostalgic Jig」_PerituneMaterial_Nostalgic_Jig_loop.mp3',
+      ];
+      this._duskTrackFiles = [
+        'Satie Gymnopedie No 1.mp3',
+        '切ないピアノソロ「Piano_Melancholy」_PerituneMaterial_Piano_Melancholy.mp3',
+      ];
 
       // 各轨目标音量
       this._dayVol = 0;
@@ -145,6 +156,8 @@
       this._loaded = true;
       console.log('[BGM] 初始化完成');
       // 预加载音频文件（异步加载，不阻塞）
+      (this._dayTrackFiles || []).forEach((f) => this._preloadAudio(musicUrl(f)));
+      (this._duskTrackFiles || []).forEach((f) => this._preloadAudio(musicUrl(f)));
       this._preloadAudio(musicUrl('Satie Gymnopedie No 1.mp3'));
       this._preloadAudio(musicUrl('night_bgm.mp3'));
       this._preloadAudio(musicUrl('Suspense7_PerituneMaterial_Suspense7_loop.mp3'));
@@ -382,20 +395,29 @@
 
     // ========== 白天轨（6:00~18:00） ==========
 
+    _pickDayTrackFile() {
+      const list = this._dayTrackFiles || [];
+      if (!list.length) return 'ほのぼのした日常曲「Positive2」_PerituneMaterial_Positive2_loop.mp3';
+      return list[Math.floor(Math.random() * list.length)];
+    }
+
     _createDayAudios() {
       if (!this._userPlayBgm) return;
-      const urlDay = musicUrl('Satie Gymnopedie No 1.mp3');
+      const file = this._pickDayTrackFile();
+      const urlDay = musicUrl(file);
+      // 仅换曲目；音量/倍速沿用原白天轨
       const mainVol = 0.3;
+      const rate = 1.1;
 
       this._dayVol = mainVol;
+      this._dayAltAudio = null;
 
-      // Track A：从头播放，1x
-      const a = this._createAudio(urlDay, true, 1.1);
+      const a = this._createAudio(urlDay, true, rate);
       a.play().then(() => {
         this._onTrackReady(a, '_dayAudio', mainVol);
         if (this._dayAudio === a && this._initialFade !== 0) this._fadeIn(a, mainVol);
-      }).catch(e => console.warn('[BGM] 白天 Track A 播放失败:', e));
-
+        console.log('[BGM] 白天音轨选用:', file);
+      }).catch(e => console.warn('[BGM] 白天音轨播放失败:', e));
     }
 
     _startDay() {
@@ -416,15 +438,25 @@
 
     // ========== 黄昏轨（18:00~22:00） ==========
 
+    _pickDuskTrackFile() {
+      const list = this._duskTrackFiles || [];
+      if (!list.length) return 'Satie Gymnopedie No 1.mp3';
+      return list[Math.floor(Math.random() * list.length)];
+    }
+
     _createDuskAudio() {
       if (!this._userPlayBgm) return;
-      const url = musicUrl('Satie Gymnopedie No 1.mp3');
+      const file = this._pickDuskTrackFile();
+      const url = musicUrl(file);
+      // 仅换曲目；音量/倍速沿用原黄昏轨
       const vol = 0.25;
+      const rate = 0.8;
       this._duskVol = vol;
-      const a = this._createAudio(url, true, 0.8);
+      const a = this._createAudio(url, true, rate);
       a.play().then(() => {
         this._onTrackReady(a, '_duskAudio', vol);
         if (this._duskAudio === a && this._initialFade !== 0) this._fadeIn(a, vol);
+        console.log('[BGM] 黄昏音轨选用:', file);
       }).catch(e => console.warn('[BGM] 黄昏音轨播放失败:', e));
     }
 
