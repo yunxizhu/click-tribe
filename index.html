@@ -1,0 +1,287 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>点击部落</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <div id="app">
+    <header class="game-header">
+      <h1>🏕️ 点击部落</h1>
+      <div class="header-calendar-wrap" id="calendar-wrap">
+        <div class="game-clock" id="game-clock" title="游戏内时钟（24小时）">
+          <div class="game-clock-face">
+            <span class="game-clock-mark m0">0</span>
+            <span class="game-clock-mark m6">6</span>
+            <span class="game-clock-mark m12">12</span>
+            <span class="game-clock-mark m18">18</span>
+            <div class="game-clock-hand hour" id="clock-hand-hour"></div>
+            <div class="game-clock-hand minute" id="clock-hand-minute"></div>
+            <div class="game-clock-center"></div>
+          </div>
+        </div>
+        <span id="calendar-display" class="header-calendar">第 1 天 00:00</span>
+        <div class="header-speed" id="header-speed" title="游戏时间加速（不影响手动点击单次收益）">
+          <span class="speed-thumb" id="speed-thumb" aria-hidden="true"></span>
+          <button type="button" class="speed-btn active" data-speed="1" aria-label="正常速度 1×" title="正常速度">
+            <span class="speed-tag">1×</span>
+          </button>
+          <button type="button" class="speed-btn" data-speed="2" aria-label="2倍速" title="2倍速">
+            <span class="speed-icon" aria-hidden="true">▶️</span><span class="speed-tag">2×</span>
+          </button>
+          <button type="button" class="speed-btn" data-speed="4" aria-label="4倍速" title="4倍速">
+            <span class="speed-icon" aria-hidden="true">⏩</span><span class="speed-tag">4×</span>
+          </button>
+        </div>
+      </div>
+      <div class="header-right">
+        <span id="raid-status" class="raid-status" title="来袭状态">和平</span>
+        <span id="total-clicks-display">总点击: 0</span>
+        <div class="game-menu">
+          <button id="menu-btn" class="btn-menu" title="菜单">☰</button>
+          <div id="menu-dropdown" class="menu-dropdown hidden">
+            <button class="menu-item" id="menu-achievements">成就</button>
+            <button class="menu-item menu-item-danger" id="menu-reset">重置存档</button>
+          </div>
+        </div>
+      </div>
+    </header>
+
+    <main class="game-main">
+      <aside class="sidebar left">
+        <h3 id="forage-section-title">觅食</h3>
+        <div id="forage-list" class="station-list"></div>
+        <h3 id="gather-section-title">采集</h3>
+        <div id="gather-list" class="station-list"></div>
+        <h3 id="craft-section-title" class="section-title">生产中</h3>
+        <div id="craft-station-list" class="station-list"></div>
+      </aside>
+
+      <section class="center-panel">
+        <div class="point-display">
+          <div id="point-icon" class="point-icon">🌲</div>
+          <h2 id="point-name">森林</h2>
+          <p id="point-desc" class="point-desc">砍伐树木获取木头</p>
+          <div class="point-stats">
+            <span id="click-power">点击效率: 1/次</span>
+            <span id="yield-info"></span>
+          </div>
+        </div>
+
+        <div id="click-area" class="click-area">
+          <div class="progress-container" id="progress-container">
+            <div id="progress-bar" class="progress-bar"></div>
+            <span id="progress-text" class="progress-text">0 / 10</span>
+          </div>
+          <div id="chest-open-ui" class="chest-open-ui hidden">
+            <div id="chest-visual" class="chest-visual progress-0">
+              <div class="chest-glow-ring" aria-hidden="true"></div>
+              <div class="chest-box">
+                <div class="chest-lid">
+                  <div class="chest-lid-top"></div>
+                  <div class="chest-lid-front"></div>
+                </div>
+                <div class="chest-base">
+                  <div class="chest-base-front"></div>
+                  <div class="chest-lock"></div>
+                </div>
+                <div class="chest-sparkles" id="chest-sparkles" aria-hidden="true"></div>
+              </div>
+            </div>
+            <p id="chest-open-hint" class="chest-open-hint">点击开启宝箱（0/4）</p>
+          </div>
+          <p class="click-hint">点击或按住采集，分配工人后才会自动累积进度</p>
+        </div>
+
+        <div id="point-upgrades" class="point-upgrades"></div>
+        <div id="point-workers" class="point-workers"></div>
+      </section>
+
+      <aside class="sidebar right">
+        <div class="sidebar-right-layout">
+          <nav class="right-nav" aria-label="功能菜单">
+            <button type="button" class="tab-btn active" data-tab="tech" title="科技树">🔬<span>科技</span></button>
+            <button type="button" class="tab-btn" data-tab="craft" title="合成">⚗️<span>合成</span></button>
+            <button type="button" class="tab-btn" data-tab="tools" id="tab-btn-tools" title="工具">🪓<span>工具</span></button>
+            <button type="button" class="tab-btn" data-tab="workers" title="村民">👥<span>村民</span></button>
+            <button type="button" class="tab-btn" data-tab="defense" title="防务">🛡️<span>防务</span></button>
+            <button type="button" class="tab-btn" data-tab="warehouse" title="仓库">📦<span>仓库</span></button>
+          </nav>
+
+          <div class="sidebar-panel-main">
+            <div id="tab-tech" class="tab-panel active">
+              <div id="tech-tree" class="tech-tree"></div>
+            </div>
+            <div id="tab-craft" class="tab-panel">
+              <div id="craft-overview" class="craft-overview"></div>
+            </div>
+            <div id="tab-tools" class="tab-panel">
+              <div id="tool-list" class="tool-list"></div>
+            </div>
+            <div id="tab-workers" class="tab-panel">
+              <div id="worker-overview" class="worker-overview"></div>
+            </div>
+            <div id="tab-defense" class="tab-panel">
+              <div id="defense-overview" class="defense-overview"></div>
+            </div>
+            <div id="tab-warehouse" class="tab-panel">
+              <div id="warehouse-overview" class="warehouse-overview"></div>
+            </div>
+          </div>
+        </div>
+      </aside>
+    </main>
+
+    <div id="notification" class="notification"></div>
+    <div id="unlock-toast-container" class="unlock-toast-container"></div>
+
+    <div id="tutorial-overlay" class="tutorial-overlay hidden" aria-live="polite">
+      <div class="tutorial-panel" id="tutorial-panel">
+        <div class="tutorial-panel-head">
+          <h3 id="tutorial-title">新手指引</h3>
+          <button type="button" id="tutorial-skip" class="tutorial-skip" title="跳过全部教程">跳过教程</button>
+        </div>
+        <p id="tutorial-text" class="tutorial-text"></p>
+        <p id="tutorial-progress" class="tutorial-progress hidden"></p>
+        <div class="tutorial-panel-actions">
+          <button type="button" id="tutorial-next" class="btn-craft tutorial-next hidden">下一步</button>
+        </div>
+      </div>
+    </div>
+
+    <div id="defense-intro" class="defense-intro hidden">
+      <div class="defense-intro-dialog">
+        <h3>魔王当道</h3>
+        <p>魔王正在毁灭世界，所到之处化为焦土；又到处派出爪牙，荼毒生灵、掠夺村落。</p>
+        <p>你们一路逃难，来到这片尚未被侵占的谷地，重建部落。魔王本人暂未现身，但其爪牙仍会寻踪而至——约在第 7 天首次来袭，第 5 天会有预警。</p>
+        <p>制作弓弩剑盾，编制远程与近战；用「防御/出击」指挥战斗。之后约每隔一到两周再来一次。</p>
+        <p class="dim">（更可怕的「无敌之姿」……日后再说。）</p>
+        <button type="button" id="defense-intro-ok" class="btn-craft">开始重建</button>
+      </div>
+    </div>
+
+    <div id="battle-screen" class="battle-screen hidden">
+      <div class="battle-frame">
+        <div class="battle-top">
+          <h3 id="battle-title">战争</h3>
+          <div class="battle-top-stats">
+            <span id="battle-timer">—</span>
+            <span id="battle-gate-hp">大门 —</span>
+            <span id="battle-enemy-hp">残敌 —</span>
+          </div>
+          <button type="button" id="battle-close" class="dev-close" title="收起画面（交战仍继续）">×</button>
+        </div>
+        <div class="battle-field" id="battle-field">
+          <div class="battle-field-label left">城门</div>
+          <div class="battle-field-label right">敌阵</div>
+          <div class="battle-gate-mark" title="城门">🚪</div>
+          <div class="battle-units" id="battle-units"></div>
+        </div>
+        <div class="battle-bars">
+          <div class="battle-bar-row"><label>大门</label><div class="bar-track"><div id="battle-gate-bar" class="bar-fill gate"></div></div></div>
+          <div class="battle-bar-row"><label>残敌</label><div class="bar-track"><div id="battle-enemy-bar" class="bar-fill enemy"></div></div></div>
+        </div>
+        <div class="battle-actions">
+          <button type="button" class="btn-craft" id="battle-repair">修门</button>
+          <button type="button" class="btn-craft" id="battle-open-defense">调整防务</button>
+        </div>
+        <ul class="battle-log" id="battle-log"></ul>
+      </div>
+    </div>
+
+    <div id="game-over" class="game-over hidden">
+      <div class="game-over-dialog">
+        <h3>部落覆灭</h3>
+        <p id="game-over-reason">村落无法再延续</p>
+        <p id="game-over-pop" class="dim">幸存村民：0</p>
+        <p class="hint">人口只剩 0～1 人时，部落无法维系（饥荒或战败皆可导致）。</p>
+        <button type="button" id="game-over-reset" class="btn-craft">重新开始</button>
+      </div>
+    </div>
+
+    <div id="achievements-panel" class="achievements-panel hidden">
+      <div class="achievements-dialog">
+        <div class="achievements-header">
+          <h3>🏆 成就</h3>
+          <button type="button" id="achievements-close" class="dev-close" title="关闭">×</button>
+        </div>
+        <p id="achievements-summary" class="achievements-summary"></p>
+        <div id="achievements-list" class="achievements-list"></div>
+      </div>
+    </div>
+
+    <div id="dev-panel" class="dev-panel hidden">
+      <div class="dev-panel-header">
+        <h3>🛠️ 开发者面板</h3>
+        <button id="dev-close" class="dev-close" title="关闭">×</button>
+      </div>
+      <p class="dev-hint">快捷键：Ctrl + Shift + R</p>
+
+      <div class="dev-section">
+        <h4>时间加速</h4>
+        <div class="dev-time-row">
+          <input type="range" id="dev-time-scale" min="1" max="200" value="1" step="1">
+          <span id="dev-time-label">1×</span>
+        </div>
+        <div class="dev-btn-row">
+          <button class="dev-btn" data-time-scale="1">1×</button>
+          <button class="dev-btn" data-time-scale="2">2×</button>
+          <button class="dev-btn" data-time-scale="5">5×</button>
+          <button class="dev-btn" data-time-scale="10">10×</button>
+          <button class="dev-btn" data-time-scale="60">60×</button>
+          <button class="dev-btn" data-time-scale="100">100×</button>
+          <button class="dev-btn" data-time-scale="200">200×</button>
+        </div>
+      </div>
+
+      <div class="dev-section">
+        <h4>快速解锁</h4>
+        <div class="dev-btn-row">
+          <button class="dev-btn" id="dev-unlock-resources">解锁资源类型</button>
+          <button class="dev-btn" id="dev-unlock-tech">解锁科技</button>
+          <button class="dev-btn" id="dev-unlock-stations">解锁站点</button>
+        </div>
+      </div>
+
+      <div class="dev-section">
+        <h4>资源数量</h4>
+        <div id="dev-resource-list" class="dev-resource-list"></div>
+        <div class="dev-btn-row">
+          <button class="dev-btn" id="dev-add-all-100">全部 +100</button>
+          <button class="dev-btn" id="dev-add-all-1000">全部 +1000</button>
+        </div>
+      </div>
+
+      <div class="dev-section">
+        <h4>其他</h4>
+        <div class="dev-btn-row">
+          <button class="dev-btn" id="dev-workers-10">工人 +10</button>
+          <button class="dev-btn" id="dev-chest-1">宝箱 +1</button>
+          <button class="dev-btn" id="dev-chest-10">宝箱 +10</button>
+          <button class="dev-btn" id="dev-simulate-1h">模拟离线 1 小时</button>
+        </div>
+      </div>
+    </div>
+
+    <div id="dev-picker" class="dev-picker hidden">
+      <div class="dev-picker-dialog">
+        <div class="dev-picker-header">
+          <h4 id="dev-picker-title">选择</h4>
+          <button id="dev-picker-close" class="dev-close" type="button">×</button>
+        </div>
+        <p id="dev-picker-hint" class="dev-picker-hint"></p>
+        <div id="dev-picker-list" class="dev-picker-list"></div>
+        <div class="dev-picker-footer">
+          <button id="dev-picker-all" class="dev-btn dev-btn-warn" type="button">全部解锁</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script src="data.js"></script>
+  <script src="sounds.js"></script>
+  <script src="game.js"></script>
+</body>
+</html>

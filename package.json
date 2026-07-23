@@ -1,0 +1,17 @@
+{
+  "name": "click-tribe",
+  "productName": "点击部落",
+  "version": "1.0.0",
+  "description": "点击部落 - 村落点击增量游戏",
+  "main": "electron-main.js",
+  "author": "ClickTribe",
+  "license": "UNLICENSED",
+  "scripts": {
+    "start": "electron .",
+    "pack": "electron-packager . \"点击部落\" --platform=win32 --arch=x64 --out=dist --overwrite --asar --ignore=\"(node_modules|dist|\\\\.git|package-lock\\\\.json|\\\\.gitignore)\""
+  },
+  "devDependencies": {
+    "electron": "^33.2.1",
+    "electron-packager": "^17.1.2"
+  }
+}
