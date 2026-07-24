@@ -5,8 +5,8 @@ const { pathToFileURL } = require('url');
 
 /**
  * 外置资源根目录：
- * - 开发：项目根目录（含 music/、config/、saves/）
- * - 打包后：exe 同级目录（可单独替换 music、配置、存档，无需重打 exe）
+ * - 开发：项目根目录（含 music/、config/、image/、saves/）
+ * - 打包后：exe 同级目录（可单独替换 music、image、配置、存档，无需重打 exe）
  */
 function getExternalRoot() {
   if (app.isPackaged) {
@@ -210,7 +210,7 @@ app.whenReady().then(() => {
     try {
       const url = new URL(request.url);
       const kind = url.hostname;
-      if (kind !== 'music' && kind !== 'config') {
+      if (kind !== 'music' && kind !== 'config' && kind !== 'image') {
         return new Response('Not Found', { status: 404 });
       }
       const rel = decodeURIComponent((url.pathname || '/').replace(/^\/+/, ''));

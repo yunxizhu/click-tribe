@@ -29,6 +29,8 @@ class FactoryGame {
     this._spaceHoldTimer = null;
     this._tutHighlightKey = '';
     this.paused = false;
+    this._bootTransitionActive = false;
+    this._comicTimeHold = false;
     this._starvationDialogOpen = false;
     this._pendingStarvationAlert = null;
     this._lastPointerAction = null;
@@ -64,16 +66,27 @@ class FactoryGame {
   }
 
   async initAsync() {
-    this._atMainMenu = true;
+    // 加载页期间不算主菜单，避免 loadSettings → applySettings 提前拉起菜单 BGM
+    this._atMainMenu = false;
     this._inGameSession = false;
     this.paused = true;
+    this.updateUiScale();
+    if (!this._windowLifecycleBound) {
+      this._windowLifecycleBound = true;
+      window.addEventListener('beforeunload', () => this.save());
+      window.addEventListener('resize', () => {
+        this.updateUiScale();
+        this.updateUnlockToastPosition();
+        this.updateTutSpotlight();
+      });
+    }
     await this.loadSettings();
     this.setupMainMenu();
     this.setupPauseMenu();
     await this.showBootSequence();
   }
 
-  /** 加载结束后直接进入主菜单（无中间闪屏） */
+  /** 加载结束后：加载页渐隐 → 主菜单渐显 */
   async showBootSequence() {
     const loading = document.getElementById('boot-loading');
     const splash = document.getElementById('boot-splash');
@@ -83,17 +96,40 @@ class FactoryGame {
 
     splash?.classList.add('hidden');
     this.prepareMainMenuEnter();
-    loading?.classList.add('hidden');
-    main?.classList.remove('hidden');
+    main?.classList.add('main-menu-boot-wait');
+    main?.classList.remove('hidden', 'main-menu-boot-fade-in');
     this.showMainMenuHome();
     await this.refreshMainMenuLoadButton();
+
+    // 加载界面渐隐
+    if (loading && !loading.classList.contains('hidden')) {
+      loading.classList.add('boot-loading-fade-out');
+      await new Promise((r) => setTimeout(r, 720));
+      loading.classList.add('hidden');
+      loading.classList.remove('boot-loading-fade-out');
+    } else {
+      loading?.classList.add('hidden');
+    }
+
+    // 先停加载音，再进主菜单播菜单 BGM（避免加载期/叠音）
+    try { window.__TRIBE_STOP_BOOT_SFX__?.(); } catch (_) { /* ignore */ }
+    this.stopMenuBgm();
+    this.stopGameBgm?.();
+
+    // 正式进入主菜单态后再播菜单 BGM（只这一次）
+    this._atMainMenu = true;
+    main?.classList.remove('main-menu-boot-wait');
+    main?.classList.add('main-menu-boot-fade-in');
     this.playMainMenuEnterAnim();
-    this._ensureMenuBgmUnlock();
     this.sounds?.ensureContext?.();
     this.startMenuBgm({ forceNew: true });
+    this._ensureMenuBgmUnlock();
+    setTimeout(() => {
+      main?.classList.remove('main-menu-boot-fade-in');
+    }, 900);
   }
 
-  /** 显示主菜单前先锁在左侧隐形，避免目标位闪现 */
+  /** 显示主菜单前先定位置隐形，避免目标位闪现 */
   prepareMainMenuEnter() {
     const main = document.getElementById('main-menu');
     if (!main) return;
@@ -105,7 +141,7 @@ class FactoryGame {
     main.classList.add('mm-enter-prep');
   }
 
-  /** 主菜单左侧元素自上而下、自左滑入渐显 */
+  /** 主菜单：遮盖 1s 渐显后，标题/按钮再 3s 内自上而下渐显 */
   playMainMenuEnterAnim() {
     const main = document.getElementById('main-menu');
     if (!main) return;
@@ -119,29 +155,35 @@ class FactoryGame {
     requestAnimationFrame(() => {
       main.classList.remove('mm-enter-prep');
       main.classList.add('mm-enter-play');
-      // 末项 delay 0.82s + 时长 0.62s
+      // 遮盖 1s + 内容 3s（末项 delay 2.8s + 时长 1.2s ≈ 4s）
       this._mmEnterTimer = setTimeout(() => {
         main.classList.remove('mm-enter-play');
         main.classList.add('mm-enter-done');
         this._mmEnterTimer = null;
-      }, 2000);
+      }, 4200);
     });
   }
 
   showMainMenuHome() {
     document.getElementById('main-menu-home')?.classList.remove('hidden');
+    document.getElementById('main-menu-brand')?.classList.remove('hidden');
     document.getElementById('main-menu-settings')?.classList.add('hidden');
     document.getElementById('main-menu-dev')?.classList.add('hidden');
+    document.getElementById('main-menu-achievements')?.classList.add('hidden');
   }
 
   showMainMenuPage(id) {
-    const pages = ['main-menu-home', 'main-menu-settings', 'main-menu-dev'];
+    const pages = ['main-menu-home', 'main-menu-settings', 'main-menu-dev', 'main-menu-achievements'];
     pages.forEach((pid) => {
       document.getElementById(pid)?.classList.toggle('hidden', pid !== id);
     });
+    document.getElementById('main-menu-brand')?.classList.toggle('hidden', id !== 'main-menu-home');
     if (id === 'main-menu-settings') {
       this.showMainSettingsTab(this._mmSettingsTab || 'display');
       this.syncSettingsForm();
+    }
+    if (id === 'main-menu-achievements') {
+      this.renderAchievementsPanel();
     }
   }
 
@@ -191,6 +233,7 @@ class FactoryGame {
     document.getElementById('story-dialog')?.classList.add('hidden');
     document.getElementById('battle-screen')?.classList.add('hidden');
     document.getElementById('achievements-panel')?.classList.add('hidden');
+    document.getElementById('main-menu-achievements')?.classList.add('hidden');
     document.getElementById('dev-panel')?.classList.add('hidden');
     document.getElementById('app')?.classList.add('app-beneath-shell');
     document.getElementById('boot-shell')?.classList.remove('hidden');
@@ -239,8 +282,8 @@ class FactoryGame {
     }
   }
 
-  /** 主菜单 BGM 音量渐变到目标 */
-  _fadeMenuBgmTo(target, durationMs = 2400) {
+  /** 主菜单 BGM 音量渐变到目标（新开轨默认 5s：0→目标） */
+  _fadeMenuBgmTo(target, durationMs = 5000) {
     const a = this._menuBgmAudio;
     if (!a) return;
     this._cancelMenuBgmFade();
@@ -257,8 +300,7 @@ class FactoryGame {
         return;
       }
       const t = Math.min(1, (performance.now() - t0) / durationMs);
-      const ease = 1 - (1 - t) * (1 - t);
-      a.volume = start + (end - start) * ease;
+      a.volume = start + (end - start) * t;
       if (t >= 1) this._cancelMenuBgmFade();
     }, 40);
   }
@@ -323,7 +365,8 @@ class FactoryGame {
   }
 
   startMenuBgm({ forceNew = false, keepIndex = false } = {}) {
-    if (!this._atMainMenu) return;
+    // 选难度期间仍算主菜单：BGM 继续播，确认难度后再停
+    if (!this._atMainMenu || this._inGameSession) return;
     if (this.settings?.playBgm === false) {
       this.stopMenuBgm();
       this._updateMenuBgmNowLabel();
@@ -336,7 +379,7 @@ class FactoryGame {
         if (this._menuBgmAudio.paused) {
           this._menuBgmAudio.volume = 0;
           void this._menuBgmAudio.play().then(() => {
-            this._fadeMenuBgmTo(targetVol, 2400);
+            this._fadeMenuBgmTo(targetVol, 5000);
           }).catch(() => {});
         } else {
           this._fadeMenuBgmTo(targetVol, 900);
@@ -373,7 +416,7 @@ class FactoryGame {
     this._updateMenuBgmNowLabel();
     void a.play().then(() => {
       console.log('[BGM] 主界面音轨选用:', track.name);
-      this._fadeMenuBgmTo(this._menuBgmVolume(), 2400);
+      this._fadeMenuBgmTo(this._menuBgmVolume(), 5000);
     }).catch(() => {
       // 等用户手势再播
     });
@@ -384,13 +427,16 @@ class FactoryGame {
     return Math.max(0, Math.min(1, master * 0.4));
   }
 
-  /** 绑定主菜单首次交互以解锁自动播放 */
+  /** 绑定主菜单首次交互以解锁自动播放（已在播则只确保续播，不 forceNew） */
   _ensureMenuBgmUnlock() {
     if (this._menuBgmUnlockBound) return;
     this._menuBgmUnlockBound = true;
     const unlock = () => {
       this.sounds?.ensureContext?.();
-      if (this._atMainMenu) this.startMenuBgm();
+      if (this._atMainMenu && !this._inGameSession) {
+        // 不强制重建，避免刚播起的菜单 BGM 被打断重开
+        this.startMenuBgm({ forceNew: false });
+      }
       document.removeEventListener('pointerdown', unlock);
       document.removeEventListener('keydown', unlock);
     };
@@ -409,13 +455,15 @@ class FactoryGame {
     this._starvationDialogOpen = false;
     this._pendingStarvationAlert = null;
     this.clearTutorialHighlights?.();
-    // 仍留在主菜单壳上选难度，选完经中转后再正式进游戏
+    // 仍留在主菜单壳上选难度；BGM 保持播放，确认难度后再停
     this._inGameSession = false;
     this._atMainMenu = true;
     this._difficultyFromMainMenu = true;
     document.getElementById('main-menu-settings')?.classList.add('hidden');
     document.getElementById('main-menu-dev')?.classList.add('hidden');
     document.getElementById('main-menu-home')?.classList.add('hidden');
+    document.getElementById('main-menu-brand')?.classList.add('hidden');
+    document.getElementById('main-menu-achievements')?.classList.add('hidden');
     this.showDifficultySelect();
   }
 
@@ -426,33 +474,43 @@ class FactoryGame {
       await this.refreshMainMenuLoadButton();
       return;
     }
+    // 先离开主菜单态，避免过渡期间手势又把菜单 BGM 拉起来；整段加载期间冻结时间
+    this.paused = true;
+    this._atMainMenu = false;
     this.stopMenuBgm();
     await this.playBootTransition('正在读取存档…');
     const needComic = !this.state.defense?.introSeen;
     this.enterGameShell({ holdForComic: needComic });
     this._inGameSession = true;
-    this.paused = false;
+    // 仍保持暂停：有漫画则等动画流程结束；无漫画则由 showDefenseIntroIfNeeded 在加载界面消失后放开
+    this.paused = true;
+    if (needComic) this._comicTimeHold = true;
     this.sounds.ensureContext();
+    // 漫画期间启 BGM（只播袭击预告轨）；无漫画则直接正常轨
     this.sounds._initBGM();
     this.resumeAfterDifficultySetup();
   }
-
-  /** 选完难度后进入游戏的中转动画 */
   async playBootTransition(message = '正在进入村落…') {
-    const el = document.getElementById('boot-transition');
-    const text = document.getElementById('boot-transition-text');
-    if (text) text.textContent = message;
-    if (!el) {
-      await new Promise((r) => setTimeout(r, 1200));
-      return;
+    this._bootTransitionActive = true;
+    this.paused = true;
+    try {
+      const el = document.getElementById('boot-transition');
+      const text = document.getElementById('boot-transition-text');
+      if (text) text.textContent = message;
+      if (!el) {
+        await new Promise((r) => setTimeout(r, 1200));
+        return;
+      }
+      el.classList.remove('hidden');
+      el.classList.remove('boot-transition-play');
+      void el.offsetWidth;
+      el.classList.add('boot-transition-play');
+      await new Promise((r) => setTimeout(r, 3200));
+      el.classList.add('hidden');
+      el.classList.remove('boot-transition-play');
+    } finally {
+      this._bootTransitionActive = false;
     }
-    el.classList.remove('hidden');
-    el.classList.remove('boot-transition-play');
-    void el.offsetWidth;
-    el.classList.add('boot-transition-play');
-    await new Promise((r) => setTimeout(r, 3200));
-    el.classList.add('hidden');
-    el.classList.remove('boot-transition-play');
   }
 
   /** 难度确认后：中转 → 正式进入游戏 */
@@ -462,12 +520,17 @@ class FactoryGame {
     const fromMenu = !!this._difficultyFromMainMenu;
     this._difficultyFromMainMenu = false;
     this.applyNewGameTutorialPreference();
+    // 先离开主菜单态并停掉菜单 BGM，再播中转；全程冻结时间直到漫画结束
+    this.paused = true;
+    this._comicTimeHold = true;
+    this._atMainMenu = false;
     this.stopMenuBgm();
     await this.playBootTransition(fromMenu ? '正在进入村落…' : '正在重新开始…');
     this.enterGameShell({ holdForComic: true });
     this._inGameSession = true;
-    this.paused = false;
+    this.paused = true;
     this.sounds.ensureContext();
+    // 漫画期间启 BGM：只播袭击预告轨，结束后切白天轨
     this.sounds._initBGM();
     this.resumeAfterDifficultySetup();
   }
@@ -478,6 +541,9 @@ class FactoryGame {
     this._returningToMainMenu = true;
     try {
       if (this._inGameSession) this.save();
+      // 先冻结时间，再关 Esc 菜单，避免恢复旧 paused=false 导致过渡期间时间仍走
+      this.paused = true;
+      this._pauseMenuPrevPaused = true;
       this.setPauseMenuOpen(false);
       this.stopGameBgm();
       await this.playBootTransition('正在返回主界面…');
@@ -487,19 +553,78 @@ class FactoryGame {
     }
   }
 
-  quitApp() {
-    if (this._inGameSession) this.save();
-    const api = this._saveApi();
-    if (api?.quit) {
-      void api.quit();
-      return;
+  async quitApp() {
+    if (this._quittingApp) return;
+    this._quittingApp = true;
+    try {
+      if (this._inGameSession) this.save();
+      // 主菜单 / Esc 菜单共用：整界面锁死 0.5s 再退出
+      this.paused = true;
+      document.documentElement.classList.add('app-quitting');
+      let veil = document.getElementById('quit-freeze-veil');
+      if (!veil) {
+        veil = document.createElement('div');
+        veil.id = 'quit-freeze-veil';
+        veil.className = 'quit-freeze-veil';
+        veil.setAttribute('aria-hidden', 'true');
+        document.body.appendChild(veil);
+      }
+      veil.classList.add('is-on');
+      await new Promise((r) => setTimeout(r, 500));
+      const api = this._saveApi();
+      if (api?.quit) {
+        await api.quit();
+        return;
+      }
+      window.close();
+    } finally {
+      document.getElementById('quit-freeze-veil')?.classList.remove('is-on');
+      document.documentElement.classList.remove('app-quitting');
+      this._quittingApp = false;
     }
-    window.close();
+  }
+
+  /** 主菜单 / Esc 菜单按钮：聚焦与点击音效 */
+  bindMenuUiSounds(root) {
+    if (!root || root.dataset.uiSfxBound === '1') return;
+    root.dataset.uiSfxBound = '1';
+    const sel = [
+      'button.main-menu-btn',
+      'button.pause-menu-btn',
+      'button.pause-menu-back',
+      'button.pause-settings-tab',
+      'button.pause-settings-action',
+      'button.main-menu-bgm-now',
+    ].join(',');
+
+    const isMenuBtn = (el) => {
+      const btn = el?.closest?.(sel);
+      if (!btn || !root.contains(btn) || btn.disabled) return null;
+      return btn;
+    };
+
+    root.addEventListener('pointerover', (e) => {
+      const btn = isMenuBtn(e.target);
+      if (!btn) return;
+      const from = e.relatedTarget;
+      if (from && btn.contains(from)) return;
+      this.sounds?.playUiFocus?.();
+    });
+    root.addEventListener('focusin', (e) => {
+      if (!isMenuBtn(e.target)) return;
+      this.sounds?.playUiFocus?.();
+    });
+    root.addEventListener('click', (e) => {
+      if (!isMenuBtn(e.target)) return;
+      this.sounds?.playUiClick?.();
+    }, true);
   }
 
   setupMainMenu() {
     if (this._mainMenuBound) return;
     this._mainMenuBound = true;
+
+    this.bindMenuUiSounds(document.getElementById('main-menu'));
 
     if (!this._globalEscBound) {
       this._globalEscBound = true;
@@ -518,6 +643,12 @@ class FactoryGame {
       this._mmSettingsTab = 'display';
       this.showMainMenuPage('main-menu-settings');
     });
+    document.getElementById('mm-achievements')?.addEventListener('click', () => {
+      void this.openAchievementsPanel();
+    });
+    document.getElementById('mm-achievements-back')?.addEventListener('click', () => {
+      this.showMainMenuHome();
+    });
     document.getElementById('mm-settings-back')?.addEventListener('click', () => {
       this.showMainMenuHome();
     });
@@ -527,7 +658,10 @@ class FactoryGame {
     document.getElementById('mm-dev-back')?.addEventListener('click', () => {
       this.showMainMenuHome();
     });
-    document.getElementById('mm-quit')?.addEventListener('click', () => this.quitApp());
+    document.getElementById('mm-quit')?.addEventListener('click', () => { void this.quitApp(); });
+    document.getElementById('mm-set-reset-save')?.addEventListener('click', () => {
+      void this.resetSaveFromMainMenu();
+    });
     document.getElementById('mm-bgm-now')?.addEventListener('click', (e) => {
       e.stopPropagation();
       this.cycleMenuBgm();
@@ -588,6 +722,11 @@ class FactoryGame {
     });
     document.getElementById('mm-set-enable-tutorial')?.addEventListener('change', (e) => {
       this.settings.enableTutorial = !!e.target.checked;
+      void this.applySettings({ applyDisplay: false });
+      this.syncSettingsForm();
+    });
+    document.getElementById('mm-set-resource-gain-notify')?.addEventListener('change', (e) => {
+      this.settings.resourceGainNotify = !!e.target.checked;
       void this.applySettings({ applyDisplay: false });
       this.syncSettingsForm();
     });
@@ -786,6 +925,8 @@ class FactoryGame {
       berryHarvests: 0,
       forestHarvests: 0,
       starterChestOpened: false,
+      axesCrafted: 0,
+      planksCrafted: 0,
     };
   }
 
@@ -830,6 +971,36 @@ class FactoryGame {
         });
       });
     });
+
+    const backBtn = document.getElementById('diff-back');
+    if (backBtn && !backBtn.dataset.bound) {
+      backBtn.dataset.bound = '1';
+      backBtn.addEventListener('click', () => this.cancelDifficultySelect());
+    }
+  }
+
+  /** 取消难度选择，返回主菜单（或局内重置时回主界面） */
+  cancelDifficultySelect() {
+    const diffSel = document.getElementById('difficulty-select');
+    if (!this._pickingDifficulty && (!diffSel || diffSel.classList.contains('hidden'))) return;
+    if (this._difficultyConfirming) return;
+    this._pickingDifficulty = false;
+    this._difficultyConfirming = false;
+    diffSel?.classList.add('hidden');
+    if (this._difficultyFromMainMenu || this._atMainMenu) {
+      this._difficultyFromMainMenu = false;
+      this._inGameSession = false;
+      this._atMainMenu = true;
+      document.getElementById('boot-shell')?.classList.remove('hidden');
+      document.getElementById('main-menu')?.classList.remove('hidden');
+      this.showMainMenuHome();
+      void this.refreshMainMenuLoadButton();
+      this.startMenuBgm();
+    } else {
+      this._inGameSession = false;
+      this.stopGameBgm();
+      this.leaveGameToMainMenuShell();
+    }
   }
 
   /** 按所选难度覆盖开局食物与起始工具 */
@@ -1402,6 +1573,18 @@ class FactoryGame {
     this.showDifficultySelect();
   }
 
+  /** 主菜单设置：只清存档，不进入选难度 */
+  async resetSaveFromMainMenu() {
+    if (!confirm('确定要重置存档吗？此操作不可撤销！')) return;
+    await this.clearSaveFiles();
+    this.state = this.getDefaultState();
+    this.state.difficulty = 'normal';
+    document.getElementById('main-menu-achievements')?.classList.add('hidden');
+    this.showMainMenuHome();
+    await this.refreshMainMenuLoadButton();
+    this.showNotification('存档已重置');
+  }
+
   // ========== 背景介绍（两页漫画）/ 新手教程 ==========
   getComicTotalPanels() {
     return 9; // 第1页 5 格 + 第2页 4 格
@@ -1466,12 +1649,43 @@ class FactoryGame {
     app.addEventListener('animationend', onEnd);
   }
 
+  /**
+   * 游戏内时间是否应冻结（日历/生产等模拟不推进）。
+   * 主菜单、Esc 菜单、中转黑屏、开场漫画、显式 paused 均冻结。
+   */
+  shouldFreezeGameTime() {
+    if (!this._inGameSession || this._atMainMenu) return true;
+    if (this._bootTransitionActive) return true;
+    if (this._pickingDifficulty) return true;
+    if (this._comicTimeHold) return true;
+    if (this.isPauseMenuOpen?.()) return true;
+    if (this.paused) return true;
+    return false;
+  }
+
+  /** 漫画/加载流程结束后才放开游戏时间，并切回正常游戏 BGM */
+  releaseGameTimeAfterComic() {
+    this._comicTimeHold = false;
+    if (this.isPauseMenuOpen?.() || this._bootTransitionActive || this._atMainMenu || !this._inGameSession) {
+      return;
+    }
+    this.paused = false;
+    this.lastTick = Date.now();
+    this.sounds?.ensureContext?.();
+    this.sounds?._initBGM?.();
+    // 立刻切轨：停袭击预告 → 白天轨
+    try { this.sounds?.bgm?._tick?.(); } catch (_) { /* ignore */ }
+  }
+
   showDefenseIntroIfNeeded() {
     if (this.state.defense?.introSeen) {
       this.holdAppForComic(false);
+      this.releaseGameTimeAfterComic();
       return;
     }
     if (!this.state.defense) this.state.defense = this.createDefaultDefenseState();
+    this._comicTimeHold = true;
+    this.paused = true;
     this.holdAppForComic(true);
     this.resetComicIntro();
     const root = document.getElementById('defense-intro');
@@ -1507,10 +1721,13 @@ class FactoryGame {
     if (!this.state.defense) this.state.defense = this.createDefaultDefenseState();
     this.state.defense.introSeen = true;
     this._comicDismissing = true;
+    // 漫画收尾：登~！
+    try { this.sounds?.playComicFinishSting?.(); } catch (_) { /* ignore */ }
     const root = document.getElementById('defense-intro');
     if (!root || root.classList.contains('hidden')) {
       this.holdAppForComic(false);
       this._comicDismissing = false;
+      this.releaseGameTimeAfterComic();
       this.save();
       this.startTutorialIfNeeded();
       return;
@@ -1523,6 +1740,7 @@ class FactoryGame {
       root.classList.remove('comic-outro');
       this.revealAppAfterComic();
       this._comicDismissing = false;
+      this.releaseGameTimeAfterComic();
       this.save();
       this.startTutorialIfNeeded();
     };
@@ -1595,6 +1813,14 @@ class FactoryGame {
       this.finishTutorial();
       return;
     }
+    // 操作型步骤未完成时不允许靠「下一步」跳过（例如浆果丛未派工）
+    const g = this.resolveTutorialGuidance(cur) || cur;
+    if (cur && !g.finishOnNext && !this.isTutorialStepComplete(cur) && !g.requireNext) {
+      return;
+    }
+    if (cur?.id === 'worker_manage' && !this.isTutorialStepComplete(cur)) {
+      return;
+    }
     t.stepIndex = Math.min(steps.length - 1, (t.stepIndex || 0) + 1);
     if (!steps[t.stepIndex]) {
       this.finishTutorial();
@@ -1605,6 +1831,10 @@ class FactoryGame {
   }
 
   clearTutorialHighlights() {
+    if (this._tutFlashTimer) {
+      clearTimeout(this._tutFlashTimer);
+      this._tutFlashTimer = null;
+    }
     document.querySelectorAll('.tut-highlight').forEach(el => {
       el.classList.remove('tut-highlight', 'tut-highlight-soft');
     });
@@ -1629,6 +1859,7 @@ class FactoryGame {
     const spot = document.getElementById('tut-spotlight');
     if (!spot) return;
     spot.classList.add('hidden');
+    spot.classList.remove('tut-spotlight-round');
     spot.style.left = '';
     spot.style.top = '';
     spot.style.width = '';
@@ -1651,15 +1882,23 @@ class FactoryGame {
     }
 
     const pad = 10;
-    const left = Math.max(0, r.left - pad);
-    const top = Math.max(0, r.top - pad);
-    const width = r.width + pad * 2;
-    const height = r.height + pad * 2;
-    // 先写位置再显示，避免先亮整屏阴影再跳位
-    spot.style.left = `${left}px`;
-    spot.style.top = `${top}px`;
-    spot.style.width = `${width}px`;
-    spot.style.height = `${height}px`;
+    const isRound = primary.classList.contains('tech-node');
+    if (isRound) {
+      const size = Math.max(r.width, r.height) + pad * 2;
+      const cx = r.left + r.width / 2;
+      const cy = r.top + r.height / 2;
+      spot.style.left = `${cx - size / 2}px`;
+      spot.style.top = `${cy - size / 2}px`;
+      spot.style.width = `${size}px`;
+      spot.style.height = `${size}px`;
+      spot.classList.add('tut-spotlight-round');
+    } else {
+      spot.style.left = `${Math.max(0, r.left - pad)}px`;
+      spot.style.top = `${Math.max(0, r.top - pad)}px`;
+      spot.style.width = `${r.width + pad * 2}px`;
+      spot.style.height = `${r.height + pad * 2}px`;
+      spot.classList.remove('tut-spotlight-round');
+    }
     spot.classList.remove('hidden');
   }
 
@@ -1704,6 +1943,30 @@ class FactoryGame {
     requestAnimationFrame(() => this.updateTutSpotlight());
   }
 
+  /** 短暂高亮指示（不推进步骤），结束后恢复当前教程指引 */
+  flashTutorialHighlight(selectors = [], durationMs = 1400) {
+    const list = (selectors || []).filter(Boolean);
+    if (!list.length) return;
+    if (this._tutFlashTimer) {
+      clearTimeout(this._tutFlashTimer);
+      this._tutFlashTimer = null;
+    }
+    // 强制重刷高亮键，避免与当前步骤选择器相同而跳过
+    this._tutHighlightKey = '';
+    this.applyTutorialHighlights(list);
+    this._tutFlashTimer = setTimeout(() => {
+      this._tutFlashTimer = null;
+      if (!this.isTutorialActive()) {
+        this.clearTutorialHighlights();
+        return;
+      }
+      const step = this.getTutorialStep();
+      const g = step ? (this.resolveTutorialGuidance(step) || step) : null;
+      this._tutHighlightKey = '';
+      this.applyTutorialHighlights(g?.highlight || []);
+    }, Math.max(400, durationMs | 0));
+  }
+
   getToolStockTotal(toolId) {
     return this.getToolCount(toolId);
   }
@@ -1718,10 +1981,11 @@ class FactoryGame {
     if (kind === 'berries') return t.berryHarvests || 0;
     if (kind === 'plank') return t.planksCrafted || 0;
     if (kind === 'tool') {
-      return ['axe', 'pickaxe', 'shovel'].some(id => this.getToolStockTotal(id) > 0) ? 1 : 0;
+      // 必须教程中亲手做出木斧；开局自带斧头不算完成
+      return (t.axesCrafted || 0) >= 1 ? 1 : 0;
     }
     if (kind === 'weapon') {
-      return ['bow', 'crossbow', 'sword', 'shield', 'armor'].some(id => this.getToolStockTotal(id) > 0) ? 1 : 0;
+      return ['bow', 'crossbow', 'sword', 'spear', 'shield', 'armor'].some(id => this.getToolStockTotal(id) > 0) ? 1 : 0;
     }
     return 0;
   }
@@ -1760,13 +2024,13 @@ class FactoryGame {
       if (!this.isActiveStation('point', 'forest')) {
         return {
           ...step,
-          text: '先点左侧「森林」，再点击中间继续砍树。',
+          text: '先点左侧「森林」，再点击进行砍树。',
           highlight: ['.station-btn[data-station-id="forest"]'],
         };
       }
       return {
         ...step,
-        text: '继续点击中间森林，再砍满 2 次（凑够木头即可解锁工作台）。',
+        text: '尝试砍树，获取木头。',
         highlight: ['#click-area'],
       };
     }
@@ -1780,25 +2044,23 @@ class FactoryGame {
           return {
             ...step,
             title: '加工木板',
-            text: '订单已下好。点左侧「生产」里的木板订单，进入后再点中间加工。',
+            text: '订单已下好。点左侧「生产」里的木板订单，进入后再点击进行加工。',
             highlight: [
-              '.craft-order-btn[data-station-id="craft_plank"]',
-              '#craft-section-title',
-              '#craft-station-list',
+              '.craft-order-item[data-recipe-id="craft_plank"] .craft-order-btn',
             ],
           };
         }
         return {
           ...step,
           title: '加工木板',
-          text: '到中间点击区加工木板（也可派工人自动做）。',
+          text: '点击区以加工木板。',
           highlight: ['#click-area'],
         };
       }
       if (!onTab('craft')) {
         return {
           ...step,
-          text: '如果还想继续制作木斧来提高采集效率，则要先制作木板。自己打开右侧「合成」页。',
+          text: '如果还想继续制作木质工具来提高采集效率，则要先制作木板。自己打开右侧「合成」页。',
           highlight: ['.tab-btn[data-tab="craft"]'],
         };
       }
@@ -1809,54 +2071,21 @@ class FactoryGame {
       };
     }
 
-    if (step.id === 'craft_tool') {
-      const queued = this.getCraftQueueCount('craft_axe_1') > 0;
-      if (queued && this.getTutorialProgressValue('tool') < 1) {
-        if (!this.isActiveStation('recipe', 'craft_axe_1')) {
-          return {
-            ...step,
-            title: '加工木斧',
-            text: '木斧已下单。点左侧「生产」进入该订单，再点中间完成制作。',
-            highlight: [
-              '.craft-order-item[data-recipe-id="craft_axe_1"] .craft-order-btn',
-            ],
-          };
-        }
-        return {
-          ...step,
-          title: '加工木斧',
-          text: '到中间点击完成制作。',
-          highlight: ['#click-area'],
-        };
-      }
-      if (!onTab('tools')) {
-        return {
-          ...step,
-          text: '自己点右侧「工具」，用宝箱里的木头+木板下单制作「木斧」（3木头+1木板）。',
-          highlight: ['.tab-btn[data-tab="tools"]'],
-        };
-      }
-      return {
-        ...step,
-        highlight: ['.craft-overview-item[data-recipe-id="craft_axe_1"]'],
-      };
-    }
-
     if (step.id === 'craft_weapon') {
       if (this.getTutorialProgressValue('weapon') >= 1) {
         return { ...step, highlight: [] };
       }
-      if (!onTab('tools')) {
+      if (!onTab('weapons')) {
         return {
           ...step,
-          text: '自己点右侧「工具」，制作任意一件武器（如木弓、木剑）。',
-          highlight: ['.tab-btn[data-tab="tools"]'],
+          text: '自己点右侧「武器」，制作任意一件武器（如木弓、木剑）。',
+          highlight: ['.tab-btn[data-tab="weapons"]'],
         };
       }
       return {
         ...step,
-        text: '在工具列表里下单制作任意一件武器。下单后请自己点左侧「生产」进入加工。',
-        highlight: ['#tool-list'],
+        text: '在武器列表里下单制作任意一件武器。下单后请自己点左侧「生产」进入加工。',
+        highlight: ['#weapon-list'],
       };
     }
 
@@ -1864,8 +2093,12 @@ class FactoryGame {
       const stock = this.state.resourcePoints.treasure_chest?.stock || 0;
       const revealed = !!this.state.starterChestRevealed;
       const granted = !!this.state.starterChestGranted;
+      const opened = !!this.state.tutorial?.starterChestOpened;
       const blocked = leaveOverlayFirst('先点右侧「仓库」退出合屏，再按指引去开宝箱。');
       if (blocked) return blocked;
+      if (opened) {
+        return { ...step, highlight: [] };
+      }
       if (!revealed) {
         if (granted || stock > 0) {
           return {
@@ -1887,18 +2120,12 @@ class FactoryGame {
           highlight: ['#click-area'],
         };
       }
-      if (stock <= 0 && !this.state.tutorial?.starterChestOpened) {
-        if (!this.isActiveStation('point', 'forest')) {
-          return {
-            ...step,
-            text: '先点左侧「森林」，继续砍树，之后会有意外掉落……',
-            highlight: ['.station-btn[data-station-id="forest"]'],
-          };
-        }
+      // 已开箱、库存扣完，但剧情框尚未确认：勿回退到「继续砍树」
+      if (stock <= 0) {
         return {
           ...step,
-          text: '继续砍树，之后会有意外掉落……',
-          highlight: ['#click-area'],
+          text: '宝箱已打开。确认提示后，去解锁新科技。',
+          highlight: [],
         };
       }
       if (!this.isActiveStation('point', 'treasure_chest')) {
@@ -1912,32 +2139,6 @@ class FactoryGame {
         ...step,
         text: '点中间区域把它打开，里面有制作木斧的材料。',
         highlight: ['#click-area'],
-      };
-    }
-
-    if (step.id === 'assign_forest') {
-      const assigned = this.state.resourcePoints.forest?.assignedWorkers || 0;
-      const need = 2;
-      const blocked = leaveOverlayFirst('先点右侧「仓库」退出合屏，再去森林派工。');
-      if (blocked) return blocked;
-      if (!this.isActiveStation('point', 'forest')) {
-        return {
-          ...step,
-          text: '可以给资源点分配村民，他们会自动采集。先自己点左侧「森林」。',
-          highlight: ['.station-btn[data-station-id="forest"]'],
-        };
-      }
-      if (assigned < need) {
-        return {
-          ...step,
-          text: `在下方工人栏点「+」，给森林派出 ${need} 人（当前 ${assigned}/${need}）。`,
-          highlight: ['#point-workers'],
-        };
-      }
-      return {
-        ...step,
-        text: `已派出 ${assigned} 人到森林自动采集。若人手多于斧头，多出的人仍是徒手效率。`,
-        highlight: ['#point-workers'],
       };
     }
 
@@ -1966,8 +2167,87 @@ class FactoryGame {
       }
       return {
         ...step,
-        text: '点「工作台」解锁。解锁后会开放合成与工具栏。',
+        text: '点「工作台」解锁。解锁后请先去做木斧，再去森林派工。',
         highlight: ['.tech-node[data-tech-id="unlock_workbench"]'],
+      };
+    }
+
+    if (step.id === 'craft_tool') {
+      const queued = this.getCraftQueueCount('craft_axe_1') > 0;
+      if (queued && this.getTutorialProgressValue('tool') < 1) {
+        if (!this.isActiveStation('recipe', 'craft_axe_1')) {
+          return {
+            ...step,
+            title: '加工木斧',
+            text: '木斧已下单。点左侧「生产」进入该订单，再点中间完成制作。',
+            highlight: [
+              '.craft-order-item[data-recipe-id="craft_axe_1"] .craft-order-btn',
+            ],
+          };
+        }
+        return {
+          ...step,
+          title: '加工木斧',
+          text: '到中间点击完成制作。做好斧头后再去森林派工。',
+          highlight: ['#click-area'],
+        };
+      }
+      // 科技合屏时也可直接点「工具」退出合屏，无需先点仓库
+      if (!onTab('tools')) {
+        return {
+          ...step,
+          text: '工作台已解锁。直接点右侧「工具」，用宝箱材料下单制作「木斧」（再去森林派工）。',
+          highlight: ['.tab-btn[data-tab="tools"]'],
+        };
+      }
+      return {
+        ...step,
+        text: '下单制作「木斧」。做好后再去森林给村民派工。',
+        highlight: ['.craft-overview-item[data-recipe-id="craft_axe_1"]'],
+      };
+    }
+
+    if (step.id === 'assign_forest') {
+      const assigned = this.state.resourcePoints.forest?.assignedWorkers || 0;
+      const need = 2;
+      const blocked = leaveOverlayFirst('先点右侧「仓库」退出合屏，再去森林派工。');
+      if (blocked) return blocked;
+      if (!this.isActiveStation('point', 'forest')) {
+        return {
+          ...step,
+          text: '可以给资源点分配村民，他们会自动采集。先自己点左侧「森林」。',
+          highlight: ['.station-btn[data-station-id="forest"]'],
+        };
+      }
+      if (assigned < need) {
+        return {
+          ...step,
+          text: `在下方工人栏点「+」，给森林派出 ${need} 人（当前 ${assigned}/${need}）。`,
+          highlight: ['#point-workers'],
+        };
+      }
+      return {
+        ...step,
+        text: `已派出 ${assigned} 人到森林自动采集。接下来看工具如何提升效率。`,
+        highlight: ['#point-workers'],
+      };
+    }
+
+    if (step.id === 'tool_efficiency_hint') {
+      const blocked = leaveOverlayFirst('先点右侧「仓库」退出合屏，再看效率提示。');
+      if (blocked) return blocked;
+      if (!this.isActiveStation('point', 'forest')) {
+        return {
+          ...step,
+          text: '先点左侧「森林」，看下方工人栏的效率提示。',
+          highlight: ['.station-btn[data-station-id="forest"]'],
+        };
+      }
+      return {
+        ...step,
+        text: '看下面效率提示——有斧头的村民效率远高于徒手。人手多于斧头时，多出的人仍是徒手效率。',
+        highlight: ['#point-workers .hint'],
+        requireNext: true,
       };
     }
 
@@ -1983,28 +2263,34 @@ class FactoryGame {
       }
       return {
         ...step,
-        text: '点击中间采集区采集食物，采满 3 次即可（也可按空格）。',
+        text: '点击中间采集区采集食物，采满 3 次即可（也可按空格）。采完后再给浆果丛派工自动采集。',
         highlight: ['#click-area'],
       };
     }
 
-    if (step.id === 'tool_efficiency_hint') {
-      const blocked = leaveOverlayFirst('先点右侧「仓库」退出合屏，再看效率提示。');
+    if (step.id === 'assign_berry') {
+      const assigned = this.state.resourcePoints.berry_bush?.assignedWorkers || 0;
+      const need = 4;
+      const blocked = leaveOverlayFirst('先点右侧「仓库」退出合屏，再去浆果丛派工。');
       if (blocked) return blocked;
-      if (!this.isActiveStation('point', 'forest') && !this.isActiveStation('point', 'berry_bush')) {
+      if (!this.isActiveStation('point', 'berry_bush')) {
         return {
           ...step,
-          text: '先点左侧「森林」或「浆果丛」，看下方工人栏的效率提示。',
-          highlight: [
-            '.station-btn[data-station-id="forest"]',
-            '.station-btn[data-station-id="berry_bush"]',
-          ],
+          text: '手动采够了。再点左侧「浆果丛」，给它分配村民自动采集。',
+          highlight: ['.station-btn[data-station-id="berry_bush"]'],
+        };
+      }
+      if (assigned < need) {
+        return {
+          ...step,
+          text: `在下方工人栏点「+」，给浆果丛派出 ${need} 人自动采集（当前 ${assigned}/${need}）。`,
+          highlight: ['#point-workers'],
         };
       }
       return {
         ...step,
-        text: '森林和浆果丛都已有人了。看下面效率提示——装配斧头/篓子效率远高于徒手。去「工具」页制作工具吧。',
-        highlight: ['#point-workers .hint'],
+        text: `浆果丛已派出 ${assigned} 人自动采集。有篓子的村民效率更高。`,
+        highlight: ['#point-workers'],
       };
     }
 
@@ -2059,24 +2345,15 @@ class FactoryGame {
       if (!onTab('workers')) {
         return {
           ...step,
-          text: '再点开「村民」页，用下方列表给浆果丛派工。',
+          text: '点右侧「村民」，查看统一派工列表与「全部收回 / 恢复分配」。',
           highlight: ['.tab-btn[data-tab="workers"]'],
-          requireNext: false,
-        };
-      }
-      const berry = this.state.resourcePoints.berry_bush?.assignedWorkers || 0;
-      const need = 4;
-      if (!this.state.tutorial?.workerListAssigned || berry < need) {
-        return {
-          ...step,
-          text: `下滑到「觅食」列表，给「浆果丛」点「+」派出 ${need} 人（当前 ${berry}/${need}；须用本页列表）。`,
-          highlight: ['.worker-station-row[data-station-id="berry_bush"]', '#tutorial-worker-manage'],
           requireNext: false,
         };
       }
       return {
         ...step,
-        text: `很好（浆果丛已有 ${berry} 人）。列表上方还有「全部收回 / 恢复分配」。点「下一步」。`,
+        title: '统一分配工作',
+        text: '下方列表可统一加减各站点工人；上方还有「全部收回 / 恢复分配」。浆果丛若还没派满，也可在这里补派。看完点「下一步」。',
         highlight: ['#tutorial-worker-manage', '.worker-station-list'],
         requireNext: true,
       };
@@ -2205,13 +2482,11 @@ class FactoryGame {
       return (this.state.tutorial?.planksCrafted || 0) >= (step.target || 1);
     }
     if (id === 'assign_forest') return (this.state.resourcePoints.forest?.assignedWorkers || 0) >= 2;
+    if (id === 'assign_berry') return (this.state.resourcePoints.berry_bush?.assignedWorkers || 0) >= 4;
     if (id === 'food_intro') return (this.state.tutorial.berryHarvests || 0) >= (step.target || 3);
     if (id === 'tool_efficiency_hint') return true; // requireNext 控制推进
     if (id === 'workers_visit' || id === 'workers_breed') return this.state.activeTab === 'workers';
-    if (id === 'worker_manage') {
-      const berry = this.state.resourcePoints.berry_bush?.assignedWorkers || 0;
-      return !!this.state.tutorial?.workerListAssigned && berry >= 4;
-    }
+    if (id === 'worker_manage') return this.state.activeTab === 'workers'; // requireNext 控制推进
     if (id === 'defense_open' || id === 'defense_setup') return this.state.activeTab === 'defense';
     if (id === 'defense_stance') return !!this.state.tutorial?.defenseStanceClicked;
     if (id === 'defense_assign') {
@@ -2526,13 +2801,24 @@ class FactoryGame {
     }
   }
 
-  /** 合成栏 / 工具栏：需先解锁工作台 */
+  /** 合成栏 / 工具栏 / 武器栏：需先解锁工作台 */
   isWorkbenchTabUnlocked() {
     return this.isTechUnlocked('unlock_workbench');
   }
 
+  isCombatGear(toolId) {
+    return !!GAME_DATA.villagerTools?.[toolId]?.combat;
+  }
+
+  /** 配方对应右侧页签：合成 / 工具 / 武器 */
+  getRecipeSidebarTab(recipe) {
+    if (!recipe?.isToolRecipe) return 'craft';
+    const toolId = recipe.outputTools && Object.keys(recipe.outputTools)[0];
+    return this.isCombatGear(toolId) ? 'weapons' : 'tools';
+  }
+
   isCraftOrToolsTab(tab) {
-    return tab === 'craft' || tab === 'tools';
+    return tab === 'craft' || tab === 'tools' || tab === 'weapons';
   }
 
   isTabUnlocked(tab) {
@@ -2840,6 +3126,9 @@ class FactoryGame {
       if (recipeId === 'craft_plank') {
         this.state.tutorial.planksCrafted = (this.state.tutorial.planksCrafted || 0) + 1;
       }
+      if (recipeId === 'craft_axe_1') {
+        this.state.tutorial.axesCrafted = (this.state.tutorial.axesCrafted || 0) + 1;
+      }
     }
 
     const st = this.state.craftStations[recipeId];
@@ -2853,7 +3142,7 @@ class FactoryGame {
       this.forEachToolIO(recipe.outputTools, (toolId, level, amt) => {
         parts.push(`${this.formatToolLabel(toolId, level)}×${amt}`);
       });
-      this.showNotification(`生产完成：${recipe.name} → ${parts.join('、')}`);
+      this.showResourceGainNotification(`生产完成：${recipe.name} → ${parts.join('、')}`);
     }
 
     if (order.count <= 0) {
@@ -2872,10 +3161,7 @@ class FactoryGame {
             this.setActiveStation('recipe', nextOrder.recipeId);
           }
         } else {
-          // 没有订单了：如果当前正在看的是配方站，切回上一个非配方站或默认点
-          if (this.state.activeStation.type === 'recipe') {
-            this.state.activeStation = { type: 'point', id: 'forest' };
-          }
+          // 没有后续订单：停留在生产界面，显示空队列状态（不自动跳回森林）
         }
       }
     }
@@ -3275,11 +3561,10 @@ class FactoryGame {
     return true;
   }
 
-  /** 轻量刷新工具栏耐久条/修复按钮，避免每帧重建整块 DOM */
+  /** 轻量刷新工具/武器栏耐久条/修复按钮，避免每帧重建整块 DOM */
   updateToolDurabilityUI() {
-    const container = document.getElementById('tool-list');
-    if (!container) return;
-    container.querySelectorAll('.tool-level-row.has-stock[data-tool-id]').forEach(row => {
+    document.querySelectorAll('#tool-list, #weapon-list').forEach(container => {
+      container.querySelectorAll('.tool-level-row.has-stock[data-tool-id]').forEach(row => {
       const toolId = row.dataset.toolId;
       const level = Number(row.dataset.toolLevel);
       if (!toolId || !level) return;
@@ -3328,6 +3613,7 @@ class FactoryGame {
         repairBtn?.remove();
         costEl?.remove();
       }
+      });
     });
   }
 
@@ -3718,11 +4004,11 @@ class FactoryGame {
     return true;
   }
 
-  /** 科技是否应显示为"?"状态 */
+  /** 科技是否应显示为"?"状态（仅一层迷雾：父节点已正常可见但尚未生效解锁） */
   isTechHintVisible(tech) {
     if (!tech.requires) return false;
+    // 以「生效解锁」为准；开局预写入的森林/宝箱/工具制作在工作台前仍应显示为 ?
     if (this._isTechActiveUnlocked(tech.id)) return false;
-    if (this.isTechUnlocked(tech.id)) return false;
 
     // 资源精炼等：采集/恢复均满级前显示为 "?"，满级后才进入正常可解锁态
     if (tech.requiresPointLevels && tech.pointId) {
@@ -4534,33 +4820,67 @@ class FactoryGame {
       }
     });
     if (newly > 0) {
-      const panel = document.getElementById('achievements-panel');
-      if (panel && !panel.classList.contains('hidden')) this.renderAchievementsPanel();
-      this.save();
+      const visible =
+        !document.getElementById('pause-menu-achievements')?.classList.contains('hidden')
+        || !document.getElementById('main-menu-achievements')?.classList.contains('hidden');
+      if (visible) this.renderAchievementsPanel();
+      if (this._inGameSession) this.save();
     }
     return newly;
   }
 
   openAchievementsPanel() {
-    this.checkAchievements(true);
-    this.renderAchievementsPanel();
-    document.getElementById('achievements-panel')?.classList.remove('hidden');
+    const show = () => {
+      this.checkAchievements(true);
+      this.renderAchievementsPanel();
+      if (this._atMainMenu && !this._inGameSession) {
+        this.showMainMenuPage('main-menu-achievements');
+        return;
+      }
+      if (!this.isPauseMenuOpen()) this.setPauseMenuOpen(true);
+      this._showPauseMenuPage?.('pause-menu-achievements');
+    };
+    if (this._atMainMenu && !this._inGameSession) {
+      void this.hydrateAchievementsFromSave().then(show);
+      return;
+    }
+    show();
+  }
+
+  async hydrateAchievementsFromSave() {
+    try {
+      let raw = null;
+      const api = this._saveApi();
+      if (api?.read) raw = await api.read();
+      else raw = localStorage.getItem('factoryGame');
+      if (!raw) return;
+      const data = JSON.parse(raw);
+      if (Array.isArray(data?.unlockedAchievements)) {
+        this.state.unlockedAchievements = data.unlockedAchievements.slice();
+      }
+    } catch (_) { /* ignore */ }
   }
 
   closeAchievementsPanel() {
-    document.getElementById('achievements-panel')?.classList.add('hidden');
+    if (this._atMainMenu && !this._inGameSession) {
+      this.showMainMenuHome();
+      return;
+    }
+    if (this.isPauseMenuOpen()) {
+      this._showPauseMenuHome?.();
+      return;
+    }
   }
 
   renderAchievementsPanel() {
-    const listEl = document.getElementById('achievements-list');
-    const summaryEl = document.getElementById('achievements-summary');
-    if (!listEl) return;
     const list = GAME_DATA.achievements || [];
     const unlockedCount = list.filter(a => this.isAchievementUnlocked(a.id)).length;
-    if (summaryEl) summaryEl.textContent = `已完成 ${unlockedCount} / ${list.length}`;
+    const summaryText = `已完成 ${unlockedCount} / ${list.length}`;
+    document.querySelectorAll('[data-achievements-summary]').forEach((el) => {
+      el.textContent = summaryText;
+    });
 
-    listEl.innerHTML = '';
-    list.forEach(ach => {
+    const buildItem = (ach) => {
       const unlocked = this.isAchievementUnlocked(ach.id);
       const { current, target } = this.getAchievementProgress(ach);
       const el = document.createElement('div');
@@ -4576,7 +4896,12 @@ class FactoryGame {
         </div>
         ${unlocked ? '<div class="achievement-badge">✓</div>' : ''}
       `;
-      listEl.appendChild(el);
+      return el;
+    };
+
+    document.querySelectorAll('[data-achievements-list]').forEach((listEl) => {
+      listEl.innerHTML = '';
+      list.forEach((ach) => listEl.appendChild(buildItem(ach)));
     });
   }
 
@@ -4740,7 +5065,7 @@ class FactoryGame {
     while (
       this.state.dayProgress >= dayMs
       && !this.state.gameOver
-      && !this.paused
+      && !this.shouldFreezeGameTime()
     ) {
       this.state.dayProgress -= dayMs;
       lastNeed = this.getDailyFoodNeed();
@@ -4822,6 +5147,7 @@ class FactoryGame {
         this.pauseForStarvationAlert(pending.deaths, pending.hungry || 0);
         return;
       }
+      // 若 Esc/主菜单/漫画等仍要求冻结，只清 paused，真正开时由 shouldFreezeGameTime 决定
       this.paused = false;
       this.lastTick = Date.now();
     });
@@ -5417,7 +5743,7 @@ class FactoryGame {
     const isActive = this.state.activeStation?.type === 'point' && this.state.activeStation?.id === pointId;
     if (!this._suppressSounds && isActive) this.sounds.playHarvest(def.resource);
     const resDef = GAME_DATA.resources[def.resource];
-    this.showNotification(`获得 ${resDef.icon} ${resDef.name} ×${yieldAmount}`);
+    this.showResourceGainNotification(`获得 ${resDef.icon} ${resDef.name} ×${yieldAmount}`);
     this.tryGrantStarterChest(pointId);
     const starterAt = GAME_DATA.starterChest?.afterForestHarvests ?? 2;
     if (!(pointId === 'forest' && this.state.forestHarvestCount === starterAt)) {
@@ -5456,7 +5782,7 @@ class FactoryGame {
           const r = GAME_DATA.resources[res];
           return `${r?.icon || ''} ${r?.name || res} ×${amt}`;
         });
-        this.showNotification(`宝箱开启：获得 ${parts.join('、')}`);
+        this.showResourceGainNotification(`宝箱开启：获得 ${parts.join('、')}`);
         this.resetChestVisualAfterOpen();
         this.render();
         this.save();
@@ -5464,7 +5790,7 @@ class FactoryGame {
           this.showStoryDialog(
             GAME_DATA.starterChest?.lootDialog
               || GAME_DATA.starterChest?.afterOpenDialog
-              || '拿到了不少材料，刚好去做个工具试试',
+              || '拿到了不少材料，去解锁一下新科技',
             () => {
               if (this.state.tutorial) this.state.tutorial.starterChestOpened = true;
               this.render();
@@ -5673,10 +5999,10 @@ class FactoryGame {
   }
 
   runGameSimulation(dt) {
-    if (dt <= 0 || this.state.gameOver || this.paused) return;
+    if (dt <= 0 || this.state.gameOver || this.shouldFreezeGameTime()) return;
     const step = 200;
     let remaining = dt;
-    while (remaining > 0 && !this.state.gameOver && !this.paused) {
+    while (remaining > 0 && !this.state.gameOver && !this.shouldFreezeGameTime()) {
       const chunk = Math.min(step, remaining);
       this.processCooldowns(chunk);
       this.processPointGatherAnims();
@@ -5690,11 +6016,13 @@ class FactoryGame {
 
   tickGame() {
     const now = Date.now();
+    const frozen = this.shouldFreezeGameTime();
     const dt = Math.max(0, (now - this.lastTick) * (this.timeScale || this.devTimeScale || 1));
+    // 冻结时仍刷新 lastTick，避免解冻瞬间一次性补算大段时间
     this.lastTick = now;
     // 填满动画按真实时间推进（不受暂停/加速影响）
     this.processPointGatherAnims();
-    if (dt > 0 && !this.state.gameOver && !this.paused) this.runGameSimulation(dt);
+    if (dt > 0 && !this.state.gameOver && !frozen) this.runGameSimulation(dt);
     this.renderTick();
     this.renderGlobalStats();
     if (this.isTutorialActive()) {
@@ -5777,16 +6105,15 @@ class FactoryGame {
     this.save();
   }
 
-  /** 工作台解锁后强制开放并闪烁合成/工具栏 */
+  /** 工作台解锁后强制开放并闪烁合成/工具/武器栏 */
   flashWorkbenchTabs(openRecipeIds = []) {
-    const hasTool = openRecipeIds.some(id => GAME_DATA.recipes.find(r => r.id === id)?.isToolRecipe);
     if (!this._unlockFlash) {
       this._unlockFlash = {
         until: Date.now() + 2800,
         points: new Set(),
         recipes: new Set(openRecipeIds),
         sections: new Set(),
-        tabs: new Set(['craft', 'tools']),
+        tabs: new Set(['craft', 'tools', 'weapons']),
       };
       if (this._unlockFlashTimer) clearTimeout(this._unlockFlashTimer);
       this._unlockFlashTimer = setTimeout(() => {
@@ -5799,6 +6126,7 @@ class FactoryGame {
     } else {
       this._unlockFlash.tabs.add('craft');
       this._unlockFlash.tabs.add('tools');
+      this._unlockFlash.tabs.add('weapons');
       openRecipeIds.forEach(id => this._unlockFlash.recipes.add(id));
     }
     // 只闪烁标签，不强制切页签
@@ -5818,7 +6146,7 @@ class FactoryGame {
     recipeIds.forEach(id => {
       const recipe = GAME_DATA.recipes.find(r => r.id === id);
       if (!recipe) return;
-      tabs.add(recipe.isToolRecipe ? 'tools' : 'craft');
+      tabs.add(this.getRecipeSidebarTab(recipe));
     });
 
     this._unlockFlash = {
@@ -6544,49 +6872,11 @@ class FactoryGame {
   }
 
   setupGameMenu() {
-    const menuBtn = document.getElementById('menu-btn');
-    const dropdown = document.getElementById('menu-dropdown');
-    const resetItem = document.getElementById('menu-reset');
-
-    const closeMenu = () => {
-      dropdown.classList.add('hidden');
-      menuBtn.classList.remove('active');
-    };
-
-    const toggleMenu = () => {
-      const open = dropdown.classList.contains('hidden');
-      dropdown.classList.toggle('hidden', !open);
-      menuBtn.classList.toggle('active', open);
-    };
-
-    menuBtn.addEventListener('click', (e) => {
-      e.stopPropagation();
-      toggleMenu();
-    });
-
-    resetItem.addEventListener('click', () => {
-      closeMenu();
-      this.reset();
-    });
-
     document.getElementById('game-over-reset')?.addEventListener('click', () => {
       this.reset({ skipConfirm: true });
     });
     document.getElementById('victory-reset')?.addEventListener('click', () => {
       this.reset({ skipConfirm: true });
-    });
-
-    document.getElementById('menu-achievements')?.addEventListener('click', () => {
-      closeMenu();
-      this.openAchievementsPanel();
-    });
-    document.getElementById('achievements-close')?.addEventListener('click', () => this.closeAchievementsPanel());
-    document.getElementById('achievements-panel')?.addEventListener('click', (e) => {
-      if (e.target.id === 'achievements-panel') this.closeAchievementsPanel();
-    });
-
-    document.addEventListener('click', (e) => {
-      if (!e.target.closest('.game-menu')) closeMenu();
     });
 
     this.setupPauseMenu();
@@ -6603,6 +6893,8 @@ class FactoryGame {
       sfxVolume: 1,
       /** 新开局是否启动新手教程（默认开） */
       enableTutorial: true,
+      /** 采集/开箱/生产完成时是否弹出下方资源获得提示（默认开） */
+      resourceGainNotify: true,
     };
   }
 
@@ -6746,17 +7038,25 @@ class FactoryGame {
     if (tut) tut.checked = tutOn;
     const mmTut = document.getElementById('mm-set-enable-tutorial');
     if (mmTut) mmTut.checked = tutOn;
+
+    const gainOn = s.resourceGainNotify !== false;
+    const gain = document.getElementById('set-resource-gain-notify');
+    if (gain) gain.checked = gainOn;
+    const mmGain = document.getElementById('mm-set-resource-gain-notify');
+    if (mmGain) mmGain.checked = gainOn;
   }
 
   setupPauseMenu() {
     const root = document.getElementById('pause-menu');
     if (!root || this._pauseMenuBound) return;
     this._pauseMenuBound = true;
+    this.bindMenuUiSounds(root);
 
     const pages = [
       'pause-menu-home',
       'pause-menu-settings',
       'pause-menu-dev',
+      'pause-menu-achievements',
     ];
     const showPage = (id) => {
       pages.forEach((pid) => {
@@ -6766,7 +7066,11 @@ class FactoryGame {
         this.showSettingsTab(this._settingsTab || 'display');
         this.syncSettingsForm();
       }
+      if (id === 'pause-menu-achievements') {
+        this.renderAchievementsPanel();
+      }
     };
+    this._showPauseMenuPage = showPage;
 
     const showSettingsTab = (tab) => {
       const key = (tab === 'audio' || tab === 'game') ? tab : 'display';
@@ -6789,8 +7093,18 @@ class FactoryGame {
       this._settingsTab = 'display';
       showPage('pause-menu-settings');
     });
+    document.getElementById('pause-achievements')?.addEventListener('click', () => {
+      void this.openAchievementsPanel();
+    });
+    document.getElementById('pause-achievements-back')?.addEventListener('click', () => {
+      showPage('pause-menu-home');
+    });
     document.getElementById('pause-settings-back')?.addEventListener('click', () => {
       showPage('pause-menu-home');
+    });
+    document.getElementById('set-reset-save')?.addEventListener('click', () => {
+      this.setPauseMenuOpen(false);
+      this.reset();
     });
     document.querySelectorAll('#pause-menu-settings [data-settings-tab]').forEach((btn) => {
       btn.addEventListener('click', () => {
@@ -6808,7 +7122,7 @@ class FactoryGame {
       void this.returnToMainMenu();
     });
     document.getElementById('pause-quit')?.addEventListener('click', () => {
-      this.quitApp();
+      void this.quitApp();
     });
 
     document.getElementById('set-display-mode')?.addEventListener('change', (e) => {
@@ -6847,6 +7161,11 @@ class FactoryGame {
       void this.applySettings({ applyDisplay: false });
       this.syncSettingsForm();
     });
+    document.getElementById('set-resource-gain-notify')?.addEventListener('change', (e) => {
+      this.settings.resourceGainNotify = !!e.target.checked;
+      void this.applySettings({ applyDisplay: false });
+      this.syncSettingsForm();
+    });
 
     root.addEventListener('click', (e) => {
       if (e.target === root) this.setPauseMenuOpen(false);
@@ -6872,13 +7191,19 @@ class FactoryGame {
         this._pauseMenuPrevPaused = !!this.paused;
       }
       this.paused = true;
-      document.getElementById('menu-dropdown')?.classList.add('hidden');
-      document.getElementById('menu-btn')?.classList.remove('active');
+      this.lastTick = Date.now();
     } else if (this._pausedByMenu) {
-      this.paused = this._pauseMenuPrevPaused;
+      const restore = this._pauseMenuPrevPaused;
       this._pausedByMenu = false;
       this._pauseMenuPrevPaused = false;
       this._showPauseMenuHome?.();
+      // 漫画/中转/主菜单仍冻结时不要误开时间
+      if (restore || this._comicTimeHold || this._bootTransitionActive || this._atMainMenu || !this._inGameSession) {
+        this.paused = true;
+      } else {
+        this.paused = false;
+        this.lastTick = Date.now();
+      }
     }
   }
 
@@ -6886,9 +7211,17 @@ class FactoryGame {
   handleGlobalEscape() {
     if (this._techEditMode) return;
 
+    // 难度选择盖在主菜单之上，须优先于主菜单 Esc 分支处理
+    const diffSel = document.getElementById('difficulty-select');
+    if (this._pickingDifficulty || (diffSel && !diffSel.classList.contains('hidden'))) {
+      this.cancelDifficultySelect();
+      return;
+    }
+
     if (this._atMainMenu) {
       const settings = document.getElementById('main-menu-settings');
       const dev = document.getElementById('main-menu-dev');
+      const achPage = document.getElementById('main-menu-achievements');
       if (settings && !settings.classList.contains('hidden')) {
         this.showMainMenuHome();
         return;
@@ -6897,28 +7230,9 @@ class FactoryGame {
         this.showMainMenuHome();
         return;
       }
-      return;
-    }
-
-    const diffSel = document.getElementById('difficulty-select');
-    if (this._pickingDifficulty || (diffSel && !diffSel.classList.contains('hidden'))) {
-      this._pickingDifficulty = false;
-      this._difficultyConfirming = false;
-      document.getElementById('difficulty-select')?.classList.add('hidden');
-      if (this._difficultyFromMainMenu || this._atMainMenu) {
-        this._difficultyFromMainMenu = false;
-        this._inGameSession = false;
-        this._atMainMenu = true;
-        document.getElementById('boot-shell')?.classList.remove('hidden');
-        document.getElementById('main-menu')?.classList.remove('hidden');
+      if (achPage && !achPage.classList.contains('hidden')) {
         this.showMainMenuHome();
-        void this.refreshMainMenuLoadButton();
-        this.startMenuBgm();
-      } else {
-        // 局内重置取消：回主界面更干净
-        this._inGameSession = false;
-        this.stopGameBgm();
-        this.leaveGameToMainMenuShell();
+        return;
       }
       return;
     }
@@ -6933,11 +7247,6 @@ class FactoryGame {
       this.toggleDevPanel(false);
       return;
     }
-    const ach = document.getElementById('achievements-panel');
-    if (ach && !ach.classList.contains('hidden')) {
-      this.closeAchievementsPanel();
-      return;
-    }
     const defenseHidden = document.getElementById('defense-overlay')?.classList.contains('hidden');
     if (!defenseHidden && this._selectedUnitIds?.size) {
       this._setFormationSelection?.([]);
@@ -6947,11 +7256,16 @@ class FactoryGame {
     if (pauseOpen) {
       const settings = document.getElementById('pause-menu-settings');
       const dev = document.getElementById('pause-menu-dev');
+      const achPage = document.getElementById('pause-menu-achievements');
       if (settings && !settings.classList.contains('hidden')) {
         this._showPauseMenuHome?.();
         return;
       }
       if (dev && !dev.classList.contains('hidden')) {
+        this._showPauseMenuHome?.();
+        return;
+      }
+      if (achPage && !achPage.classList.contains('hidden')) {
         this._showPauseMenuHome?.();
         return;
       }
@@ -7884,6 +8198,12 @@ class FactoryGame {
     this._notifTimer = setTimeout(() => el.classList.remove('show'), 2500);
   }
 
+  /** 资源获得类底部提示（受设置「资源获得提示」控制，默认开启） */
+  showResourceGainNotification(msg) {
+    if (this.settings?.resourceGainNotify === false) return;
+    this.showNotification(msg);
+  }
+
   /** 按视口相对设计基准同步缩小字号（不用 zoom，避免非全屏裁切） */
   updateUiScale() {
     const refW = 1440;
@@ -7933,13 +8253,15 @@ class FactoryGame {
     });
     GAME_DATA.recipes.forEach(r => {
       if (r.requires === tech.id) {
-        const where = r.isToolRecipe ? '工具页' : '合成页';
+        const where = r.isToolRecipe
+          ? (this.getRecipeSidebarTab(r) === 'weapons' ? '武器页' : '工具页')
+          : '合成页';
         extras.push(`${r.icon} 配方已解锁：${r.name}（前往${where}安排生产）`);
       }
     });
     if (tech.id === 'unlock_furnace_upgrade') extras.push('🔥 熔炉配方计数值减半');
     if (tech.id === 'unlock_workbench') {
-      extras.push('🔨 开放合成与工具栏；工具制作、木板与木质工具/武器已可用');
+      extras.push('🔨 开放合成、工具与武器栏；工具制作、木板与木质工具/武器已可用');
     }
     if (tech.id === 'unlock_auto_click') {
       const { current, max } = this.getTechRepeatLevel(tech);
@@ -8283,13 +8605,13 @@ class FactoryGame {
     this.updateHeaderFoodDisplay();
     this.updateCalendarDisplay();
 
-    if (this._needToolUiRefresh && this.state.activeTab === 'tools') {
+    if (this._needToolUiRefresh && (this.state.activeTab === 'tools' || this.state.activeTab === 'weapons')) {
       this._needToolUiRefresh = false;
       this._needToolDurabilityPaint = false;
       this.renderTools();
     } else {
       this._needToolUiRefresh = false;
-      if (this._needToolDurabilityPaint && this.state.activeTab === 'tools') {
+      if (this._needToolDurabilityPaint && (this.state.activeTab === 'tools' || this.state.activeTab === 'weapons')) {
         this._needToolDurabilityPaint = false;
         this.updateToolDurabilityUI();
       } else {
@@ -8379,7 +8701,7 @@ class FactoryGame {
             ? (onCooldown
               ? `冷却中 ${this.formatCooldownSeconds(st.cooldownRemaining)}s · 剩余 ×${queueCount}`
               : `生产中 ${orderProgress.toFixed(1)} / ${orderMax} · 剩余 ×${queueCount}`)
-            : (st.autoProduce ? '自动生产中，等待材料...' : `前往${def.isToolRecipe ? '工具页' : '合成页'}安排生产`))
+            : (st.autoProduce ? '自动生产中，等待材料...' : '无可制作订单'))
           : (type === 'point'
             ? this._getPointBarState(id).text
             : onCooldown
@@ -8739,7 +9061,7 @@ class FactoryGame {
       if (craftSection) craftSection.style.display = 'none';
     } else if (!hasAnyWork) {
       if (craftSection) craftSection.style.display = '';
-      if (craftList) craftList.innerHTML = '<p class="hint craft-order-empty">暂无生产任务，前往合成页安排生产</p>';
+      if (craftList) craftList.innerHTML = '<p class="hint craft-order-empty">无可制作订单</p>';
     } else {
       if (craftSection) craftSection.style.display = '';
       // 生产订单
@@ -8913,7 +9235,7 @@ class FactoryGame {
           `👷 ${this.state.workers?.craftWorkers || 0}`,
         ]
         : [
-          st.autoProduce ? '自动生产' : '无生产任务',
+          st.autoProduce ? '自动生产' : '无可制作订单',
           autoLabel,
           `👷 ${this.state.workers?.craftWorkers || 0}`,
         ])
@@ -8961,8 +9283,8 @@ class FactoryGame {
           ? (onCooldown
             ? `冷却中 ${this.formatCooldownSeconds(st.cooldownRemaining)}s · 剩余 ×${queueCount}`
             : `生产中 ${orderProgress.toFixed(1)} / ${orderMax} · 剩余 ×${queueCount}`)
-          : (st.autoProduce ? '自动生产中，等待材料...' : `前往${def.isToolRecipe ? '工具页' : '合成页'}安排生产`))
-        : pointBar
+            : (st.autoProduce ? '自动生产中，等待材料...' : '无可制作订单'))
+          : pointBar
           ? pointBar.text
           : onCooldown
             ? `冷却中 ${this.formatCooldownSeconds(st.cooldownRemaining)}s`
@@ -8981,7 +9303,7 @@ class FactoryGame {
       : isCraft
       ? queueCount > 0
         ? '点击以进行采集'
-        : (st.autoProduce ? '开启自动生产后，队列清空会自动补单' : `前往${def.isToolRecipe ? '工具页' : '合成页'}安排生产，材料会立即扣除`)
+        : (st.autoProduce ? '开启自动生产后，队列清空会自动补单' : '无可制作订单')
       : isChest
         ? chestStock > 0
           ? onCooldown
@@ -9407,30 +9729,44 @@ class FactoryGame {
   }
 
   renderTools() {
-    const container = document.getElementById('tool-list');
+    this.renderGearPanel('tools');
+    this.renderGearPanel('weapons');
+  }
+
+  /** @param {'tools'|'weapons'} kind */
+  renderGearPanel(kind) {
+    const combatOnly = kind === 'weapons';
+    const container = document.getElementById(combatOnly ? 'weapon-list' : 'tool-list');
+    if (!container) return;
     container.innerHTML = '';
 
+    const title = combatOnly ? '武器' : '工具';
     const header = document.createElement('div');
     header.className = 'tools-panel-header';
     header.innerHTML = `
-      <h4>工具</h4>
+      <h4>${title}</h4>
       <div class="tools-panel-hint"></div>
     `;
     container.appendChild(header);
 
+    const entries = Object.entries(GAME_DATA.villagerTools || {})
+      .filter(([, def]) => !!def.combat === combatOnly);
+
     if (!this.isTechUnlocked('unlock_workbench')) {
-      const hasAnyStock = Object.keys(GAME_DATA.villagerTools || {}).some(id => this.getToolCount(id) > 0);
+      const hasAnyStock = entries.some(([id]) => this.getToolCount(id) > 0);
       if (!hasAnyStock) {
         const tip = document.createElement('p');
         tip.className = 'hint';
-        tip.textContent = '解锁「工作台」后，可在此查看并制作木质工具与武器。';
+        tip.textContent = combatOnly
+          ? '解锁「工作台」后，可在此查看并制作木质武器与护甲。'
+          : '解锁「工作台」后，可在此查看并制作木质采集工具。';
         container.appendChild(tip);
         return;
       }
     }
 
     let anyShown = false;
-    Object.entries(GAME_DATA.villagerTools || {}).forEach(([id, def]) => {
+    entries.forEach(([id, def]) => {
       const max = def.maxLevel || 3;
       const levels = [];
       for (let lv = 1; lv <= max; lv++) {
@@ -9555,7 +9891,9 @@ class FactoryGame {
     if (!anyShown) {
       const tip = document.createElement('p');
       tip.className = 'hint';
-      tip.textContent = '解锁「工作台」或对应材料科技后，工具与配方会显示在此。';
+      tip.textContent = combatOnly
+        ? '解锁「工作台」或对应材料科技后，武器与护甲配方会显示在此。'
+        : '解锁「工作台」或对应材料科技后，工具与配方会显示在此。';
       container.appendChild(tip);
     }
   }
@@ -9788,14 +10126,16 @@ class FactoryGame {
 
     content.insertBefore(svg, content.firstChild);
 
-    // 拖拽平移
+    // 拖拽平移（新手教程期间禁止拖动/缩放，避免工作台高亮被挪走）
     canvas.addEventListener('mousedown', (e) => {
+      if (this.isTutorialActive()) return;
       if (e.target.closest('.tech-node, .tech-tooltip, #tt-btn')) return;
       this._isDragging = false;
       this._dragStartX = e.clientX - this._panX;
       this._dragStartY = e.clientY - this._panY;
       this._dragMoved = false;
       const onMove = (ev) => {
+        if (this.isTutorialActive()) return;
         const dx = ev.clientX - this._dragStartX;
         const dy = ev.clientY - this._dragStartY;
         if (Math.abs(ev.clientX - e.clientX) > 3 || Math.abs(ev.clientY - e.clientY) > 3) {
@@ -9815,6 +10155,10 @@ class FactoryGame {
     });
 
     canvas.addEventListener('wheel', (e) => {
+      if (this.isTutorialActive()) {
+        e.preventDefault();
+        return;
+      }
       if (e.target.closest('.tech-tooltip, #tt-btn')) return;
       e.preventDefault();
       const rect = canvas.getBoundingClientRect();
@@ -9934,7 +10278,7 @@ class FactoryGame {
         if (tech.id === this._techEditSelectedId) el.classList.add('tech-edit-selected');
         return;
       }
-      const isHint = !isRoot && !this.isTechUnlocked(tech.id) && !this.isTechVisible(tech) && this.isTechHintVisible(tech);
+      const isHint = !isRoot && this.isTechHintVisible(tech);
       const isVisible = isRoot || this.isTechVisible(tech) || isHint;
       if (!isVisible) {
         el.style.display = 'none';
@@ -9946,6 +10290,7 @@ class FactoryGame {
         el.className = 'tech-node state-hint';
         if (isRoot) el.classList.add('center-node');
         el.textContent = '?';
+        el.classList.remove('has-composite-icon');
         return;
       }
 

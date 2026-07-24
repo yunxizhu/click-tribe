@@ -2039,7 +2039,7 @@
       if (!(wallDt > 0) || wallDt > 250) wallDt = 16.67;
       wallDt = Math.min(64, wallDt);
 
-      if (!this.state?.gameOver && !this.paused) {
+      if (!this.state?.gameOver && !(this.shouldFreezeGameTime?.() ?? this.paused)) {
         const simDt = wallDt * (this.timeScale || this.devTimeScale || 1);
         this.processUnitMoveOrders(simDt);
         this.processFormationRecall(simDt);
