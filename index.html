@@ -4,10 +4,132 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>点击部落</title>
-  <link rel="stylesheet" href="style.css?v=20260723o">
+  <link rel="stylesheet" href="style.css?v=20260723bh">
 </head>
 <body>
-  <div id="app">
+  <!-- 启动壳：加载 → 主菜单（盖住游戏） -->
+  <div id="boot-shell" class="boot-shell" aria-live="polite">
+    <div id="boot-loading" class="boot-layer boot-loading">
+      <div class="boot-brand">点击部落</div>
+      <div class="boot-spinner-wrap" aria-hidden="true">
+        <div class="boot-spinner boot-spinner-outer"></div>
+        <div class="boot-spinner boot-spinner-inner"></div>
+      </div>
+      <p class="boot-loading-text" id="boot-loading-text">正在加载资源…</p>
+      <div class="boot-progress" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0" id="boot-progress">
+        <div class="boot-progress-bar" id="boot-progress-bar"></div>
+      </div>
+      <p class="boot-loading-pct" id="boot-loading-pct">0%</p>
+    </div>
+
+    <div id="main-menu" class="boot-layer main-menu hidden">
+      <div class="main-menu-bg" aria-hidden="true"></div>
+        <div class="main-menu-home" id="main-menu-home">
+          <h1 class="main-menu-title mm-reveal">点击部落</h1>
+          <div class="main-menu-title-line mm-reveal" aria-hidden="true"></div>
+          <div class="main-menu-actions">
+          <button type="button" class="main-menu-btn mm-reveal" id="mm-start">新游戏</button>
+          <button type="button" class="main-menu-btn mm-reveal" id="mm-load">加载存档</button>
+          <button type="button" class="main-menu-btn mm-reveal" id="mm-settings">设置</button>
+          <button type="button" class="main-menu-btn mm-reveal" id="mm-dev">开发人员</button>
+          <button type="button" class="main-menu-btn main-menu-btn-danger mm-reveal" id="mm-quit">退出游戏</button>
+        </div>
+      </div>
+
+      <div class="main-menu-panel pause-menu-wide hidden" id="main-menu-settings">
+        <div class="pause-sub-header">
+          <h2 class="pause-sub-title">设置</h2>
+          <div class="pause-settings-tabs" role="tablist" aria-label="设置分类">
+            <button type="button" class="pause-settings-tab active" role="tab" aria-selected="true" data-mm-settings-tab="display" id="mm-tab-display">显示</button>
+            <button type="button" class="pause-settings-tab" role="tab" aria-selected="false" data-mm-settings-tab="audio" id="mm-tab-audio">音量</button>
+            <button type="button" class="pause-settings-tab" role="tab" aria-selected="false" data-mm-settings-tab="game" id="mm-tab-game">游戏</button>
+          </div>
+        </div>
+        <div class="pause-settings-body">
+          <div class="pause-settings-pane" id="mm-pane-display" data-mm-settings-pane="display" role="tabpanel">
+            <div class="pause-setting-block">
+              <label class="pause-setting-label" for="mm-set-display-mode">显示模式</label>
+              <select id="mm-set-display-mode" class="pause-select">
+                <option value="fullscreen">全屏</option>
+                <option value="windowed">窗口化</option>
+              </select>
+            </div>
+            <div class="pause-setting-block">
+              <label class="pause-setting-label" for="mm-set-display-res">窗口分辨率（窗口化时生效）</label>
+              <select id="mm-set-display-res" class="pause-select"></select>
+            </div>
+            <p class="pause-menu-hint" id="mm-pause-display-hint"></p>
+          </div>
+          <div class="pause-settings-pane hidden" id="mm-pane-audio" data-mm-settings-pane="audio" role="tabpanel">
+            <div class="pause-setting-block">
+              <label class="pause-check"><input type="checkbox" id="mm-set-bgm-enabled" checked> 播放 BGM</label>
+            </div>
+            <div class="pause-setting-block">
+              <label class="pause-setting-label" for="mm-set-vol-master">全局音量 <span id="mm-set-vol-master-val">70%</span></label>
+              <input type="range" id="mm-set-vol-master" class="pause-slider" min="0" max="100" value="70" step="1">
+            </div>
+            <div class="pause-setting-block">
+              <label class="pause-setting-label" for="mm-set-vol-sfx">资源区音效 <span id="mm-set-vol-sfx-val">100%</span></label>
+              <input type="range" id="mm-set-vol-sfx" class="pause-slider" min="0" max="100" value="100" step="1">
+            </div>
+          </div>
+          <div class="pause-settings-pane hidden" id="mm-pane-game" data-mm-settings-pane="game" role="tabpanel">
+            <div class="pause-setting-block">
+              <label class="pause-check"><input type="checkbox" id="mm-set-enable-tutorial" checked> 启动新手教程</label>
+            </div>
+            <p class="pause-menu-hint">新开局时是否自动开始新手教程（默认开启）。</p>
+          </div>
+        </div>
+        <button type="button" class="pause-menu-back" id="mm-settings-back">返回</button>
+      </div>
+
+      <div class="main-menu-panel pause-menu-wide pause-menu-dev-panel hidden" id="main-menu-dev">
+        <div class="pause-sub-header">
+          <h2 class="pause-sub-title">开发人员</h2>
+        </div>
+        <div class="pause-menu-dev-body">
+          <p class="pause-menu-dev-status">开发中</p>
+          <p class="pause-menu-dev-label">开发人员：</p>
+          <p class="pause-menu-dev-name">夕云-朱</p>
+        </div>
+        <button type="button" class="pause-menu-back" id="mm-dev-back">返回</button>
+      </div>
+
+      <p class="main-menu-version mm-reveal" id="main-menu-version">v1.0.0</p>
+      <button type="button" class="main-menu-bgm-now" id="mm-bgm-now" title="点击切换 BGM">♪ —</button>
+    </div>
+  </div>
+
+  <!-- 难度选择：在主菜单确认后、进游戏前（也可用于重置） -->
+  <div id="difficulty-select" class="defense-intro boot-overlay hidden">
+    <div class="defense-intro-dialog">
+      <h3>选择难度</h3>
+      <p>选择适合你的游戏难度</p>
+      <div class="difficulty-options" id="difficulty-options">
+        <button type="button" class="diff-btn" data-difficulty="peaceful">☮️ 和平</button>
+        <button type="button" class="diff-btn" data-difficulty="normal">⚖️ 正常</button>
+        <button type="button" class="diff-btn" data-difficulty="hard">💀 困难</button>
+        <button type="button" class="diff-btn" data-difficulty="hell">🔥 地狱</button>
+      </div>
+      <p id="diff-desc" class="diff-desc"></p>
+      <p class="diff-esc-hint">按 Esc 返回</p>
+    </div>
+  </div>
+
+  <!-- 选完难度后进入游戏的中转 -->
+  <div id="boot-transition" class="boot-transition hidden" aria-live="polite">
+    <div class="boot-transition-inner">
+      <div class="boot-spinner-wrap boot-spinner-wrap-lg" aria-hidden="true">
+        <div class="boot-spinner boot-spinner-outer"></div>
+        <div class="boot-spinner boot-spinner-inner"></div>
+      </div>
+      <p class="boot-transition-brand">点击部落</p>
+      <p class="boot-transition-text" id="boot-transition-text">正在进入村落…</p>
+      <p class="boot-transition-sub">加载中</p>
+    </div>
+  </div>
+
+  <div id="app" class="app-beneath-shell">
     <header class="game-header">
       <h1>🏕️ 点击部落 <span id="diff-label" class="diff-badge"></span></h1>
       <div class="header-calendar-wrap" id="calendar-wrap">
@@ -22,7 +144,7 @@
             <div class="game-clock-center"></div>
           </div>
         </div>
-        <span id="calendar-display" class="header-calendar">第 1 天 06:00</span>
+        <span id="calendar-display" class="header-calendar">第 1 天 08:00</span>
         <div class="header-speed" id="header-speed" title="游戏时间加速（不影响手动点击单次收益）。按 Tab 切换 1× / 2× / 4×">
           <span class="speed-thumb" id="speed-thumb" aria-hidden="true"></span>
           <button type="button" class="speed-btn active" data-speed="1" aria-label="正常速度 1×" title="正常速度">
@@ -227,31 +349,6 @@
       </div>
     </div>
 
-    <div id="difficulty-select" class="defense-intro hidden">
-      <div class="defense-intro-dialog">
-        <h3>选择难度</h3>
-        <p>选择适合你的游戏难度</p>
-        <div class="difficulty-options" id="difficulty-options">
-          <button type="button" class="diff-btn" data-difficulty="peaceful">☮️ 和平</button>
-          <button type="button" class="diff-btn" data-difficulty="normal">⚖️ 正常</button>
-          <button type="button" class="diff-btn" data-difficulty="hard">💀 困难</button>
-          <button type="button" class="diff-btn" data-difficulty="hell">🔥 地狱</button>
-        </div>
-        <p id="diff-desc" class="diff-desc"></p>
-      </div>
-    </div>
-
-    <div id="defense-intro" class="defense-intro hidden">
-      <div class="defense-intro-dialog">
-        <h3>魔王当道</h3>
-        <p>魔王正在毁灭世界，所到之处化为焦土；又到处派出爪牙，荼毒生灵、掠夺村落。</p>
-        <p>你们一路逃难，来到这片尚未被侵占的谷地，重建部落。魔王本人暂未现身，但其爪牙仍会寻踪而至——约在第 7 天首次来袭，第 5 天会有预警。</p>
-        <p>制作弓弩剑矛与盾，编制远程与近战；用「防御 / 出击 / 随军出击」指挥战斗。之后约每隔一到两周再来一次。</p>
-        <p class="dim">左侧会出现「魔王」资源点，神器未铸前它有无敌护盾。</p>
-        <button type="button" id="defense-intro-ok" class="btn-craft">开始重建</button>
-      </div>
-    </div>
-
     <div id="battle-screen" class="battle-screen hidden">
       <div class="battle-frame">
         <div class="battle-top">
@@ -319,6 +416,7 @@
         <h2 id="pause-menu-title">游戏菜单</h2>
         <button type="button" class="pause-menu-btn" id="pause-resume">返回游戏</button>
         <button type="button" class="pause-menu-btn" id="pause-settings">设置</button>
+        <button type="button" class="pause-menu-btn" id="pause-to-main">返回主界面</button>
         <button type="button" class="pause-menu-btn" id="pause-dev">开发人员</button>
         <button type="button" class="pause-menu-btn pause-menu-btn-danger" id="pause-quit">退出游戏</button>
         <p class="pause-menu-hint">按 Esc 关闭菜单</p>
@@ -330,6 +428,7 @@
           <div class="pause-settings-tabs" role="tablist" aria-label="设置分类">
             <button type="button" class="pause-settings-tab active" role="tab" aria-selected="true" data-settings-tab="display" id="pause-tab-display">显示</button>
             <button type="button" class="pause-settings-tab" role="tab" aria-selected="false" data-settings-tab="audio" id="pause-tab-audio">音量</button>
+            <button type="button" class="pause-settings-tab" role="tab" aria-selected="false" data-settings-tab="game" id="pause-tab-game">游戏</button>
           </div>
         </div>
         <div class="pause-settings-body">
@@ -349,7 +448,7 @@
           </div>
           <div class="pause-settings-pane hidden" id="pause-pane-audio" data-settings-pane="audio" role="tabpanel">
             <div class="pause-setting-block">
-              <label class="pause-check"><input type="checkbox" id="set-bgm-enabled"> 播放 BGM</label>
+              <label class="pause-check"><input type="checkbox" id="set-bgm-enabled" checked> 播放 BGM</label>
             </div>
             <div class="pause-setting-block">
               <label class="pause-setting-label" for="set-vol-master">全局音量 <span id="set-vol-master-val">70%</span></label>
@@ -359,6 +458,12 @@
               <label class="pause-setting-label" for="set-vol-sfx">资源区音效 <span id="set-vol-sfx-val">100%</span></label>
               <input type="range" id="set-vol-sfx" class="pause-slider" min="0" max="100" value="100" step="1">
             </div>
+          </div>
+          <div class="pause-settings-pane hidden" id="pause-pane-game" data-settings-pane="game" role="tabpanel">
+            <div class="pause-setting-block">
+              <label class="pause-check"><input type="checkbox" id="set-enable-tutorial" checked> 启动新手教程</label>
+            </div>
+            <p class="pause-menu-hint">新开局时是否自动开始新手教程（默认开启）。</p>
           </div>
         </div>
         <button type="button" class="pause-menu-back" id="pause-settings-back">返回</button>
@@ -488,7 +593,46 @@
     </div>
   </div>
 
-  <script src="data.js?v=20260723n"></script>
-  <script src="boot.js?v=20260723n"></script>
+  <!-- 开局漫画：独立全屏页，结束后才渐显游戏主界面 -->
+  <div id="defense-intro" class="defense-intro comic-intro hidden" aria-label="背景介绍">
+    <button type="button" class="comic-skip" id="comic-skip" title="跳过介绍">跳过</button>
+    <div class="comic-pages" id="comic-pages">
+      <div class="comic-strip comic-page comic-page-1 is-active" data-page="1">
+        <div class="comic-panel comic-panel-p1-1 is-visible" data-panel="1">
+          <div class="comic-panel-face" role="img" aria-label="分镜 1"></div>
+        </div>
+        <div class="comic-panel comic-panel-p1-2" data-panel="2">
+          <div class="comic-panel-face" role="img" aria-label="分镜 2"></div>
+        </div>
+        <div class="comic-panel comic-panel-p1-3" data-panel="3">
+          <div class="comic-panel-face" role="img" aria-label="分镜 3"></div>
+        </div>
+        <div class="comic-panel comic-panel-p1-4" data-panel="4">
+          <div class="comic-panel-face" role="img" aria-label="分镜 4"></div>
+        </div>
+        <div class="comic-panel comic-panel-p1-5" data-panel="5">
+          <div class="comic-panel-face" role="img" aria-label="分镜 5"></div>
+        </div>
+      </div>
+      <div class="comic-strip comic-page comic-page-2" data-page="2">
+        <div class="comic-panel comic-panel-p2-1" data-panel="6">
+          <div class="comic-panel-face" role="img" aria-label="分镜 6"></div>
+        </div>
+        <div class="comic-panel comic-panel-p2-2" data-panel="7">
+          <div class="comic-panel-face" role="img" aria-label="分镜 7"></div>
+        </div>
+        <div class="comic-panel comic-panel-p2-3" data-panel="8">
+          <div class="comic-panel-face" role="img" aria-label="分镜 8"></div>
+        </div>
+        <div class="comic-panel comic-panel-p2-4" data-panel="9">
+          <div class="comic-panel-face" role="img" aria-label="分镜 9"></div>
+        </div>
+      </div>
+    </div>
+    <p class="comic-hint" id="comic-hint">点击继续</p>
+  </div>
+
+  <script src="data.js?v=20260723bi"></script>
+  <script src="boot.js?v=20260723bi"></script>
 </body>
 </html>
