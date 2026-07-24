@@ -2416,19 +2416,43 @@ html.electron-shell #app {
 .comic-panel-face {
   width: 100%;
   height: 100%;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  background:
-    linear-gradient(145deg, #f4f0e6 0%, #e8e0d0 55%, #d9cfc0 100%);
-  color: #1a1a1a;
-  font-size: clamp(2.8rem, 8vw, 4.5rem);
-  font-weight: 900;
-  letter-spacing: 0.04em;
+  display: block;
+  background-color: #1a1a1a;
+  background-position: center;
+  background-size: cover;
+  background-repeat: no-repeat;
   border: 4px solid #0a0a0a;
   box-shadow:
-    inset 0 0 0 2px #f7f3ea,
+    inset 0 0 0 2px rgba(247, 243, 234, 0.35),
     inset 0 0 40px rgba(0, 0, 0, 0.08);
+}
+
+.comic-panel[data-panel="1"] .comic-panel-face {
+  background-image: url('image/background_introduction/Background_Introduction_1.jpg');
+}
+.comic-panel[data-panel="2"] .comic-panel-face {
+  background-image: url('image/background_introduction/Background_Introduction_2.jpg');
+}
+.comic-panel[data-panel="3"] .comic-panel-face {
+  background-image: url('image/background_introduction/Background_Introduction_3.jpg');
+}
+.comic-panel[data-panel="4"] .comic-panel-face {
+  background-image: url('image/background_introduction/Background_Introduction_4.jpg');
+}
+.comic-panel[data-panel="5"] .comic-panel-face {
+  background-image: url('image/background_introduction/Background_Introduction_5.jpg');
+}
+.comic-panel[data-panel="6"] .comic-panel-face {
+  background-image: url('image/background_introduction/Background_Introduction_6.jpg');
+}
+.comic-panel[data-panel="7"] .comic-panel-face {
+  background-image: url('image/background_introduction/Background_Introduction_7.jpg');
+}
+.comic-panel[data-panel="8"] .comic-panel-face {
+  background-image: url('image/background_introduction/Background_Introduction_8.jpg');
+}
+.comic-panel[data-panel="9"] .comic-panel-face {
+  background-image: url('image/background_introduction/Background_Introduction_9.jpg');
 }
 
 /* 第一页格位 */
@@ -2511,7 +2535,6 @@ html.electron-shell #app {
 
   .comic-panel-face {
     border-width: 3px;
-    font-size: clamp(2rem, 10vw, 3rem);
   }
 }
 

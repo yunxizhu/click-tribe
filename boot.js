@@ -33,7 +33,7 @@
 
   const cfg = window.__TRIBE_CONFIG_BASE__;
   // 改脚本/配置后递增，避免浏览器强缓存
-  const bust = '?v=20260723bg';
+  const bust = '?v=20260723bi';
 
   /** 外置配置（须在 game.js 之前加载；顺序可影响互相依赖） */
   const EXTERNAL_CONFIGS = [

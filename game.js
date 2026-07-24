@@ -1730,6 +1730,16 @@ class FactoryGame {
     if (!step) return null;
 
     const onTab = (tab) => this.state.activeTab === tab;
+    const leaveOverlayFirst = (text) => {
+      if (onTab('tech') || onTab('defense')) {
+        return {
+          ...step,
+          text: text || '当前合屏挡住了中间区域。先点右侧「仓库」（或其它非科技/防务页），再按指引操作。',
+          highlight: ['.tab-btn[data-tab="warehouse"]'],
+        };
+      }
+      return null;
+    };
 
     // 旧教程残留：不再引导去科技树点「木板加工」
     if (step.id === 'unlock_plank') {
@@ -1741,6 +1751,23 @@ class FactoryGame {
         highlight: ['.tab-btn[data-tab="craft"]', '.craft-overview-item[data-recipe-id="craft_plank"]'],
         progress: 'plank',
         target: 1,
+      };
+    }
+
+    if (step.id === 'chop_woods') {
+      const blocked = leaveOverlayFirst('科技/防务合屏挡住了采集区。先点右侧「仓库」，再回左侧「森林」砍树。');
+      if (blocked) return blocked;
+      if (!this.isActiveStation('point', 'forest')) {
+        return {
+          ...step,
+          text: '先点左侧「森林」，再点击中间继续砍树。',
+          highlight: ['.station-btn[data-station-id="forest"]'],
+        };
+      }
+      return {
+        ...step,
+        text: '继续点击中间森林，再砍满 2 次（凑够木头即可解锁工作台）。',
+        highlight: ['#click-area'],
       };
     }
 
@@ -1815,15 +1842,35 @@ class FactoryGame {
       };
     }
 
+    if (step.id === 'craft_weapon') {
+      if (this.getTutorialProgressValue('weapon') >= 1) {
+        return { ...step, highlight: [] };
+      }
+      if (!onTab('tools')) {
+        return {
+          ...step,
+          text: '自己点右侧「工具」，制作任意一件武器（如木弓、木剑）。',
+          highlight: ['.tab-btn[data-tab="tools"]'],
+        };
+      }
+      return {
+        ...step,
+        text: '在工具列表里下单制作任意一件武器。下单后请自己点左侧「生产」进入加工。',
+        highlight: ['#tool-list'],
+      };
+    }
+
     if (step.id === 'open_starter_chest') {
       const stock = this.state.resourcePoints.treasure_chest?.stock || 0;
       const revealed = !!this.state.starterChestRevealed;
       const granted = !!this.state.starterChestGranted;
+      const blocked = leaveOverlayFirst('先点右侧「仓库」退出合屏，再按指引去开宝箱。');
+      if (blocked) return blocked;
       if (!revealed) {
         if (granted || stock > 0) {
           return {
             ...step,
-            text: '意外掉落了宝箱！确认提示后，左侧会出现「宝箱」，再点进去打开。',
+            text: '意外掉落了宝箱！确认提示后，左侧会出现「宝箱」，再自己点进去打开。',
             highlight: ['.station-btn[data-station-id="treasure_chest"]'],
           };
         }
@@ -1857,7 +1904,7 @@ class FactoryGame {
       if (!this.isActiveStation('point', 'treasure_chest')) {
         return {
           ...step,
-          text: '左侧出现了「宝箱」。先点进去，再点中间把它打开，里面有制作木斧的材料。',
+          text: '左侧出现了「宝箱」。自己点进去，再点中间把它打开，里面有制作木斧的材料。',
           highlight: ['.station-btn[data-station-id="treasure_chest"]'],
         };
       }
@@ -1871,10 +1918,12 @@ class FactoryGame {
     if (step.id === 'assign_forest') {
       const assigned = this.state.resourcePoints.forest?.assignedWorkers || 0;
       const need = 2;
+      const blocked = leaveOverlayFirst('先点右侧「仓库」退出合屏，再去森林派工。');
+      if (blocked) return blocked;
       if (!this.isActiveStation('point', 'forest')) {
         return {
           ...step,
-          text: '可以给资源点分配村民，他们会自动采集。先点左侧「森林」。',
+          text: '可以给资源点分配村民，他们会自动采集。先自己点左侧「森林」。',
           highlight: ['.station-btn[data-station-id="forest"]'],
         };
       }
@@ -1896,7 +1945,7 @@ class FactoryGame {
       if (!onTab('tech')) {
         return {
           ...step,
-          text: '点右侧「科技」，打开科技树页面。',
+          text: '自己点右侧「科技」，打开科技树页面。',
           highlight: ['.tab-btn[data-tab="tech"]'],
         };
       }
@@ -1923,10 +1972,12 @@ class FactoryGame {
     }
 
     if (step.id === 'food_intro') {
+      const blocked = leaveOverlayFirst('先点右侧「仓库」退出合屏，再去采浆果。');
+      if (blocked) return blocked;
       if (!this.isActiveStation('point', 'berry_bush')) {
         return {
           ...step,
-          text: '食物不够时村民会饥饿并降低效率；若连续缺粮，村民还会饿死。先点左侧「浆果丛」，再采集 3 次。',
+          text: '食物不够时村民会饥饿并降低效率；若连续缺粮，村民还会饿死。先自己点左侧「浆果丛」，再采集 3 次。',
           highlight: ['.station-btn[data-station-id="berry_bush"]'],
         };
       }
@@ -1938,6 +1989,18 @@ class FactoryGame {
     }
 
     if (step.id === 'tool_efficiency_hint') {
+      const blocked = leaveOverlayFirst('先点右侧「仓库」退出合屏，再看效率提示。');
+      if (blocked) return blocked;
+      if (!this.isActiveStation('point', 'forest') && !this.isActiveStation('point', 'berry_bush')) {
+        return {
+          ...step,
+          text: '先点左侧「森林」或「浆果丛」，看下方工人栏的效率提示。',
+          highlight: [
+            '.station-btn[data-station-id="forest"]',
+            '.station-btn[data-station-id="berry_bush"]',
+          ],
+        };
+      }
       return {
         ...step,
         text: '森林和浆果丛都已有人了。看下面效率提示——装配斧头/篓子效率远高于徒手。去「工具」页制作工具吧。',
@@ -2159,39 +2222,17 @@ class FactoryGame {
     return false;
   }
 
-  /** 教程只闪烁引导，不强制跳转页签/站点（让玩家自己点过去） */
+  /** 教程禁止自动切页签/站点；入口高亮由 resolveTutorialGuidance 负责 */
   ensureTutorialContext(_step) {
     // intentionally no-op
   }
 
   /**
-   * 采集类教程步：若停在科技/防务合屏，中间点击区被挡住会卡死。
-   * 仅纠正合屏页签，并在有 ensureStation 时切回对应资源点。
+   * 旧逻辑会把玩家强行切到 ensureStation / 踢出科技合屏。
+   * 现已取消：一律由玩家自己点高亮入口过去。
    */
   guardTutorialGatherView() {
-    if (!this.isTutorialActive()) return;
-    const step = this.getTutorialStep();
-    if (!step) return;
-    const gatherSteps = new Set([
-      'chop_woods',
-      'open_starter_chest',
-      'assign_forest',
-      'food_intro',
-      'tool_efficiency_hint',
-    ]);
-    if (!gatherSteps.has(step.id)) return;
-    if (this.state.activeTab === 'tech' || this.state.activeTab === 'defense') {
-      this.state.activeTab = 'warehouse';
-    }
-    const st = step.ensureStation;
-    if (st?.type && st?.id) {
-      // 宝箱未揭示前不要强行切到宝箱（clamp 也会拦）
-      if (st.id === 'treasure_chest' && !this.state.resourcePoints?.treasure_chest?.unlocked) {
-        this.state.activeStation = { type: 'point', id: 'forest' };
-      } else {
-        this.state.activeStation = { type: st.type, id: st.id };
-      }
-    }
+    // intentionally no-op
   }
 
   autoAdvanceTutorialSteps() {
@@ -2428,11 +2469,14 @@ class FactoryGame {
 
   /**
    * 新增生产订单 / 房屋建造或升级后：展开「生产」、切到可点击中间栏，并滚动左侧到对应项
+   * 教程进行中不强制切页/切站，只展开列表并滚动，由高亮引导玩家自己点进去
    */
   focusProductionOrder(target) {
     if (!target?.kind) return;
     this.ensureSidebarCollapsedState();
     this.state.sidebarCollapsed.craft = false;
+    this._pendingCraftFocus = target;
+    if (this.isTutorialActive()) return;
     if (this.state.activeTab === 'tech' || this.state.activeTab === 'defense') {
       this.state.activeTab = 'warehouse';
     }
@@ -2449,7 +2493,6 @@ class FactoryGame {
       if (cur?.type !== next.type || cur?.id !== next.id) this.clearLastPointerAction();
       this.state.activeStation = next;
     }
-    this._pendingCraftFocus = target;
   }
 
   applyPendingCraftFocus() {
