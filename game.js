@@ -214,6 +214,7 @@ class FactoryGame {
     document.getElementById('app')?.classList.remove('app-beneath-shell');
     if (holdForComic) this.holdAppForComic(true);
     else this.holdAppForComic(false);
+    this.syncBgmNowPlayingUI();
   }
 
   leaveGameToMainMenuShell() {
@@ -225,7 +226,7 @@ class FactoryGame {
     document.getElementById('boot-transition')?.classList.add('hidden');
     document.getElementById('boot-transition')?.classList.remove('boot-transition-play');
     document.getElementById('defense-intro')?.classList.add('hidden');
-    document.getElementById('defense-intro')?.classList.remove('comic-outro');
+    document.getElementById('defense-intro')?.classList.remove('comic-outro', 'comic-blackout');
     document.getElementById('app')?.classList.remove('app-awaiting-comic', 'app-fade-in');
     document.getElementById('tutorial-overlay')?.classList.add('hidden');
     document.getElementById('game-over')?.classList.add('hidden');
@@ -244,6 +245,7 @@ class FactoryGame {
     this.showMainMenuHome();
     void this.refreshMainMenuLoadButton();
     this.playMainMenuEnterAnim();
+    this.sounds?.bgm?.setTutorialDuck?.(false);
     this.startMenuBgm({ forceNew: true });
   }
 
@@ -333,25 +335,99 @@ class FactoryGame {
   }
 
   _updateMenuBgmNowLabel() {
-    const el = document.getElementById('mm-bgm-now');
-    if (!el) return;
     const list = this._menuBgmTracks();
     const off = this.settings?.playBgm === false;
-    el.classList.toggle('is-off', off);
-    el.disabled = off || list.length === 0;
-    if (off) {
-      el.textContent = '♪ BGM 已关闭';
-      el.title = '请在设置中开启 BGM';
-      return;
-    }
     const track = list[this._menuBgmIndex];
-    if (!track) {
-      el.textContent = '♪ —';
-      el.title = '点击切换 BGM';
-      return;
+    this.applyBgmNowButton(document.getElementById('mm-bgm-now'), {
+      off,
+      playing: !off && !!track,
+      canCycle: !off && list.length > 1,
+      name: off ? 'BGM 已关闭' : (track?.name || '—'),
+      title: off
+        ? '请在设置中开启 BGM'
+        : (list.length > 1 ? '点击切换下一首 BGM' : '当前 BGM'),
+    });
+  }
+
+  /** 游戏顶栏 / 主菜单共用的「正在播放」按钮内容 */
+  applyBgmNowButton(el, info = {}) {
+    if (!el) return;
+    if (!el.querySelector('.bgm-now-marquee')) {
+      el.innerHTML = `
+        <span class="bgm-now-icon" aria-hidden="true"><span class="bgm-disc"></span></span>
+        <span class="bgm-now-marquee"><span class="bgm-now-text">—</span></span>
+      `;
     }
-    el.textContent = `♪ ${track.name}`;
-    el.title = list.length > 1 ? '点击切换下一首 BGM' : '当前 BGM';
+    const textEl = el.querySelector('.bgm-now-text');
+    const name = info.name || '—';
+    const off = !!info.off;
+    const playing = !!info.playing && !off;
+    const canCycle = !!info.canCycle && !off;
+    const key = [off ? 1 : 0, playing ? 1 : 0, canCycle ? 1 : 0, name, info.title || ''].join('|');
+    if (el.dataset.bgmUiKey === key) return;
+    el.dataset.bgmUiKey = key;
+
+    el.classList.toggle('is-off', off);
+    el.classList.toggle('is-playing', playing);
+    el.disabled = off;
+    el.title = info.title
+      || (off ? '请在设置中开启 BGM' : (canCycle ? '点击切换下一首 BGM' : '当前 BGM'));
+    if (textEl) textEl.textContent = name;
+    requestAnimationFrame(() => this._syncBgmMarquee(el));
+  }
+
+  _syncBgmMarquee(el) {
+    if (!el) return;
+    const marquee = el.querySelector('.bgm-now-marquee');
+    const text = el.querySelector('.bgm-now-text');
+    if (!marquee || !text) return;
+    text.style.animation = 'none';
+    // 强制回流后再测宽度
+    void text.offsetWidth;
+    const overflow = text.scrollWidth - marquee.clientWidth;
+    const need = overflow > 2;
+    el.classList.toggle('is-scrolling', need);
+    if (need) {
+      text.style.setProperty('--bgm-scroll', `-${overflow}px`);
+      text.style.animation = '';
+    } else {
+      text.style.removeProperty('--bgm-scroll');
+      text.style.transform = '';
+    }
+  }
+
+  syncBgmNowPlayingUI(info) {
+    if (this._atMainMenu && !this._inGameSession) return;
+    const bgm = this.sounds?.bgm;
+    const data = info || bgm?.getNowPlayingInfo?.() || {
+      off: this.settings?.playBgm === false,
+      playing: false,
+      canCycle: false,
+      name: '—',
+    };
+    const off = !!data.off || this.settings?.playBgm === false;
+    this.applyBgmNowButton(document.getElementById('game-bgm-now'), {
+      off,
+      playing: !off && !!data.playing,
+      canCycle: !off && !!data.canCycle,
+      name: off ? 'BGM 已关闭' : (data.name || '暂无 BGM'),
+      title: off
+        ? '请在设置中开启 BGM'
+        : (data.canCycle ? '点击切换下一首 BGM' : '当前 BGM'),
+    });
+  }
+
+  cycleGameBgm() {
+    if (this._atMainMenu && !this._inGameSession) return;
+    if (this.settings?.playBgm === false) return;
+    const ok = this.sounds?.bgm?.cycleNowPlayingTrack?.();
+    if (!ok) {
+      const info = this.sounds?.bgm?.getNowPlayingInfo?.();
+      if (info && !info.canCycle && info.playing) {
+        this.showNotification('当前曲库仅一首，无法切换');
+      }
+    }
+    this.syncBgmNowPlayingUI();
   }
 
   /** 手动切换主菜单 BGM */
@@ -477,6 +553,7 @@ class FactoryGame {
     // 先离开主菜单态，避免过渡期间手势又把菜单 BGM 拉起来；整段加载期间冻结时间
     this.paused = true;
     this._atMainMenu = false;
+    document.getElementById('main-menu')?.classList.add('hidden');
     this.stopMenuBgm();
     await this.playBootTransition('正在读取存档…');
     const needComic = !this.state.defense?.introSeen;
@@ -489,6 +566,7 @@ class FactoryGame {
     // 漫画期间启 BGM（只播袭击预告轨）；无漫画则直接正常轨
     this.sounds._initBGM();
     this.resumeAfterDifficultySetup();
+    this.hideBootTransition();
   }
   async playBootTransition(message = '正在进入村落…') {
     this._bootTransitionActive = true;
@@ -506,17 +584,26 @@ class FactoryGame {
       void el.offsetWidth;
       el.classList.add('boot-transition-play');
       await new Promise((r) => setTimeout(r, 3200));
-      el.classList.add('hidden');
-      el.classList.remove('boot-transition-play');
+      // 保持不透明直到下一屏就位后再摘掉，避免透出主菜单背景
     } finally {
       this._bootTransitionActive = false;
     }
+  }
+
+  /** 中转层已遮住画面后，在进入游戏/主菜单后再移除 */
+  hideBootTransition() {
+    const el = document.getElementById('boot-transition');
+    if (!el) return;
+    el.classList.add('hidden');
+    el.classList.remove('boot-transition-play');
   }
 
   /** 难度确认后：中转 → 正式进入游戏 */
   async beginGameAfterDifficulty() {
     this._pickingDifficulty = false;
     document.getElementById('difficulty-select')?.classList.add('hidden');
+    // 立刻藏主菜单，避免中转层淡出/移除时闪出菜单背景
+    document.getElementById('main-menu')?.classList.add('hidden');
     const fromMenu = !!this._difficultyFromMainMenu;
     this._difficultyFromMainMenu = false;
     this.applyNewGameTutorialPreference();
@@ -533,6 +620,7 @@ class FactoryGame {
     // 漫画期间启 BGM：只播袭击预告轨，结束后切白天轨
     this.sounds._initBGM();
     this.resumeAfterDifficultySetup();
+    this.hideBootTransition();
   }
 
   async returnToMainMenu({ skipConfirm = false } = {}) {
@@ -548,6 +636,7 @@ class FactoryGame {
       this.stopGameBgm();
       await this.playBootTransition('正在返回主界面…');
       this.leaveGameToMainMenuShell();
+      this.hideBootTransition();
     } finally {
       this._returningToMainMenu = false;
     }
@@ -666,7 +755,12 @@ class FactoryGame {
       e.stopPropagation();
       this.cycleMenuBgm();
     });
+    document.getElementById('game-bgm-now')?.addEventListener('click', (e) => {
+      e.stopPropagation();
+      this.cycleGameBgm();
+    });
     this._updateMenuBgmNowLabel();
+    this.syncBgmNowPlayingUI();
 
     const showMainSettingsTab = (tab) => {
       const key = (tab === 'audio' || tab === 'game') ? tab : 'display';
@@ -785,10 +879,15 @@ class FactoryGame {
 
     const craftStations = {};
     GAME_DATA.recipes.forEach(r => {
-      craftStations[r.id] = {
+      const st = {
         autoProduce: false,
         cooldownRemaining: 0,
       };
+      if (r.isToolRecipe) {
+        st.autoRepair = true;
+        st.autoRepairThreshold = 10;
+      }
+      craftStations[r.id] = st;
     });
 
     const toolInventory = {};
@@ -822,8 +921,12 @@ class FactoryGame {
       craftStations,
       craftOrderQueue: [],
       craftOrderSeq: 0,
+      pendingAutoRepairs: [],
       toolInventory,
       toolDurability: {},
+      toolPieces: {},
+      _toolSeq: 1,
+      _toolPiecesMigratedV1: false,
       unlockedTech,
       workers: { total: startingVillagers, unassigned: startingVillagers, craftWorkers: 0 },
       houses,
@@ -1016,6 +1119,12 @@ class FactoryGame {
       this.state.toolInventory[k] = {};
     });
     this.state.toolDurability = {};
+    this.state.toolPieces = {};
+    this.state._toolSeq = 1;
+    this.state._toolPiecesMigratedV1 = true;
+    this.state.armorPieces = [];
+    this.state._armorSeq = 1;
+    this.state._armorMigratedV1 = true;
     (def.startingTools || []).forEach(({ id, level, amount }) => {
       if (!id || !GAME_DATA.villagerTools?.[id]) return;
       const lv = Number(level) || 1;
@@ -1219,6 +1328,11 @@ class FactoryGame {
         if (st.autoMode === undefined) st.autoMode = 'always';
         if (st.autoThreshold === undefined) st.autoThreshold = 10;
         if (st.cooldownTotal === undefined) st.cooldownTotal = 0;
+        const recipe = GAME_DATA.recipes.find(r => r.id === k);
+        if (recipe?.isToolRecipe) {
+          if (st.autoRepair === undefined) st.autoRepair = true;
+          if (st.autoRepairThreshold === undefined) st.autoRepairThreshold = 10;
+        }
       }
     });
     Object.entries(this.state.resourcePoints).forEach(([pointId, pt]) => {
@@ -1295,7 +1409,11 @@ class FactoryGame {
       }
     });
     if (!this.state.toolDurability) this.state.toolDurability = {};
+    if (!this.state.toolPieces) this.state.toolPieces = {};
+    if (this.state._toolSeq == null) this.state._toolSeq = 1;
     this.ensureArmorPieces();
+    this.ensureToolPieces();
+    this.purgeRemovedBasketTools();
     Object.keys(GAME_DATA.villagerTools || {}).forEach(toolId => {
       if (toolId === 'armor') return;
       const maxLv = GAME_DATA.villagerTools[toolId]?.maxLevel || 4;
@@ -1308,14 +1426,9 @@ class FactoryGame {
           delete this.state.toolDurability[toolId][lv];
           continue;
         }
-        const maxDur = this.getToolMaxDurability(lv);
-        if (this.state.toolDurability[toolId][lv] == null) {
-          this.state.toolDurability[toolId][lv] = maxDur;
-        } else {
-          // 配置上调耐久上限时，已接近满耐久的保留为满
-          const cur = this.state.toolDurability[toolId][lv];
-          if (cur > maxDur) this.state.toolDurability[toolId][lv] = maxDur;
-        }
+        // 兼容旧字段：用按件平均耐久回填共享池显示值
+        const avg = this.getToolDurability(toolId, lv);
+        this.state.toolDurability[toolId][lv] = avg;
       }
     });
     // 旧版工具等级折算为 1 级库存
@@ -1603,7 +1716,7 @@ class FactoryGame {
     this._comicDismissing = false;
     const root = document.getElementById('defense-intro');
     if (!root) return;
-    root.classList.remove('comic-outro');
+    root.classList.remove('comic-outro', 'comic-blackout');
     this.setComicPage(1);
     root.querySelectorAll('.comic-panel').forEach((panel) => {
       const n = Number(panel.dataset.panel || 0);
@@ -1611,7 +1724,11 @@ class FactoryGame {
       panel.classList.remove('is-shaking');
     });
     const hint = document.getElementById('comic-hint');
-    if (hint) hint.textContent = '点击继续';
+    if (hint) {
+      hint.classList.remove('hidden');
+      hint.textContent = '点击继续';
+    }
+    document.getElementById('comic-skip')?.classList.remove('hidden');
   }
 
   shakeComicPanel(panel) {
@@ -1716,50 +1833,50 @@ class FactoryGame {
     if (hint) hint.textContent = next >= total ? '点击开始重建' : '点击继续';
   }
 
-  dismissDefenseIntro() {
+  async dismissDefenseIntro() {
     if (this._comicDismissing) return;
     if (!this.state.defense) this.state.defense = this.createDefaultDefenseState();
     this.state.defense.introSeen = true;
     this._comicDismissing = true;
-    // 漫画收尾：登~！
-    try { this.sounds?.playComicFinishSting?.(); } catch (_) { /* ignore */ }
+    // 收尾期间先压住教程，避免蓝底上提前冒出提示框
+    document.getElementById('tutorial-overlay')?.classList.add('hidden');
+    this.clearTutorialHighlights?.();
+
     const root = document.getElementById('defense-intro');
-    if (!root || root.classList.contains('hidden')) {
-      this.holdAppForComic(false);
-      this._comicDismissing = false;
-      this.releaseGameTimeAfterComic();
-      this.save();
-      this.startTutorialIfNeeded();
-      return;
+    // 点击立刻开播；分镜约 1s 渐隐，黑屏等到音乐结束再淡入主界面
+    const stingPromise = Promise.resolve()
+      .then(() => this.sounds?.playComicFinishSting?.())
+      .catch(() => {});
+
+    if (root) {
+      root.classList.remove('comic-blackout');
+      root.classList.add('comic-outro');
+      document.getElementById('comic-skip')?.classList.add('hidden');
     }
-    let finished = false;
-    const finish = () => {
-      if (finished) return;
-      finished = true;
+
+    await Promise.all([
+      stingPromise,
+      new Promise((r) => setTimeout(r, 1000)),
+    ]);
+
+    if (root) {
       root.classList.add('hidden');
-      root.classList.remove('comic-outro');
-      this.revealAppAfterComic();
-      this._comicDismissing = false;
-      this.releaseGameTimeAfterComic();
-      this.save();
-      this.startTutorialIfNeeded();
-    };
-    root.classList.add('comic-outro');
-    const onFade = (e) => {
-      if (e.target !== root || e.propertyName !== 'opacity') return;
-      root.removeEventListener('transitionend', onFade);
-      finish();
-    };
-    root.addEventListener('transitionend', onFade);
-    setTimeout(() => {
-      root.removeEventListener('transitionend', onFade);
-      finish();
-    }, 700);
+      root.classList.remove('comic-outro', 'comic-blackout');
+    }
+    this.revealAppAfterComic();
+    this.releaseGameTimeAfterComic();
+    this.save();
+
+    // 等主界面 2s 淡入完成后再出新手提示
+    await new Promise((r) => setTimeout(r, 2000));
+    this._comicDismissing = false;
+    this.startTutorialIfNeeded();
   }
 
   isTutorialActive() {
     const t = this.state.tutorial;
     if (!t || t.completed || t.skipped) return false;
+    if (this._comicDismissing) return false;
     if (this.state.defense && !this.state.defense.introSeen) return false;
     return true;
   }
@@ -1774,15 +1891,24 @@ class FactoryGame {
     return steps[idx] || null;
   }
 
+  syncTutorialBgmDuck() {
+    try {
+      this.sounds?.bgm?.setTutorialDuck?.(!!this.isTutorialActive());
+    } catch (_) { /* ignore */ }
+  }
+
   startTutorialIfNeeded() {
     if (!this.state.tutorial) this.state.tutorial = this.createDefaultTutorialState();
     if (this.state.tutorial.completed || this.state.tutorial.skipped) {
       this.clearTutorialHighlights();
       document.getElementById('tutorial-overlay')?.classList.add('hidden');
+      this.syncTutorialBgmDuck();
       return;
     }
+    if (this._comicDismissing) return;
     if (this.state.defense && !this.state.defense.introSeen) return;
     this.render();
+    this.syncTutorialBgmDuck();
   }
 
   skipTutorial() {
@@ -1791,6 +1917,7 @@ class FactoryGame {
     this.state.tutorial.completed = true;
     this.clearTutorialHighlights();
     document.getElementById('tutorial-overlay')?.classList.add('hidden');
+    this.syncTutorialBgmDuck();
     this.showNotification('已跳过新手教程');
     this.save();
   }
@@ -1800,6 +1927,7 @@ class FactoryGame {
     this.state.tutorial.completed = true;
     this.clearTutorialHighlights();
     document.getElementById('tutorial-overlay')?.classList.add('hidden');
+    this.syncTutorialBgmDuck();
     this.showNotification('🎓 新手教程完成！');
     this.save();
   }
@@ -1900,6 +2028,22 @@ class FactoryGame {
       spot.classList.remove('tut-spotlight-round');
     }
     spot.classList.remove('hidden');
+  }
+
+  /** 侧栏/中间区滚轮滚动时，教程聚光跟随高亮目标 */
+  setupTutSpotlightScrollSync() {
+    if (this._tutSpotScrollBound) return;
+    this._tutSpotScrollBound = true;
+    const sync = () => {
+      if (!document.body.classList.contains('tut-interaction-lock')) return;
+      this.updateTutSpotlight();
+    };
+    document.addEventListener('scroll', sync, true);
+    window.addEventListener('scroll', sync, true);
+    document.addEventListener('wheel', () => {
+      if (!document.body.classList.contains('tut-interaction-lock')) return;
+      requestAnimationFrame(sync);
+    }, { passive: true, capture: true });
   }
 
   applyTutorialHighlights(selectors = []) {
@@ -2075,6 +2219,25 @@ class FactoryGame {
       if (this.getTutorialProgressValue('weapon') >= 1) {
         return { ...step, highlight: [] };
       }
+      const weaponRecipeId = this.getQueuedCombatWeaponRecipeId();
+      if (weaponRecipeId && this.getTutorialProgressValue('weapon') < 1) {
+        if (!this.isActiveStation('recipe', weaponRecipeId)) {
+          return {
+            ...step,
+            title: '加工武器',
+            text: '武器已下单。点左侧「生产」里的该订单，进入后再点击完成制作。',
+            highlight: [
+              `.craft-order-item[data-recipe-id="${weaponRecipeId}"] .craft-order-btn`,
+            ],
+          };
+        }
+        return {
+          ...step,
+          title: '加工武器',
+          text: '到中间点击完成制作。做出一件武器后进入下一步。',
+          highlight: ['#click-area'],
+        };
+      }
       if (!onTab('weapons')) {
         return {
           ...step,
@@ -2084,8 +2247,8 @@ class FactoryGame {
       }
       return {
         ...step,
-        text: '在武器列表里下单制作任意一件武器。下单后请自己点左侧「生产」进入加工。',
-        highlight: ['#weapon-list'],
+        text: '在武器列表里下单制作任意一件武器（点「确定」）。',
+        highlight: ['#weapon-list .craft-overview-item'],
       };
     }
 
@@ -2289,7 +2452,7 @@ class FactoryGame {
       }
       return {
         ...step,
-        text: `浆果丛已派出 ${assigned} 人自动采集。有篓子的村民效率更高。`,
+        text: `浆果丛已派出 ${assigned} 人自动采集。食物采集全靠徒手效率，可在科技树升级「食物采集」加快。`,
         highlight: ['#point-workers'],
       };
     }
@@ -2682,19 +2845,40 @@ class FactoryGame {
   showStoryDialog(text, onConfirm) {
     const overlay = document.getElementById('story-dialog');
     const textEl = document.getElementById('story-dialog-text');
-    const okBtn = document.getElementById('story-dialog-ok');
+    let okBtn = document.getElementById('story-dialog-ok');
     if (!overlay || !okBtn) {
       if (typeof onConfirm === 'function') onConfirm();
       return;
     }
     if (textEl) textEl.textContent = text || '';
     overlay.classList.remove('hidden');
-
-    const finish = () => {
+    // 换新按钮，避免连续弹窗叠 listener
+    const fresh = okBtn.cloneNode(true);
+    okBtn.replaceWith(fresh);
+    okBtn = fresh;
+    okBtn.addEventListener('click', () => {
       overlay.classList.add('hidden');
       if (typeof onConfirm === 'function') onConfirm();
-    };
-    okBtn.addEventListener('click', finish, { once: true });
+    }, { once: true });
+  }
+
+  /** 材料不足入库提醒：排队逐个弹框 */
+  enqueueAutoRepairShortageAlert(text) {
+    if (!this._repairAlertQueue) this._repairAlertQueue = [];
+    this._repairAlertQueue.push(String(text || ''));
+    this._pumpAutoRepairShortageAlerts();
+  }
+
+  _pumpAutoRepairShortageAlerts() {
+    if (this._repairAlertBusy) return;
+    const q = this._repairAlertQueue || [];
+    if (!q.length) return;
+    this._repairAlertBusy = true;
+    const msg = q.shift();
+    this.showStoryDialog(msg, () => {
+      this._repairAlertBusy = false;
+      this._pumpAutoRepairShortageAlerts();
+    });
   }
 
   getStarterAxeChestRewards() {
@@ -2845,12 +3029,29 @@ class FactoryGame {
     if (orders.length === 0) return null;
     // 只返回第一个订单的数据，不合并多个订单
     const head = orders[0];
-    return { quantity: head.count, progress: head.progress };
+    return {
+      quantity: head.count,
+      progress: head.progress,
+      maxProgress: this.getCraftOrderMaxProgress(head),
+      kind: head.kind || 'craft',
+      orderId: head.id,
+    };
   }
 
   getCraftQueueCount(recipeId) {
     const q = this.getCraftQueue(recipeId);
     return q ? q.quantity : 0;
+  }
+
+  /** 生产队列中第一件战斗装备配方（教程「制作武器」用） */
+  getQueuedCombatWeaponRecipeId() {
+    for (const order of this.state.craftOrderQueue || []) {
+      const recipe = GAME_DATA.recipes.find(r => r.id === order.recipeId);
+      if (!recipe?.isToolRecipe || !recipe.outputTools) continue;
+      const toolId = Object.keys(recipe.outputTools)[0];
+      if (toolId && this.isCombatGear(toolId)) return order.recipeId;
+    }
+    return null;
   }
 
   /** 获取某个配方在队列中的所有订单（用于显示） */
@@ -2886,6 +3087,13 @@ class FactoryGame {
   setAutoProduce(recipeId, enabled) {
     const st = this.state.craftStations[recipeId];
     if (!st) return;
+    const recipe = GAME_DATA.recipes.find(r => r.id === recipeId);
+    if (recipe?.isToolRecipe) {
+      // 工具配方改用自动修复，不再走自动生产
+      st.autoProduce = false;
+      this.save();
+      return;
+    }
     st.autoProduce = !!enabled;
     if (!enabled) {
       st.autoMode = 'always';
@@ -2895,6 +3103,21 @@ class FactoryGame {
     if (enabled && this.getCraftQueueCount(recipeId) <= 0) {
       this.tryAutoProduce(recipeId);
     }
+  }
+
+  setAutoRepair(recipeId, enabled) {
+    const st = this.state.craftStations[recipeId];
+    if (!st) return;
+    st.autoRepair = !!enabled;
+    this.save();
+    if (enabled) this.scanAutoRepairs();
+  }
+
+  setAutoRepairThreshold(recipeId, value) {
+    const st = this.state.craftStations[recipeId];
+    if (!st) return;
+    st.autoRepairThreshold = Math.max(1, Math.min(99, Number(value) || 10));
+    this.save();
   }
 
   setAutoMode(recipeId, mode) {
@@ -2985,6 +3208,21 @@ class FactoryGame {
     if (idx < 0) return;
     const order = queue[idx];
     const recipe = GAME_DATA.recipes.find(r => r.id === order.recipeId);
+
+    if (order.kind === 'repair') {
+      const piece = this.findToolPiece(order.toolId, order.pieceId);
+      if (piece) {
+        piece.repairing = false;
+        piece.repairOrderId = null;
+      }
+      Object.entries(order.paidCost || {}).forEach(([res, amt]) => this.addResource(res, amt));
+      queue.splice(idx, 1);
+      this.showNotification(`已取消修复：${this.formatToolLabel(order.toolId, order.level)}`);
+      this.render();
+      this.save();
+      return;
+    }
+
     if (!recipe) {
       queue.splice(idx, 1);
       this.render();
@@ -3113,6 +3351,41 @@ class FactoryGame {
     const recipe = GAME_DATA.recipes.find(r => r.id === recipeId);
     if (!recipe) return;
 
+    if (order.kind === 'repair') {
+      const piece = this.findToolPiece(order.toolId, order.pieceId);
+      if (piece) {
+        piece.dur = piece.maxDur;
+        piece.repairing = false;
+        piece.repairOrderId = null;
+        piece.warehoused = false;
+        this.removePendingAutoRepair?.(order.toolId, piece.id);
+      }
+      order.count -= 1;
+      order.progress = 0;
+      const st = this.state.craftStations[recipeId];
+      if (st) this.startCooldown('recipe', recipeId);
+      if (!silent) {
+        this.showResourceGainNotification(`修复完成：${this.formatToolLabel(order.toolId, order.level)}`);
+      }
+      if (order.count <= 0) {
+        const queue = this.state.craftOrderQueue;
+        const idx = queue.findIndex(o => o.id === order.id);
+        if (idx >= 0) {
+          queue.splice(idx, 1);
+          const allOrders = this.getAllCraftOrders();
+          if (allOrders.length > 0) {
+            const nextIdx = idx < allOrders.length ? idx : 0;
+            const nextOrder = allOrders[nextIdx];
+            if (this.state.activeStation.type === 'recipe') {
+              this.setActiveStation('recipe', nextOrder.recipeId);
+            }
+          }
+        }
+      }
+      this._needToolUiRefresh = true;
+      return;
+    }
+
     Object.entries(recipe.outputs || {}).forEach(([res, amt]) => this.addResource(res, amt));
     this.applyOutputTools(recipe.outputTools);
     order.count -= 1;
@@ -3166,7 +3439,7 @@ class FactoryGame {
       }
     }
 
-    if (st?.autoProduce && this._checkAutoCondition(recipeId)) {
+    if (st?.autoProduce && !recipe.isToolRecipe && this._checkAutoCondition(recipeId)) {
       this.placeCraftOrder(recipeId, 1, { silent: true, autoProduced: true });
     }
   }
@@ -3220,10 +3493,29 @@ class FactoryGame {
       if (level != null) return pieces.filter((p) => Number(p.level) === Number(level)).length;
       return pieces.length;
     }
-    const stock = this.state.toolInventory?.[toolId];
-    if (!stock || typeof stock !== 'object') return 0;
-    if (level != null) return stock[level] || 0;
-    return Object.values(stock).reduce((sum, n) => sum + (n || 0), 0);
+    this.ensureToolPieces();
+    const pieces = this.state.toolPieces?.[toolId] || [];
+    if (level != null) return pieces.filter((p) => p && Number(p.level) === Number(level)).length;
+    return pieces.filter(Boolean).length;
+  }
+
+  /** 可用件数：未在修复、未因缺料入库停用，且耐久>0 */
+  getUsableToolCount(toolId, level = null) {
+    if (toolId === 'armor') {
+      this.ensureArmorPieces();
+      const pieces = (this.state.armorPieces || []).filter((p) => this.isToolPieceUsable(p));
+      if (level != null) return pieces.filter((p) => Number(p.level) === Number(level)).length;
+      return pieces.length;
+    }
+    this.ensureToolPieces();
+    const pieces = (this.state.toolPieces?.[toolId] || []).filter((p) => this.isToolPieceUsable(p));
+    if (level != null) return pieces.filter((p) => Number(p.level) === Number(level)).length;
+    return pieces.length;
+  }
+
+  /** 可被工人/士兵使用的件 */
+  isToolPieceUsable(piece) {
+    return !!(piece && !piece.repairing && !piece.warehoused && (piece.dur || 0) > 0);
   }
 
   setToolCount(toolId, level, amount) {
@@ -3243,6 +3535,9 @@ class FactoryGame {
             const ae = a.equippedBy ? 1 : 0;
             const be = b.equippedBy ? 1 : 0;
             if (ae !== be) return ae - be;
+            const ar = a.repairing ? 0 : 1;
+            const br = b.repairing ? 0 : 1;
+            if (ar !== br) return ar - br;
             return (a.dur || 0) - (b.dur || 0);
           });
         if (!pool.length) break;
@@ -3251,23 +3546,25 @@ class FactoryGame {
       return;
     }
     if (!GAME_DATA.villagerTools[toolId]) return;
-    if (!this.state.toolInventory) this.state.toolInventory = {};
-    if (!this.state.toolInventory[toolId] || typeof this.state.toolInventory[toolId] !== 'object') {
-      this.state.toolInventory[toolId] = {};
+    this.ensureToolPieces();
+    const lv = Math.max(1, Number(level) || 1);
+    const want = Math.max(0, Math.floor(amount));
+    let guard = 0;
+    while (this.getToolCount(toolId, lv) < want && guard++ < 999) {
+      this.createToolPiece(toolId, lv);
     }
-    const prev = (() => {
-      const stock = this.state.toolInventory?.[toolId];
-      if (!stock || typeof stock !== 'object') return 0;
-      return stock[level] || 0;
-    })();
-    const n = Math.max(0, Math.floor(amount));
-    if (n <= 0) {
-      delete this.state.toolInventory[toolId][level];
-      this.clearToolDurability(toolId, level);
-    } else {
-      this.state.toolInventory[toolId][level] = n;
-      if (prev <= 0) this.setToolDurability(toolId, level, this.getToolMaxDurability(level));
+    guard = 0;
+    while (this.getToolCount(toolId, lv) > want && guard++ < 999) {
+      const pool = (this.state.toolPieces[toolId] || [])
+        .filter((p) => p && Number(p.level) === lv)
+        .sort((a, b) => {
+          if (!!a.repairing !== !!b.repairing) return a.repairing ? -1 : 1;
+          return (a.dur || 0) - (b.dur || 0);
+        });
+      if (!pool.length) break;
+      this.destroyToolPiece(toolId, pool[0].id);
     }
+    this.syncToolInventoryFromPieces(toolId);
   }
 
   addTool(toolId, amount = 1, level = 1) {
@@ -3279,7 +3576,9 @@ class FactoryGame {
       if (n > 0) this.checkAchievements();
       return;
     }
-    this.setToolCount(toolId, lv, this.getToolCount(toolId, lv) + n);
+    this.ensureToolPieces();
+    for (let i = 0; i < n; i++) this.createToolPiece(toolId, lv);
+    this.syncToolInventoryFromPieces(toolId);
     if (n > 0) this.checkAchievements();
   }
 
@@ -3288,7 +3587,7 @@ class FactoryGame {
     if (!def) return 0;
     const max = def.maxLevel || 3;
     for (let lv = max; lv >= 1; lv--) {
-      if (this.getToolCount(toolId, lv) > 0) return lv;
+      if (this.getUsableToolCount(toolId, lv) > 0) return lv;
     }
     return 0;
   }
@@ -3308,6 +3607,12 @@ class FactoryGame {
     return base + lv * 0.01;
   }
 
+  /** 食物采集科技：每级给所有食物点 +0.01/秒/人（最高 3 级） */
+  getFoodGatherSpeedBonus() {
+    const lv = this.getTechRepeatLevel('unlock_food_gather_speed').current;
+    return Math.max(0, Math.min(3, lv)) * 0.01;
+  }
+
   getToolMaxDurability(level) {
     const map = GAME_DATA.toolDurability?.maxByLevel || {};
     let base = map[level] ?? map[1] ?? 100;
@@ -3317,26 +3622,39 @@ class FactoryGame {
   }
 
   getToolDurability(toolId, level) {
+    const pieces = this.getToolPiecesList(toolId, level);
+    if (!pieces.length) return 0;
+    const usable = pieces.filter((p) => this.isToolPieceUsable(p));
+    const list = usable.length ? usable : pieces;
+    return list.reduce((s, p) => s + (p.dur || 0), 0) / list.length;
+  }
+
+  getToolPiecesList(toolId, level = null) {
     if (toolId === 'armor') {
       this.ensureArmorPieces();
-      const list = (this.state.armorPieces || []).filter((p) => Number(p.level) === Number(level));
-      if (!list.length) return 0;
-      return list.reduce((s, p) => s + (p.dur || 0), 0) / list.length;
+      const list = this.state.armorPieces || [];
+      if (level == null) return list.filter(Boolean);
+      return list.filter((p) => p && Number(p.level) === Number(level));
     }
-    if (this.getToolCount(toolId, level) <= 0) return 0;
-    const cur = this.state.toolDurability?.[toolId]?.[level];
-    if (cur == null) return this.getToolMaxDurability(level);
-    return Math.max(0, cur);
+    this.ensureToolPieces();
+    const list = this.state.toolPieces?.[toolId] || [];
+    if (level == null) return list.filter(Boolean);
+    return list.filter((p) => p && Number(p.level) === Number(level));
   }
 
   setToolDurability(toolId, level, value) {
-    if (toolId === 'armor') return; // 铠甲按件存储
+    if (toolId === 'armor') return;
+    this.ensureToolPieces();
+    const max = this.getToolMaxDurability(level);
+    const v = Math.max(0, Math.min(max, value));
+    (this.state.toolPieces?.[toolId] || []).forEach((p) => {
+      if (p && Number(p.level) === Number(level) && !p.repairing) p.dur = v;
+    });
     if (!this.state.toolDurability) this.state.toolDurability = {};
     if (!this.state.toolDurability[toolId] || typeof this.state.toolDurability[toolId] !== 'object') {
       this.state.toolDurability[toolId] = {};
     }
-    const max = this.getToolMaxDurability(level);
-    this.state.toolDurability[toolId][level] = Math.max(0, Math.min(max, value));
+    this.state.toolDurability[toolId][level] = v;
   }
 
   clearToolDurability(toolId, level) {
@@ -3369,6 +3687,8 @@ class FactoryGame {
               dur: startDur,
               maxDur,
               equippedBy: null,
+              repairing: false,
+              repairOrderId: null,
             });
           }
         });
@@ -3383,10 +3703,141 @@ class FactoryGame {
       const prevMax = Number(p.maxDur) || maxDur;
       const wasFull = p.dur == null || Number.isNaN(Number(p.dur)) || Number(p.dur) >= prevMax - 0.01;
       p.maxDur = maxDur;
-      if (wasFull) p.dur = maxDur;
+      if (wasFull && !p.repairing) p.dur = maxDur;
       else p.dur = Math.max(0, Math.min(maxDur, Number(p.dur)));
       if (p.equippedBy === undefined) p.equippedBy = null;
+      if (p.repairing === undefined) p.repairing = false;
+      if (p.repairOrderId === undefined) p.repairOrderId = null;
+      if (p.warehoused === undefined) p.warehoused = false;
     });
+  }
+
+  /** 非铠甲工具：按件迁移与规范化 */
+  /** 已移除「篓子」：清理旧档库存、耐久、修复/生产订单 */
+  purgeRemovedBasketTools() {
+    if (this.state.toolInventory?.basket) delete this.state.toolInventory.basket;
+    if (this.state.toolDurability?.basket) delete this.state.toolDurability.basket;
+    if (this.state.toolPieces?.basket) delete this.state.toolPieces.basket;
+    if (this.state.craftStations?.craft_basket_1) delete this.state.craftStations.craft_basket_1;
+    const queue = this.state.craftOrderQueue;
+    if (Array.isArray(queue)) {
+      for (let i = queue.length - 1; i >= 0; i--) {
+        const o = queue[i];
+        if (o?.recipeId === 'craft_basket_1' || o?.toolId === 'basket') {
+          if (o.kind === 'repair' && o.paidCost) {
+            Object.entries(o.paidCost).forEach(([res, amt]) => this.addResource(res, amt));
+          }
+          queue.splice(i, 1);
+        }
+      }
+    }
+  }
+
+  ensureToolPieces() {
+    if (!this.state.toolPieces) this.state.toolPieces = {};
+    if (this.state._toolSeq == null) this.state._toolSeq = 1;
+    if (!this.state._toolPiecesMigratedV1) {
+      Object.keys(GAME_DATA.villagerTools || {}).forEach((toolId) => {
+        if (toolId === 'armor') return;
+        if (!Array.isArray(this.state.toolPieces[toolId])) this.state.toolPieces[toolId] = [];
+        const stock = this.state.toolInventory?.[toolId];
+        if (!stock || typeof stock !== 'object') return;
+        Object.entries(stock).forEach(([lvKey, n]) => {
+          const level = Number(lvKey) || 1;
+          const count = Math.max(0, Math.floor(Number(n) || 0));
+          if (count <= 0) return;
+          const maxDur = this.getToolMaxDurability(level);
+          const pooled = this.state.toolDurability?.[toolId]?.[level];
+          const startDur = pooled != null ? Math.max(0, Math.min(maxDur, Number(pooled))) : maxDur;
+          for (let i = 0; i < count; i++) {
+            this.state.toolPieces[toolId].push({
+              id: 'tool_' + (this.state._toolSeq++),
+              level,
+              dur: startDur,
+              maxDur,
+              repairing: false,
+              repairOrderId: null,
+            });
+          }
+        });
+      });
+      this.state._toolPiecesMigratedV1 = true;
+    }
+    Object.keys(GAME_DATA.villagerTools || {}).forEach((toolId) => {
+      if (toolId === 'armor') return;
+      if (!Array.isArray(this.state.toolPieces[toolId])) this.state.toolPieces[toolId] = [];
+      this.state.toolPieces[toolId].forEach((p) => {
+        if (!p) return;
+        const maxDur = this.getToolMaxDurability(p.level);
+        const prevMax = Number(p.maxDur) || maxDur;
+        const wasFull = p.dur == null || Number.isNaN(Number(p.dur)) || Number(p.dur) >= prevMax - 0.01;
+        p.maxDur = maxDur;
+        if (wasFull && !p.repairing) p.dur = maxDur;
+        else p.dur = Math.max(0, Math.min(maxDur, Number(p.dur) || 0));
+        if (p.repairing === undefined) p.repairing = false;
+        if (p.repairOrderId === undefined) p.repairOrderId = null;
+        if (p.warehoused === undefined) p.warehoused = false;
+      });
+      this.syncToolInventoryFromPieces(toolId);
+    });
+  }
+
+  syncToolInventoryFromPieces(toolId) {
+    if (!toolId || toolId === 'armor') return;
+    if (!this.state.toolInventory) this.state.toolInventory = {};
+    const pieces = this.state.toolPieces?.[toolId] || [];
+    const counts = {};
+    pieces.forEach((p) => {
+      if (!p) return;
+      const lv = Number(p.level) || 1;
+      counts[lv] = (counts[lv] || 0) + 1;
+    });
+    this.state.toolInventory[toolId] = {};
+    Object.entries(counts).forEach(([lv, n]) => {
+      if (n > 0) this.state.toolInventory[toolId][lv] = n;
+    });
+  }
+
+  createToolPiece(toolId, level, dur) {
+    this.ensureToolPieces();
+    if (!toolId || toolId === 'armor' || !GAME_DATA.villagerTools[toolId]) return null;
+    if (!Array.isArray(this.state.toolPieces[toolId])) this.state.toolPieces[toolId] = [];
+    const lv = Math.max(1, Number(level) || 1);
+    const maxDur = this.getToolMaxDurability(lv);
+    const piece = {
+      id: 'tool_' + (this.state._toolSeq++),
+      level: lv,
+      maxDur,
+      dur: dur != null ? Math.max(0, Math.min(maxDur, Number(dur))) : maxDur,
+      repairing: false,
+      repairOrderId: null,
+      warehoused: false,
+    };
+    this.state.toolPieces[toolId].push(piece);
+    this.syncToolInventoryFromPieces(toolId);
+    return piece;
+  }
+
+  findToolPiece(toolId, pieceId) {
+    if (toolId === 'armor') return this.findArmorPiece(pieceId);
+    this.ensureToolPieces();
+    return (this.state.toolPieces?.[toolId] || []).find((p) => p && p.id === pieceId) || null;
+  }
+
+  destroyToolPiece(toolId, pieceId) {
+    if (toolId === 'armor') return this.destroyArmorPiece(pieceId);
+    this.ensureToolPieces();
+    const list = this.state.toolPieces?.[toolId];
+    if (!list) return null;
+    const idx = list.findIndex((p) => p && p.id === pieceId);
+    if (idx < 0) return null;
+    const [removed] = list.splice(idx, 1);
+    if (removed?.repairing && removed.repairOrderId != null) {
+      this._removeRepairOrderSilent(removed.repairOrderId, { refund: true });
+    }
+    this.removePendingAutoRepair(toolId, pieceId);
+    this.syncToolInventoryFromPieces(toolId);
+    return removed;
   }
 
   createArmorPiece(level, dur) {
@@ -3399,6 +3850,9 @@ class FactoryGame {
       maxDur,
       dur: dur != null ? Math.max(0, Math.min(maxDur, Number(dur))) : maxDur,
       equippedBy: null,
+      repairing: false,
+      repairOrderId: null,
+      warehoused: false,
     };
     this.state.armorPieces.push(piece);
     return piece;
@@ -3414,6 +3868,10 @@ class FactoryGame {
     const idx = (this.state.armorPieces || []).findIndex((p) => p && p.id === pieceId);
     if (idx < 0) return null;
     const [removed] = this.state.armorPieces.splice(idx, 1);
+    if (removed?.repairing && removed.repairOrderId != null) {
+      this._removeRepairOrderSilent(removed.repairOrderId, { refund: true });
+    }
+    this.removePendingAutoRepair('armor', pieceId);
     return removed;
   }
 
@@ -3422,7 +3880,7 @@ class FactoryGame {
    */
   pickFreeArmorPiece() {
     this.ensureArmorPieces();
-    const free = (this.state.armorPieces || []).filter((p) => p && !p.equippedBy && (p.dur || 0) > 0);
+    const free = (this.state.armorPieces || []).filter((p) => p && !p.equippedBy && this.isToolPieceUsable(p));
     if (!free.length) return null;
     free.sort((a, b) => {
       const aFull = a.dur >= a.maxDur - 0.01;
@@ -3447,10 +3905,10 @@ class FactoryGame {
     if (!soldierId) return null;
     this.ensureArmorPieces();
     const existing = (this.state.armorPieces || []).find((p) => p && p.equippedBy === soldierId);
-    if (existing && existing.dur > 0) return existing;
+    if (existing && this.isToolPieceUsable(existing)) return existing;
     if (existing) {
       existing.equippedBy = null;
-      this.destroyArmorPiece(existing.id);
+      if ((existing.dur || 0) <= 0 || existing.warehoused) this.tryAutoRepairPiece('armor', existing);
     }
     const piece = this.pickFreeArmorPiece();
     if (!piece) return null;
@@ -3469,7 +3927,7 @@ class FactoryGame {
     this.ensureArmorPieces();
     const lv = Number(level);
     return (this.state.armorPieces || [])
-      .filter((p) => p && Number(p.level) === lv && !p.equippedBy && p.dur < p.maxDur - 0.01)
+      .filter((p) => p && Number(p.level) === lv && !p.equippedBy && !p.repairing && p.dur < p.maxDur - 0.01)
       .sort((a, b) => a.dur - b.dur)[0] || null;
   }
 
@@ -3479,6 +3937,14 @@ class FactoryGame {
     return (this.state.armorPieces || []).filter((p) => p && Number(p.level) === lv && p.equippedBy).length;
   }
 
+  countRepairingTools(toolId, level) {
+    return this.getToolPiecesList(toolId, level).filter((p) => p && p.repairing).length;
+  }
+
+  countWarehousedTools(toolId, level) {
+    return this.getToolPiecesList(toolId, level).filter((p) => p && p.warehoused && !p.repairing).length;
+  }
+
   getToolRecipe(toolId, level) {
     return GAME_DATA.recipes.find(r => {
       if (!r.isToolRecipe || !r.outputTools?.[toolId]) return false;
@@ -3486,82 +3952,358 @@ class FactoryGame {
     }) || null;
   }
 
-  getToolRepairCost(toolId, level) {
-    if (toolId === 'armor') {
-      const piece = this.getRepairableArmorPiece(level);
-      if (!piece) return {};
-      const recipe = this.getToolRecipe(toolId, level);
-      if (!recipe?.inputs) return {};
-      const max = Math.max(1, piece.maxDur || this.getArmorMaxDurability(level));
-      const cur = Math.max(0, piece.dur || 0);
-      const missing = Math.max(0, Math.min(1, (max - cur) / max));
-      const minMissing = GAME_DATA.toolDurability?.repairMinMissing ?? 0.1;
-      if (missing < minMissing - 1e-9) return {};
-      const ratio = GAME_DATA.toolDurability?.repairCostRatio ?? 0.5;
-      const factor = ratio * missing;
-      const cost = {};
-      Object.entries(recipe.inputs).forEach(([res, amt]) => {
-        const n = Math.ceil(Number(amt) * factor * 10 - 1e-9) / 10;
-        if (n > 0) cost[res] = this.roundResource(n);
-      });
-      return cost;
-    }
-    const recipe = this.getToolRecipe(toolId, level);
-    if (!recipe?.inputs) return {};
-
-    const max = this.getToolMaxDurability(level);
-    const cur = this.getToolDurability(toolId, level);
-    if (max <= 0) return {};
+  getPieceRepairFactor(toolId, piece) {
+    if (!piece) return null;
+    const max = Math.max(1, Number(piece.maxDur)
+      || (toolId === 'armor' ? this.getArmorMaxDurability(piece.level) : this.getToolMaxDurability(piece.level)));
+    const cur = Math.max(0, Number(piece.dur) || 0);
     const missing = Math.max(0, Math.min(1, (max - cur) / max));
-    const minMissing = GAME_DATA.toolDurability?.repairMinMissing ?? 0.1;
-    if (missing < minMissing - 1e-9) return {};
-
+    const minMissing = GAME_DATA.toolDurability?.repairMinMissing ?? 0.01;
+    if (missing < minMissing - 1e-9) return null;
     const ratio = GAME_DATA.toolDurability?.repairCostRatio ?? 0.5;
-    const factor = ratio * missing;
+    return { factor: ratio * missing, missing, max, cur };
+  }
+
+  computeRepairCostFromFactor(recipe, factor) {
     const cost = {};
-    Object.entries(recipe.inputs).forEach(([res, amt]) => {
-      // 按比例计算后，向 0.1 进位（向上取）
+    Object.entries(recipe?.inputs || {}).forEach(([res, amt]) => {
       const n = Math.ceil(Number(amt) * factor * 10 - 1e-9) / 10;
       if (n > 0) cost[res] = this.roundResource(n);
     });
     return cost;
   }
 
-  canRepairTool(toolId, level) {
-    if (toolId === 'armor') {
-      const piece = this.getRepairableArmorPiece(level);
-      if (!piece) return false;
-      const cost = this.getToolRepairCost(toolId, level);
-      if (!Object.keys(cost).length) return false;
-      return this.canAfford(cost);
-    }
-    if (this.getToolCount(toolId, level) <= 0) return false;
-    const max = this.getToolMaxDurability(level);
-    if (this.getToolDurability(toolId, level) >= max - 0.01) return false;
-    const cost = this.getToolRepairCost(toolId, level);
-    if (!Object.keys(cost).length) return false;
-    return this.canAfford(cost);
+  getRepairClicks(recipe, factor) {
+    const base = Math.max(1, Number(recipe?.baseMaxCount) || 1);
+    return Math.max(1, Math.ceil(base * factor));
   }
 
+  getRepairablePieces(toolId, level) {
+    const minMissing = GAME_DATA.toolDurability?.repairMinMissing ?? 0.01;
+    return this.getToolPiecesList(toolId, level).filter((p) => {
+      if (!p || p.repairing) return false;
+      const max = Math.max(1, p.maxDur || 1);
+      return (max - (p.dur || 0)) / max >= minMissing - 1e-9;
+    });
+  }
+
+  getToolRepairCost(toolId, level) {
+    const piece = toolId === 'armor'
+      ? this.getRepairableArmorPiece(level)
+      : this.getRepairablePieces(toolId, level).sort((a, b) => (a.dur || 0) - (b.dur || 0))[0];
+    if (!piece) return {};
+    const recipe = this.getToolRecipe(toolId, level);
+    if (!recipe?.inputs) return {};
+    const info = this.getPieceRepairFactor(toolId, piece);
+    if (!info) return {};
+    return this.computeRepairCostFromFactor(recipe, info.factor);
+  }
+
+  canRepairTool(toolId, level) {
+    const pieces = this.getRepairablePieces(toolId, level);
+    if (!pieces.length) return false;
+    const recipe = this.getToolRecipe(toolId, level);
+    if (!recipe) return false;
+    const info = this.getPieceRepairFactor(toolId, pieces[0]);
+    if (!info) return false;
+    const cost = this.computeRepairCostFromFactor(recipe, info.factor);
+    return Object.keys(cost).length > 0 && this.canAfford(cost);
+  }
+
+  /** 保留函数：改走修复订单 */
   repairTool(toolId, level) {
-    if (!this.canRepairTool(toolId, level)) return false;
-    const cost = this.getToolRepairCost(toolId, level);
-    if (!this.spend(cost)) return false;
-    if (toolId === 'armor') {
-      const piece = this.getRepairableArmorPiece(level);
-      if (!piece) return false;
-      piece.dur = piece.maxDur;
-      this.showNotification(`已修复场下 ${this.formatToolLabel(toolId, level)}（上场中的不可修）`);
-    } else {
-      this.setToolDurability(toolId, level, this.getToolMaxDurability(level));
-      this.showNotification(`已修复 ${this.formatToolLabel(toolId, level)}`);
+    return this.repairAllTools(toolId, level) > 0;
+  }
+
+  placeRepairOrder(toolId, level, pieceId, { silent = false, autoProduced = false } = {}) {
+    const recipe = this.getToolRecipe(toolId, level);
+    if (!recipe || !this.isRecipeTechUnlocked(recipe.id)) return 0;
+    const piece = this.findToolPiece(toolId, pieceId);
+    if (!piece || piece.repairing) return 0;
+    const info = this.getPieceRepairFactor(toolId, piece);
+    if (!info) return 0;
+    const cost = this.computeRepairCostFromFactor(recipe, info.factor);
+    if (!Object.keys(cost).length || !this.canAfford(cost)) {
+      if (!silent) this.showNotification('材料不足，无法修复');
+      return 0;
     }
-    this.render();
-    this.save();
+    if (!this.spend(cost)) return 0;
+    if (toolId === 'armor' && piece.equippedBy) piece.equippedBy = null;
+    piece.warehoused = false;
+    this.removePendingAutoRepair(toolId, piece.id);
+    const repairClicks = this.getRepairClicks(recipe, info.factor);
+    if (!Array.isArray(this.state.craftOrderQueue)) this.state.craftOrderQueue = [];
+    if (this.state.craftOrderSeq == null) this.state.craftOrderSeq = 0;
+    const order = {
+      id: this.state.craftOrderSeq++,
+      kind: 'repair',
+      recipeId: recipe.id,
+      toolId,
+      level: Number(level),
+      pieceId: piece.id,
+      count: 1,
+      progress: 0,
+      repairClicks,
+      paidCost: { ...cost },
+      autoProduced: !!autoProduced,
+    };
+    piece.repairing = true;
+    piece.repairOrderId = order.id;
+    this.state.craftOrderQueue.push(order);
+    if (!silent) {
+      this.showNotification(`已加入修复队列：${this.formatToolLabel(toolId, level)}`);
+      this.render();
+      this.save();
+    }
+    return 1;
+  }
+
+  ensurePendingAutoRepairList() {
+    if (!Array.isArray(this.state.pendingAutoRepairs)) this.state.pendingAutoRepairs = [];
+    return this.state.pendingAutoRepairs;
+  }
+
+  removePendingAutoRepair(toolId, pieceId) {
+    const list = this.ensurePendingAutoRepairList();
+    for (let i = list.length - 1; i >= 0; i--) {
+      if (list[i].toolId === toolId && list[i].pieceId === pieceId) list.splice(i, 1);
+    }
+  }
+
+  /**
+   * 自动修复线以下但材料不够：收入仓库停用，防止继续磨损；并记入待修表。
+   * 每件首次因缺料入库弹一次框。
+   */
+  warehousePieceAwaitingRepair(toolId, piece, { alert = true } = {}) {
+    if (!piece || piece.repairing) return false;
+    if (toolId === 'armor' && piece.equippedBy) {
+      const unit = this.findRaidUnitHoldingArmor?.(piece)
+        || (this.state.defense?.raid?.units || []).find((u) => u && u.armorPieceId === piece.id);
+      if (unit && typeof this.stripUnitArmor === 'function') {
+        this.stripUnitArmor(unit, false);
+      } else {
+        piece.equippedBy = null;
+      }
+    }
+    piece.warehoused = true;
+    piece._pendingRaidRepair = false;
+    const list = this.ensurePendingAutoRepairList();
+    const exists = list.some((e) => e.toolId === toolId && e.pieceId === piece.id);
+    if (!exists) {
+      list.push({ toolId, pieceId: piece.id, level: Number(piece.level) || 1 });
+      if (alert) {
+        const recipe = this.getToolRecipe(toolId, piece.level);
+        const info = this.getPieceRepairFactor(toolId, piece);
+        const cost = info && recipe ? this.computeRepairCostFromFactor(recipe, info.factor) : {};
+        const label = this.formatToolLabel(toolId, piece.level);
+        const costTxt = Object.keys(cost).length ? this.formatCostPlain(cost) : '（材料）';
+        this.enqueueAutoRepairShortageAlert(
+          `${label} 耐久已低于自动修复线，但材料不足，已暂时收入仓库停用（防止继续磨损）。\n修复需要：${costTxt}\n凑齐材料后将按顺序自动送修。`
+        );
+      }
+    }
+    this._needToolUiRefresh = true;
     return true;
   }
 
-  /** 轻量刷新工具/武器栏耐久条/修复按钮，避免每帧重建整块 DOM */
+  /** 获得材料后：按待修表从前往后，够料的自动送修 */
+  drainPendingAutoRepairs() {
+    if (this._drainingAutoRepairs) return 0;
+    this._drainingAutoRepairs = true;
+    let n = 0;
+    try {
+    const list = this.ensurePendingAutoRepairList();
+    if (!list.length) return 0;
+    let i = 0;
+    while (i < list.length) {
+      const entry = list[i];
+      const piece = this.findToolPiece(entry.toolId, entry.pieceId);
+      if (!piece || piece.repairing) {
+        list.splice(i, 1);
+        continue;
+      }
+      const recipe = this.getToolRecipe(entry.toolId, piece.level);
+      const st = recipe ? this.state.craftStations?.[recipe.id] : null;
+      if (!recipe || !st || st.autoRepair === false) {
+        i += 1;
+        continue;
+      }
+      const info = this.getPieceRepairFactor(entry.toolId, piece);
+      if (!info) {
+        piece.warehoused = false;
+        list.splice(i, 1);
+        continue;
+      }
+      const cost = this.computeRepairCostFromFactor(recipe, info.factor);
+      if (!Object.keys(cost).length || !this.canAfford(cost)) {
+        i += 1;
+        continue;
+      }
+      if (this.isRaidCombatActive?.() && this.isPieceRaidRepairBlocked?.(entry.toolId, piece)) {
+        this.tryEnqueueRaidGearRepair?.(entry.toolId, piece);
+        i += 1;
+        continue;
+      }
+      const placed = this.placeRepairOrder(entry.toolId, piece.level, piece.id, {
+        silent: true,
+        autoProduced: true,
+        allowDuringRaid: true,
+      });
+      if (placed > 0) {
+        piece.warehoused = false;
+        list.splice(i, 1);
+        n += 1;
+        this._needToolUiRefresh = true;
+        this._needCraftListRefresh = true;
+      } else {
+        i += 1;
+      }
+    }
+    if (n > 0) {
+      this.showNotification(`材料已够，自动送修 ×${n}`);
+      this.renderStationLists?.();
+      this.save();
+    }
+    return n;
+    } finally {
+      this._drainingAutoRepairs = false;
+    }
+  }
+
+  repairAllTools(toolId, level) {
+    const recipe = this.getToolRecipe(toolId, level);
+    if (!recipe) {
+      this.showNotification('找不到对应配方');
+      return 0;
+    }
+    const pieces = this.getRepairablePieces(toolId, level);
+    if (!pieces.length) {
+      this.showNotification('没有需要修复的装备');
+      return 0;
+    }
+    const plans = [];
+    const totalCost = {};
+    pieces.forEach((piece) => {
+      const info = this.getPieceRepairFactor(toolId, piece);
+      if (!info) return;
+      const cost = this.computeRepairCostFromFactor(recipe, info.factor);
+      plans.push({ piece, cost });
+      Object.entries(cost).forEach(([res, amt]) => {
+        totalCost[res] = (totalCost[res] || 0) + amt;
+      });
+    });
+    Object.keys(totalCost).forEach((k) => {
+      totalCost[k] = this.roundResource(totalCost[k]);
+    });
+    if (!plans.length) {
+      this.showNotification('没有需要修复的装备');
+      return 0;
+    }
+    if (!this.canAfford(totalCost)) {
+      this.showNotification('材料不足，无法修复全部');
+      return 0;
+    }
+    let n = 0;
+    let queuedSwap = 0;
+    plans.forEach(({ piece }) => {
+      if (this.isRaidCombatActive?.() && this.isPieceRaidRepairBlocked?.(toolId, piece)) {
+        if (this.tryEnqueueRaidGearRepair?.(toolId, piece)) queuedSwap += 1;
+        return;
+      }
+      n += this.placeRepairOrder(toolId, level, piece.id, { silent: true, allowDuringRaid: true });
+    });
+    if (n > 0 || queuedSwap > 0) {
+      const parts = [];
+      if (n > 0) parts.push(`修复队列 ×${n}`);
+      if (queuedSwap > 0) parts.push(`换装送修 ×${queuedSwap}`);
+      this.showNotification(parts.join(' · '));
+      this.render();
+      this.save();
+    } else if (this.isRaidCombatActive?.()) {
+      this.showNotification('袭击中：请先把士兵调回城墙内，再经换装冷却后送修');
+    }
+    return n + queuedSwap;
+  }
+
+  tryAutoRepairPiece(toolId, piece) {
+    if (!piece || piece.repairing || piece._pendingRaidRepair) return false;
+    const recipe = this.getToolRecipe(toolId, piece.level);
+    if (!recipe) return false;
+    const st = this.state.craftStations?.[recipe.id];
+    if (!st || st.autoRepair === false) {
+      // 关闭自动修复时解除仓禁，避免永久停用
+      if (piece.warehoused) {
+        piece.warehoused = false;
+        this.removePendingAutoRepair(toolId, piece.id);
+        this._needToolUiRefresh = true;
+      }
+      return false;
+    }
+    const threshold = st.autoRepairThreshold ?? 10;
+    const max = Math.max(1, piece.maxDur || 1);
+    const pct = ((piece.dur || 0) / max) * 100;
+    // 已入库待修：等凑齐材料后由 drainPendingAutoRepairs 送修
+    if (piece.warehoused) {
+      if (pct >= threshold) {
+        piece.warehoused = false;
+        this.removePendingAutoRepair(toolId, piece.id);
+        this._needToolUiRefresh = true;
+      }
+      return false;
+    }
+    if (pct >= threshold) return false;
+    const info = this.getPieceRepairFactor(toolId, piece);
+    if (!info) return false;
+
+    // 袭击中：正被占用的装备不能直接送修；门内单位走换装冷却后再修
+    if (this.isRaidCombatActive?.() && this.isPieceRaidRepairBlocked?.(toolId, piece)) {
+      return !!this.tryEnqueueRaidGearRepair?.(toolId, piece);
+    }
+
+    const cost = this.computeRepairCostFromFactor(recipe, info.factor);
+    if (!Object.keys(cost).length || !this.canAfford(cost)) {
+      this.warehousePieceAwaitingRepair(toolId, piece, { alert: true });
+      return false;
+    }
+
+    const placed = this.placeRepairOrder(toolId, piece.level, piece.id, {
+      silent: true,
+      autoProduced: true,
+      allowDuringRaid: true,
+    });
+    if (placed > 0) {
+      this._needToolUiRefresh = true;
+      this._needCraftListRefresh = true;
+    }
+    return placed > 0;
+  }
+
+  scanAutoRepairs() {
+    Object.keys(GAME_DATA.villagerTools || {}).forEach((toolId) => {
+      this.getToolPiecesList(toolId).forEach((p) => this.tryAutoRepairPiece(toolId, p));
+    });
+  }
+
+  /** 静默移除修复订单（件被销毁时）；可选退还材料 */
+  _removeRepairOrderSilent(orderId, { refund = false } = {}) {
+    const queue = this.state.craftOrderQueue;
+    if (!Array.isArray(queue)) return;
+    const idx = queue.findIndex((o) => o.id === orderId);
+    if (idx < 0) return;
+    const order = queue[idx];
+    if (refund && order?.paidCost) {
+      Object.entries(order.paidCost).forEach(([res, amt]) => this.addResource(res, amt));
+    }
+    queue.splice(idx, 1);
+  }
+
+  getCraftOrderMaxProgress(order) {
+    if (!order) return 1;
+    if (order.kind === 'repair') return Math.max(1, Number(order.repairClicks) || 1);
+    return this.getMaxCount('recipe', order.recipeId) || 1;
+  }
+
+  /** 轻量刷新工具/武器栏耐久条，避免每帧重建整块 DOM */
   updateToolDurabilityUI() {
     document.querySelectorAll('#tool-list, #weapon-list').forEach(container => {
       container.querySelectorAll('.tool-level-row.has-stock[data-tool-id]').forEach(row => {
@@ -3570,49 +4312,36 @@ class FactoryGame {
       if (!toolId || !level) return;
       const n = this.getToolCount(toolId, level);
       if (n <= 0) return;
+      const usable = this.getUsableToolCount(toolId, level);
+      const repairing = this.countRepairingTools(toolId, level);
+      const warehoused = this.countWarehousedTools(toolId, level);
       const dur = this.getToolDurability(toolId, level);
       const maxDur = toolId === 'armor' ? this.getArmorMaxDurability(level) : this.getToolMaxDurability(level);
       const pct = maxDur > 0 ? Math.max(0, Math.min(100, (dur / maxDur) * 100)) : 0;
       const users = this.getToolActiveUsersByLevel(toolId)[level] || 0;
       const equippedN = toolId === 'armor' ? this.countEquippedArmor(level) : 0;
+      const countEl = row.querySelector('.tool-level-count');
+      if (countEl) {
+        const tags = [];
+        if (repairing > 0) tags.push(`修中${repairing}`);
+        if (warehoused > 0) tags.push(`仓禁${warehoused}`);
+        countEl.textContent = tags.length ? `×${n}（${tags.join('·')}）` : `×${n}`;
+      }
+      const repairHint = repairing > 0 ? ` · 修中×${repairing}` : '';
+      const warehouseHint = warehoused > 0 ? ` · 仓禁×${warehoused}` : '';
       const armorHint = toolId === 'armor'
-        ? (equippedN > 0 ? ` · 上场×${equippedN}不可修` : ' · 场下可修')
+        ? (equippedN > 0 ? ` · 上场×${equippedN}` : '')
         : '';
-      const repairCost = this.getToolRepairCost(toolId, level);
-      const canRepair = this.canRepairTool(toolId, level);
-      const needRepair = Object.keys(repairCost).length > 0;
+      const usableHint = usable < n ? ` · 可用×${usable}` : '';
       row.classList.toggle('durability-low', pct < 35);
       const fill = row.querySelector('.tool-durability-fill');
       const bar = row.querySelector('.tool-durability-bar');
       const text = row.querySelector('.tool-durability-text');
       if (fill) fill.style.width = `${pct}%`;
-      if (bar) bar.title = `耐久 ${dur.toFixed(0)}/${maxDur}${users ? ` · 使用中 ×${users}` : ''}${armorHint}`;
-      if (text) text.textContent = `${Math.ceil(dur)}/${maxDur}${users ? ` · 用×${users}` : ''}${armorHint}`;
-
-      let repairBtn = row.querySelector('.btn-repair-tool');
-      let costEl = row.querySelector('.tool-repair-cost');
-      if (needRepair) {
-        if (!repairBtn) {
-          repairBtn = document.createElement('button');
-          repairBtn.type = 'button';
-          repairBtn.className = 'btn-repair-tool';
-          repairBtn.dataset.toolId = toolId;
-          repairBtn.dataset.toolLevel = String(level);
-          repairBtn.textContent = '修复';
-          row.querySelector('.tool-durability-row')?.appendChild(repairBtn);
-        }
-        repairBtn.disabled = !canRepair;
-        repairBtn.title = `修复消耗：${this.formatCostPlain(repairCost)}`;
-        if (!costEl) {
-          costEl = document.createElement('div');
-          costEl.className = 'tool-repair-cost';
-          row.appendChild(costEl);
-        }
-        costEl.innerHTML = `修复：${this.formatCost(repairCost)}`;
-      } else {
-        repairBtn?.remove();
-        costEl?.remove();
-      }
+      if (bar) bar.title = `耐久 ${dur.toFixed(0)}/${maxDur}${users ? ` · 使用中 ×${users}` : ''}${usableHint}${repairHint}${warehouseHint}${armorHint}`;
+      if (text) text.textContent = `${Math.ceil(dur)}/${maxDur}${users ? ` · 用×${users}` : ''}${repairHint}${warehouseHint}`;
+      row.querySelector('.btn-repair-tool')?.remove();
+      row.querySelector('.tool-repair-cost')?.remove();
       });
     });
   }
@@ -3621,7 +4350,7 @@ class FactoryGame {
     if (toolId === 'armor') {
       this.ensureArmorPieces();
       const pool = (this.state.armorPieces || [])
-        .filter((p) => Number(p.level) === Number(level))
+        .filter((p) => Number(p.level) === Number(level) && this.isToolPieceUsable(p))
         .sort((a, b) => {
           const ae = a.equippedBy ? 1 : 0;
           const be = b.equippedBy ? 1 : 0;
@@ -3637,10 +4366,13 @@ class FactoryGame {
       this._brokenToolStockKeysThisTick.push([toolId, level]);
       return;
     }
+    this.ensureToolPieces();
+    const pool = (this.state.toolPieces?.[toolId] || [])
+      .filter((p) => p && Number(p.level) === Number(level) && this.isToolPieceUsable(p))
+      .sort((a, b) => (a.dur || 0) - (b.dur || 0));
+    if (!pool.length) return;
     const label = this.formatToolLabel(toolId, level);
-    const next = this.getToolCount(toolId, level) - 1;
-    this.setToolCount(toolId, level, next);
-    if (next > 0) this.setToolDurability(toolId, level, this.getToolMaxDurability(level));
+    this.destroyToolPiece(toolId, pool[0].id);
     this._brokenToolsThisTick = this._brokenToolsThisTick || [];
     this._brokenToolsThisTick.push(label);
     this._brokenToolStockKeysThisTick = this._brokenToolStockKeysThisTick || [];
@@ -3672,7 +4404,7 @@ class FactoryGame {
       let demand = this.getCombatToolDemand(toolId);
       const maxLevel = def.maxLevel || 4;
       for (let level = maxLevel; level >= 1; level--) {
-        const supply = this.getToolCount(toolId, level);
+        const supply = this.getUsableToolCount(toolId, level);
         const use = Math.min(supply, demand);
         if (use > 0) result[level] = (result[level] || 0) + use;
         demand -= use;
@@ -3719,6 +4451,7 @@ class FactoryGame {
     this._brokenToolsThisTick = [];
     this._brokenToolStockKeysThisTick = [];
     let anyWear = false;
+    let anyBroken = false;
 
     Object.keys(GAME_DATA.villagerTools || {}).forEach(toolId => {
       if (toolId === 'armor') return; // 铠甲耐久=战斗血量，不按使用时间磨损
@@ -3727,37 +4460,42 @@ class FactoryGame {
         if (users <= 0) return;
         anyWear = true;
         const lv = Number(level);
-        if (this.getToolCount(toolId, lv) <= 0) return;
-        let dur = this.getToolDurability(toolId, lv);
-        // 同时使用的人越多，耐久消耗越快
-        dur -= users * wearRate * seconds;
-        while (dur <= 0 && this.getToolCount(toolId, lv) > 0) {
-          this.breakOneTool(toolId, lv);
-          if (this.getToolCount(toolId, lv) <= 0) {
-            dur = 0;
-            break;
+        this.ensureToolPieces();
+        const pieces = (this.state.toolPieces?.[toolId] || [])
+          .filter((p) => p && Number(p.level) === lv && this.isToolPieceUsable(p))
+          .sort((a, b) => (a.dur || 0) - (b.dur || 0));
+        const n = Math.min(users, pieces.length);
+        const wear = wearRate * seconds;
+        for (let i = 0; i < n; i++) {
+          const piece = pieces[i];
+          piece.dur = Math.max(0, (piece.dur || 0) - wear);
+          if (piece.dur <= 0) {
+            piece.dur = 0;
+            anyBroken = true;
+            this._brokenToolsThisTick.push(this.formatToolLabel(toolId, lv));
           }
-          dur += this.getToolMaxDurability(lv);
-        }
-        if (this.getToolCount(toolId, lv) > 0) {
-          this.setToolDurability(toolId, lv, Math.max(0, dur));
+          this.tryAutoRepairPiece(toolId, piece);
         }
       });
     });
 
-    if (this._brokenToolsThisTick.length) {
+    this.scanAutoRepairs();
+
+    if (this._needCraftListRefresh) {
+      this._needCraftListRefresh = false;
+      this.renderStationLists();
+      this.save();
+    }
+
+    if (anyBroken && this._brokenToolsThisTick.length) {
       const list = this._brokenToolsThisTick;
       this.showNotification(
         list.length === 1
-          ? `${list[0]} 耐久耗尽，损毁 1 件`
-          : `${list.length} 件装备因耐久耗尽损毁`
+          ? `${list[0]} 耐久耗尽，已无法使用（可修复）`
+          : `${list.length} 件装备耐久耗尽，已无法使用（可修复）`
       );
       this._needToolUiRefresh = true;
-      if (this.promoteAutoCraftForToolStockChanges(this._brokenToolStockKeysThisTick)) {
-        this.render();
-        this.save();
-      }
-    } else if (anyWear) {
+    } else if (anyWear || this._needToolUiRefresh) {
       this._needToolDurabilityPaint = true;
     }
   }
@@ -3765,7 +4503,7 @@ class FactoryGame {
   canAffordToolInputs(inputTools, count = 1) {
     let ok = true;
     this.forEachToolIO(inputTools, (toolId, level, amt) => {
-      if (this.getToolCount(toolId, level) < amt * count) ok = false;
+      if (this.getUsableToolCount(toolId, level) < amt * count) ok = false;
     });
     return ok;
   }
@@ -3773,7 +4511,8 @@ class FactoryGame {
   spendToolInputs(inputTools, count = 1, { skipAutoPromote = false } = {}) {
     const affected = [];
     this.forEachToolIO(inputTools, (toolId, level, amt) => {
-      this.setToolCount(toolId, level, this.getToolCount(toolId, level) - amt * count);
+      const need = amt * count;
+      for (let i = 0; i < need; i++) this.breakOneTool(toolId, level);
       affected.push([toolId, level]);
     });
     if (!skipAutoPromote && affected.length) {
@@ -3821,7 +4560,7 @@ class FactoryGame {
         isCooldown: true,
       };
     }
-    const max = this.getMaxCount('recipe', recipeId);
+    const max = this.getCraftOrderMaxProgress(order);
     return {
       width: max > 0 ? Math.min(100, (order.progress / max) * 100) : 0,
       isCooldown: false,
@@ -4520,7 +5259,7 @@ class FactoryGame {
 
     const maxLevel = GAME_DATA.villagerTools[toolId]?.maxLevel || 3;
     for (let level = maxLevel; level >= 1; level--) {
-      let supply = this.getToolCount(toolId, level);
+      let supply = this.getUsableToolCount(toolId, level);
       const totalDemand = Object.values(remainingDemand).reduce((s, n) => s + n, 0);
       if (supply <= 0 || totalDemand <= 0) continue;
 
@@ -4655,13 +5394,16 @@ class FactoryGame {
     return hours >= start || hours < end;
   }
 
-  /** 资源点徒手村民每人每秒进度（农场/牧场效率升级后提升，效率0已对标篓子速度） */
+  /** 资源点徒手村民每人每秒进度（农场/牧场效率升级后提升；食物点另加「食物采集」科技） */
   getPointBareWorkerSpeed(pointId) {
     const def = GAME_DATA.resourcePoints[pointId];
     const level = this.getPointUpgradeLevel(pointId, 'efficiency');
     const byLevel = def?.efficiencySpeedByLevel;
-    if (byLevel && byLevel[level] != null) return byLevel[level];
-    return this.getVillagerBaseSpeed();
+    let speed = (byLevel && byLevel[level] != null) ? byLevel[level] : this.getVillagerBaseSpeed();
+    if (def?.isFoodPoint || def?.resource === 'food') {
+      speed += this.getFoodGatherSpeedBonus();
+    }
+    return speed;
   }
 
   getHungryCount() {
@@ -5393,6 +6135,7 @@ class FactoryGame {
     if (GAME_DATA.resources[res]) {
       this.state.resources[res] = this.roundResource((this.state.resources[res] || 0) + amount);
       this.checkAchievements();
+      this.drainPendingAutoRepairs();
     }
   }
 
@@ -5632,20 +6375,33 @@ class FactoryGame {
     return true;
   }
 
-  addCraftQueueProgress(recipeId, amount) {
-    const order = (this.state.craftOrderQueue || []).find(o => o.recipeId === recipeId);
+  addCraftQueueProgress(recipeId, amount, orderId = null) {
+    const queue = this.state.craftOrderQueue || [];
+    let order = null;
+    if (orderId != null) {
+      order = queue.find(o => o.id === orderId);
+    } else if (queue[0] && queue[0].recipeId === recipeId) {
+      order = queue[0];
+    } else {
+      order = queue.find(o => o.recipeId === recipeId);
+    }
     if (!order || amount <= 0) return 0;
 
     const st = this.state.craftStations[recipeId];
     if (!st || st.cooldownRemaining > 0) return 0;
 
     order.progress += amount;
+    const orderKey = order.id;
 
     let completed = 0;
     while (completed < 20) {
-      const activeOrder = (this.state.craftOrderQueue || []).find(o => o.recipeId === recipeId);
+      const activeOrder = queue.find(o => o.id === orderKey);
       if (!activeOrder || st.cooldownRemaining > 0) break;
-      const max = this.getMaxCount('recipe', recipeId);
+      if (activeOrder.kind === 'repair') {
+        const piece = this.findToolPiece(activeOrder.toolId, activeOrder.pieceId);
+        if (!piece || !piece.repairing) break;
+      }
+      const max = this.getCraftOrderMaxProgress(activeOrder);
       if (activeOrder.progress < max) break;
       activeOrder.progress -= max;
       this.completeCraftUnit(recipeId, { silent: completed > 0, order: activeOrder });
@@ -5895,24 +6651,17 @@ class FactoryGame {
     let changed = false;
     const baseSpeed = this.getVillagerBaseSpeed();
 
-    // 1. 全局生产工人 → 处理队首订单
+    // 全局生产工人 → 处理队首订单
     const globalWorkers = this.state.workers?.craftWorkers || 0;
     if (globalWorkers > 0) {
       const firstOrder = queue[0];
       if (firstOrder && this._canProcessOrder(firstOrder)) {
         const globalSpeed = globalWorkers * baseSpeed;
-        // getStationAutoSpeed counts all workers for display; for actual progress use only global
-        const completed = this.addCraftQueueProgress(firstOrder.recipeId, globalSpeed * seconds);
-        if (completed > 0) changed = true;
-      }
-    }
-
-    // 2. 队列头订单由全局工人推进
-    if (globalWorkers > 0) {
-      const firstOrder = queue[0];
-      if (firstOrder && this._canProcessOrder(firstOrder)) {
-        const globalSpeed = globalWorkers * baseSpeed;
-        const completed = this.addCraftQueueProgress(firstOrder.recipeId, globalSpeed * seconds);
+        const completed = this.addCraftQueueProgress(
+          firstOrder.recipeId,
+          globalSpeed * seconds,
+          firstOrder.id
+        );
         if (completed > 0) changed = true;
       }
     }
@@ -5928,6 +6677,10 @@ class FactoryGame {
     if (!this.isRecipeTechUnlocked(order.recipeId)) return false;
     const st = this.state.craftStations[order.recipeId];
     if (!st || st.cooldownRemaining > 0) return false;
+    if (order.kind === 'repair') {
+      const piece = this.findToolPiece(order.toolId, order.pieceId);
+      return !!(piece && piece.repairing && piece.repairOrderId === order.id);
+    }
     return true;
   }
 
@@ -6023,6 +6776,8 @@ class FactoryGame {
     // 填满动画按真实时间推进（不受暂停/加速影响）
     this.processPointGatherAnims();
     if (dt > 0 && !this.state.gameOver && !frozen) this.runGameSimulation(dt);
+    // 倍速下日历推进快，跟手刷新 BGM 切轨前渐弱
+    try { this.sounds?.bgm?._syncPeriodEndVolumes?.(); } catch (_) { /* ignore */ }
     this.renderTick();
     this.renderGlobalStats();
     if (this.isTutorialActive()) {
@@ -6049,7 +6804,6 @@ class FactoryGame {
     const tech = GAME_DATA.techTree.find(t => t.id === techId);
     if (!tech || !this.canUnlockTech(tech)) return;
 
-    const visibleBefore = new Set(this.getVisibleTechIds());
     const cost = this.getTechCost(tech);
     if (!this.spend(cost)) return;
 
@@ -6059,12 +6813,10 @@ class FactoryGame {
 
     if (techId === 'unlock_treasure_chest') this.state.starterChestRevealed = true;
 
-    const newResourcePoints = [];
     const newPointIds = [];
     Object.entries(GAME_DATA.resourcePoints).forEach(([id, def]) => {
       if (def.unlockRequires === techId) {
         this.unlockResourcePoint(id);
-        newResourcePoints.push(def);
         newPointIds.push(id);
       }
     });
@@ -6077,15 +6829,13 @@ class FactoryGame {
     autoUnlocked.forEach((t) => {
       Object.entries(GAME_DATA.resourcePoints).forEach(([id, def]) => {
         if (def.unlockRequires === t.id && !newPointIds.includes(id)) {
-          newResourcePoints.push(def);
           newPointIds.push(id);
         }
       });
     });
 
-    const newlyVisible = this.getVisibleTechIds().filter(id => !visibleBefore.has(id) && id !== techId);
     if (!this._suppressSounds) this.sounds.playUnlock();
-    this.showUnlockToast(tech, newlyVisible, newResourcePoints);
+    // 不再弹出右上角解锁提醒
 
     // 工作台：开放合成/工具栏，并高亮已具备条件的配方（如开局工具制作）
     if (techId === 'unlock_workbench') {
@@ -6597,6 +7347,7 @@ class FactoryGame {
       this.updateSpeedButtons();
       this.updateTutSpotlight();
     });
+    this.setupTutSpotlightScrollSync();
 
     document.addEventListener('keydown', (e) => {
       // Ctrl+Shift+R → 开发者面板（放在最优先的位置，避免被其他代码异常阻挡）
@@ -6625,17 +7376,25 @@ class FactoryGame {
         this.setAutoProduce(e.target.dataset.recipeId, e.target.checked);
         this.renderCraftOverview();
         this.renderTools();
+      } else if (e.target.classList.contains('craft-auto-repair')) {
+        this.setAutoRepair(e.target.dataset.recipeId, e.target.checked);
+        this.renderCraftOverview();
+        this.renderTools();
       } else if (e.target.classList.contains('craft-auto-mode')) {
         this.setAutoMode(e.target.dataset.recipeId, e.target.value);
         this.renderCraftOverview();
         this.renderTools();
       } else if (e.target.classList.contains('craft-auto-threshold')) {
         this.setAutoThreshold(e.target.dataset.recipeId, parseInt(e.target.value) || 10);
+      } else if (e.target.classList.contains('craft-auto-repair-threshold')) {
+        this.setAutoRepairThreshold(e.target.dataset.recipeId, parseInt(e.target.value) || 10);
       }
     });
     document.getElementById('app').addEventListener('input', (e) => {
       if (e.target.classList.contains('craft-auto-threshold')) {
         this.setAutoThreshold(e.target.dataset.recipeId, parseInt(e.target.value) || 10);
+      } else if (e.target.classList.contains('craft-auto-repair-threshold')) {
+        this.setAutoRepairThreshold(e.target.dataset.recipeId, parseInt(e.target.value) || 10);
       }
     });
   }
@@ -6974,6 +7733,8 @@ class FactoryGame {
       if (s.playBgm !== false) this.startMenuBgm();
       else this.stopMenuBgm();
       this._updateMenuBgmNowLabel();
+    } else {
+      this.syncBgmNowPlayingUI();
     }
   }
 
@@ -7786,6 +8547,7 @@ class FactoryGame {
     this.devTimeScale = this.timeScale;
     this.updateSpeedButtons();
     this.syncDevTimeScaleUI();
+    try { this.sounds?.bgm?._startUpdateTimer?.(); } catch (_) { /* ignore */ }
   }
 
   updateSpeedButtons() {
@@ -8077,9 +8839,15 @@ class FactoryGame {
         return;
       }
 
+      const repairAllBtn = e.target.closest('.btn-repair-all-tools');
+      if (repairAllBtn) {
+        this.repairAllTools(repairAllBtn.dataset.toolId, Number(repairAllBtn.dataset.toolLevel));
+        return;
+      }
+
       const repairToolBtn = e.target.closest('.btn-repair-tool');
       if (repairToolBtn && !repairToolBtn.disabled) {
-        this.repairTool(repairToolBtn.dataset.toolId, Number(repairToolBtn.dataset.toolLevel));
+        this.repairAllTools(repairToolBtn.dataset.toolId, Number(repairToolBtn.dataset.toolLevel));
         return;
       }
 
@@ -8277,6 +9045,10 @@ class FactoryGame {
     if (tech.techSeries === 'unlock_worker_efficiency' || tech.id === 'unlock_worker_efficiency') {
       const { current, max } = this.getTechRepeatLevel('unlock_worker_efficiency');
       extras.push(`👷 徒手效率：${this.getVillagerBaseSpeed()}/秒（${this.formatUpgradeLevel(current, max)}）`);
+    }
+    if (tech.techSeries === 'unlock_food_gather_speed' || tech.id === 'unlock_food_gather_speed') {
+      const { current, max } = this.getTechRepeatLevel('unlock_food_gather_speed');
+      extras.push(`🫐 食物采集：+${(current * 0.01).toFixed(2)}/秒/人（${this.formatUpgradeLevel(current, max)}）`);
     }
     if (tech.techSeries === 'unlock_tool_efficiency' || tech.id === 'unlock_tool_efficiency') {
       const { current, max } = this.getTechRepeatLevel('unlock_tool_efficiency');
@@ -8640,7 +9412,9 @@ class FactoryGame {
     const isCraft = type === 'recipe';
     const craftQueue = isCraft ? this.getCraftQueue(id) : null;
     const queueCount = craftQueue?.quantity || 0;
-    const orderMax = isCraft ? this.getMaxCount('recipe', id) : maxCount;
+    const orderMax = isCraft
+      ? (craftQueue?.maxProgress || this.getMaxCount('recipe', id))
+      : maxCount;
     const orderProgress = craftQueue?.progress || 0;
 
     const progressBar = document.getElementById('progress-bar');
@@ -8762,7 +9536,7 @@ class FactoryGame {
       const order = (this.state.craftOrderQueue || []).find(o => o.id === Number(orderId));
       if (!order) return;
       const recipeId = order.recipeId;
-      const max = this.getMaxCount('recipe', recipeId);
+      const max = this.getCraftOrderMaxProgress(order);
       const maxWidth = max > 0 ? Math.min(100, (order.progress / max) * 100) : 0;
       const onCooldown = this.isOnCooldown('recipe', recipeId);
       const isHead = this.getActiveCraftOrder()?.id === order.id;
@@ -9069,9 +9843,10 @@ class FactoryGame {
         const recipeId = order.recipeId;
         const recipe = GAME_DATA.recipes.find(r => r.id === recipeId);
         if (!recipe) return;
-        const max = this.getMaxCount('recipe', recipeId);
+        const max = this.getCraftOrderMaxProgress(order);
         const barState = this.getCraftQueueBarState(recipeId);
         const isHead = idx === 0;
+        const isRepair = order.kind === 'repair';
         const barClass = barState.isCooldown
           ? 'mini-progress craft-queue-progress cooldown'
           : 'mini-progress craft-queue-progress';
@@ -9079,13 +9854,16 @@ class FactoryGame {
           ? `冷却 ${this.formatCooldownSeconds(this.state.craftStations[recipeId]?.cooldownRemaining)}s`
           : (isHead ? `${order.progress.toFixed(0)}/${max}` : `排队中`);
         const active = this.isActiveStation('recipe', recipeId);
+        const label = isRepair
+          ? `🔧 修复 ${recipe.name}`
+          : `${recipe.icon} ${recipe.name}`;
         const el = document.createElement('div');
-        el.className = `craft-order-item ${active ? 'active' : ''}`;
+        el.className = `craft-order-item ${active ? 'active' : ''}${isRepair ? ' craft-order-repair' : ''}`;
         el.dataset.recipeId = recipeId;
         el.dataset.orderId = order.id;
         el.innerHTML = `
           <button type="button" class="craft-order-btn station-btn ${active ? 'active' : ''}" data-station-type="recipe" data-station-id="${recipeId}" data-order-id="${order.id}">
-            <span class="station-btn-label">${recipe.icon} ${recipe.name} <span class="craft-queue-count">×${order.count}</span></span>
+            <span class="station-btn-label">${label} <span class="craft-queue-count">×${order.count}</span></span>
             <div class="mini-progress-bg"><div class="${barClass}" data-order-id="${order.id}" style="width:${isHead ? barState.width : 0}%"></div></div>
             <span class="craft-order-status">${statusText}</span>
           </button>
@@ -9165,7 +9943,9 @@ class FactoryGame {
     const isHouse = type === 'house';
     const craftQueue = isCraft ? this.getCraftQueue(id) : null;
     const queueCount = craftQueue?.quantity || 0;
-    const orderMax = isCraft ? this.getMaxCount('recipe', id) : maxCount;
+    const orderMax = isCraft
+      ? (craftQueue?.maxProgress || this.getMaxCount('recipe', id))
+      : maxCount;
     const orderProgress = craftQueue?.progress || 0;
     const pointBar = type === 'point' && !GAME_DATA.resourcePoints[id]?.isTreasureChest
       ? this._getPointBarState(id)
@@ -9391,10 +10171,13 @@ class FactoryGame {
         </div>
         <p class="hint">生产工人总速度：${autoSpeed.toFixed(2)}/秒。手动点击可生产任意订单。${hungerHint}</p>
         ${orderList.length > 0 ? `<div class="craft-order-assign-list">${orderList.map(o => {
-          const max = this.getMaxCount('recipe', o.recipeId);
+          const max = this.getCraftOrderMaxProgress(o);
           const pct = max > 0 ? Math.min(100, (o.progress / max) * 100) : 0;
+          const label = o.kind === 'repair'
+            ? `🔧 修复 ${o.name}`
+            : `${o.icon} ${o.name}`;
           return `<div class="craft-order-assign-row">
-            <span class="craft-order-assign-label">${o.icon} ${o.name} ×${o.count}</span>
+            <span class="craft-order-assign-label">${label} ×${o.count}</span>
             <div class="mini-progress-bg"><div class="mini-progress" style="width:${pct}%"></div></div>
           </div>`;
         }).join('')}</div>` : '<p class="hint">暂无生产订单，前往合成页下订单</p>'}
@@ -9686,18 +10469,44 @@ class FactoryGame {
     if (!st) return null;
     const queueCount = this.getCraftQueueCount(recipe.id);
     let toolLevelTag = '';
+    let toolId = null;
+    let toolLevel = 1;
     if (recipe.isToolRecipe && recipe.outputTools) {
-      const [[toolId, out]] = Object.entries(recipe.outputTools);
+      const [[tid, out]] = Object.entries(recipe.outputTools);
+      toolId = tid;
+      toolLevel = out?.level || 1;
       const max = GAME_DATA.villagerTools[toolId]?.maxLevel || 3;
-      const lv = out?.level || 1;
-      toolLevelTag = ` <small class="level-tag">${this.formatUpgradeLevel(lv, max)}</small>`;
+      toolLevelTag = ` <small class="level-tag">${this.formatUpgradeLevel(toolLevel, max)}</small>`;
     }
     const el = document.createElement('div');
     el.className = `craft-overview-item ${canCraftOne ? 'affordable' : 'unaffordable'}${recipe.isToolRecipe ? ' craft-tool-recipe' : ''}${this.shouldFlashUnlockRecipe(recipe.id) ? ' unlock-flash' : ''}`;
     el.dataset.recipeId = recipe.id;
-    el.innerHTML = `
-      <div class="craft-overview-header">
-        <span>${recipe.icon} ${recipe.name}${toolLevelTag}${queueCount > 0 ? ` <small class="craft-queue-inline">×${queueCount}</small>` : ''}</span>
+    if (toolId) {
+      el.dataset.toolId = toolId;
+      el.dataset.toolLevel = String(toolLevel);
+    }
+
+    let autoControlsHtml;
+    if (recipe.isToolRecipe) {
+      const autoRepair = st.autoRepair !== false;
+      const threshold = st.autoRepairThreshold ?? 10;
+      autoControlsHtml = `
+        <div class="craft-auto-controls craft-auto-repair-controls">
+          <label class="craft-auto-label">
+            <input type="checkbox" class="craft-auto-repair" data-recipe-id="${recipe.id}" ${autoRepair ? 'checked' : ''}>
+            自动修复
+          </label>
+          <span class="craft-auto-options" style="${autoRepair ? '' : 'display:none'}">
+            <span class="craft-auto-threshold-label">低于</span>
+            <input type="number" class="craft-auto-repair-threshold" data-recipe-id="${recipe.id}"
+              min="1" max="99" value="${threshold}"
+              title="耐久百分比低于此值时自动排队修复">
+            <span class="craft-auto-threshold-unit">%</span>
+          </span>
+          <button type="button" class="btn-repair-all-tools" data-tool-id="${toolId}" data-tool-level="${toolLevel}">修复全部</button>
+        </div>`;
+    } else {
+      autoControlsHtml = `
         <div class="craft-auto-controls">
           <label class="craft-auto-label">
             <input type="checkbox" class="craft-auto-produce" data-recipe-id="${recipe.id}" ${st.autoProduce ? 'checked' : ''}>
@@ -9713,7 +10522,13 @@ class FactoryGame {
               style="${st.autoMode === 'stock' ? '' : 'display:none'}"
               title="库存低于此值时自动生产">
           </span>
-        </div>
+        </div>`;
+    }
+
+    el.innerHTML = `
+      <div class="craft-overview-header">
+        <span>${recipe.icon} ${recipe.name}${toolLevelTag}${queueCount > 0 ? ` <small class="craft-queue-inline">×${queueCount}</small>` : ''}</span>
+        ${autoControlsHtml}
       </div>
       <div class="craft-overview-recipe">${this.formatRecipeLine(recipe)}</div>
       <div class="craft-order-hint">生产即扣材料 · 🧑${this.state.workers?.craftWorkers || 0}</div>
@@ -9838,17 +10653,24 @@ class FactoryGame {
           const pct = maxDur > 0 ? Math.max(0, Math.min(100, (dur / maxDur) * 100)) : 0;
           const users = usersByLevel[lv] || 0;
           const equippedN = id === 'armor' ? this.countEquippedArmor(lv) : 0;
-          const repairCost = this.getToolRepairCost(id, lv);
-          const canRepair = this.canRepairTool(id, lv);
-          const needRepair = Object.keys(repairCost).length > 0;
+          const repairing = this.countRepairingTools(id, lv);
+          const warehoused = this.countWarehousedTools(id, lv);
+          const usable = this.getUsableToolCount(id, lv);
+          const tags = [];
+          if (repairing > 0) tags.push(`修中${repairing}`);
+          if (warehoused > 0) tags.push(`仓禁${warehoused}`);
+          const countLabel = tags.length ? `×${n}（${tags.join('·')}）` : `×${n}`;
+          const repairHint = repairing > 0 ? ` · 修中×${repairing}` : '';
+          const warehouseHint = warehoused > 0 ? ` · 仓禁×${warehoused}` : '';
           const armorHint = id === 'armor'
-            ? (equippedN > 0 ? ` · 上场×${equippedN}不可修` : ' · 场下可修')
+            ? (equippedN > 0 ? ` · 上场×${equippedN}` : '')
             : '';
+          const usableHint = usable < n ? ` · 可用×${usable}` : '';
           block.innerHTML = `
             <div class="tool-level-row has-stock ${pct < 35 ? 'durability-low' : ''}" data-tool-id="${id}" data-tool-level="${lv}">
               <div class="tool-level-main">
                 <span>${def.icon} ${name} <small class="level-tag">${this.formatUpgradeLevel(lv, max)}</small></span>
-                <span>×${n}</span>
+                <span class="tool-level-count">${countLabel}</span>
                 <span class="tool-level-speed">${
                   def.combat && targets
                     ? `${this.getToolSpeed(lv)}/秒 · 可作战`
@@ -9856,17 +10678,11 @@ class FactoryGame {
                 }</span>
               </div>
               <div class="tool-durability-row">
-                <div class="tool-durability-bar" title="耐久 ${dur.toFixed(0)}/${maxDur}${users ? ` · 使用中 ×${users}` : ''}${armorHint}">
+                <div class="tool-durability-bar" title="耐久 ${dur.toFixed(0)}/${maxDur}${users ? ` · 使用中 ×${users}` : ''}${usableHint}${repairHint}${warehouseHint}${armorHint}">
                   <div class="tool-durability-fill" style="width:${pct}%"></div>
                 </div>
-                <span class="tool-durability-text">${Math.ceil(dur)}/${maxDur}${users ? ` · 用×${users}` : ''}${armorHint}</span>
-                ${needRepair ? `
-                  <button type="button" class="btn-repair-tool" data-tool-id="${id}" data-tool-level="${lv}"
-                    ${canRepair ? '' : 'disabled'}
-                    title="修复消耗：${this.formatCostPlain(repairCost)}${id === 'armor' ? '（仅场下）' : ''}">修复</button>
-                ` : ''}
+                <span class="tool-durability-text">${Math.ceil(dur)}/${maxDur}${users ? ` · 用×${users}` : ''}${repairHint}${warehouseHint}</span>
               </div>
-              ${needRepair ? `<div class="tool-repair-cost">修复：${this.formatCost(repairCost)}${id === 'armor' ? '（场下）' : ''}</div>` : ''}
             </div>
           `;
         }

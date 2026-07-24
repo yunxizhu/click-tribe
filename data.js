@@ -1165,13 +1165,23 @@ const GAME_DATA = {
       maxLevel: 4,
       levelNames: { 1: '木铲', 2: '灰浆铲', 3: '曜石铲', 4: '陨铲' },
     },
-    basket: {
-      id: 'basket',
-      name: '篓子',
-      icon: '🧺',
-      targets: ['berry_bush'],
+    sword: {
+      id: 'sword',
+      name: '剑',
+      icon: '🗡️',
+      targets: [],
+      combat: true,
       maxLevel: 4,
-      levelNames: { 1: '木篓', 2: '藤篓', 3: '皮篓', 4: '铁篓' },
+      levelNames: { 1: '木剑', 2: '青铜剑', 3: '铁剑', 4: '钢剑' },
+    },
+    spear: {
+      id: 'spear',
+      name: '长矛',
+      icon: '🔱',
+      targets: [],
+      combat: true,
+      maxLevel: 4,
+      levelNames: { 1: '木矛', 2: '青铜矛', 3: '铁矛', 4: '钢矛' },
     },
     bow: {
       id: 'bow',
@@ -1190,24 +1200,6 @@ const GAME_DATA = {
       combat: true,
       maxLevel: 4,
       levelNames: { 1: '木弩', 2: '青铜弩', 3: '铁弩', 4: '钢弩' },
-    },
-    sword: {
-      id: 'sword',
-      name: '剑',
-      icon: '🗡️',
-      targets: [],
-      combat: true,
-      maxLevel: 4,
-      levelNames: { 1: '木剑', 2: '青铜剑', 3: '铁剑', 4: '钢剑' },
-    },
-    spear: {
-      id: 'spear',
-      name: '长矛',
-      icon: '🔱',
-      targets: [],
-      combat: true,
-      maxLevel: 4,
-      levelNames: { 1: '木矛', 2: '青铜矛', 3: '铁矛', 4: '钢矛' },
     },
     shield: {
       id: 'shield',
@@ -1298,7 +1290,7 @@ const GAME_DATA = {
   // 工具耐久默认值；正式以 config/tool-recipes.js → TOOL_DURABILITY 为准
   toolDurability: {
     maxByLevel: { 1: 150, 2: 300, 3: 600, 4: 1200 },
-    repairMinMissing: 0.1,
+    repairMinMissing: 0.01,
     repairCostRatio: 0.5,
     wearPerUserPerSecond: 0.2,
   },
@@ -1346,7 +1338,6 @@ const GAME_DATA = {
         startingTools: [
           { id: 'axe', level: 1, amount: 2 },
           { id: 'pickaxe', level: 1, amount: 2 },
-          { id: 'basket', level: 1, amount: 2 },
         ],
       },
       normal: {
@@ -1362,7 +1353,6 @@ const GAME_DATA = {
         startingFood: 30,
         startingTools: [
           { id: 'axe', level: 1, amount: 1 },
-          { id: 'basket', level: 1, amount: 1 },
         ],
       },
       hard: {
@@ -1475,7 +1465,7 @@ const GAME_DATA = {
       id: 'unlock_tool_crafting',
       name: '工具制作',
       icon: '🪓',
-      description: '开局已解锁。解锁工作台后可在「工具」页制作斧/镐/铲/篓，在「武器」页制作弓/弩/剑/矛/盾/铠甲',
+      description: '开局已解锁。解锁工作台后可在「工具」页制作斧/镐/铲，在「武器」页制作弓/弩/剑/矛/盾/铠甲',
       cost: {},
       requires: 'unlock_workbench',
       branch: 'tools',
@@ -1489,6 +1479,19 @@ const GAME_DATA = {
       requires: 'unlock_auto_click',
       branch: 'workers',
     },
+    ...expandTechSeries({
+      id: 'unlock_food_gather_speed',
+      name: '食物采集',
+      icon: '🫐',
+      description: '所有食物采集点（浆果丛/农场/牧场）每人效率 +0.01/秒（最高 3 级）',
+      requires: 'unlock_farm',
+      branch: 'workers',
+      costs: [
+        { food: 20, wood: 12, plank: 6 },
+        { food: 35, plank: 12, brick: 8 },
+        { food: 55, brick: 12, glass: 6 },
+      ],
+    }),
     ...expandTechSeries({
       id: 'unlock_breed_saving',
       name: '节粮繁衍',
@@ -2101,6 +2104,9 @@ const GAME_DATA = {
       unlock_house_work_speed_v4: { x: 200, y: 1740, parent: 'unlock_house_work_speed_v3' },
       unlock_house_work_speed_v5: { x: 80, y: 1740, parent: 'unlock_house_work_speed_v4' },
       unlock_farm: { x: 1600, y: 1620, parent: 'unlock_auto_click' },
+      unlock_food_gather_speed_v1: { x: 1600, y: 1400, parent: 'unlock_farm' },
+      unlock_food_gather_speed_v2: { x: 1600, y: 1220, parent: 'unlock_food_gather_speed_v1' },
+      unlock_food_gather_speed_v3: { x: 1600, y: 1040, parent: 'unlock_food_gather_speed_v2' },
       unlock_pasture: { x: 560, y: 1620, parent: 'unlock_farm' },
       unlock_breed_saving_v1: { x: 560, y: 1360, parent: 'unlock_pasture' },
       unlock_breed_saving_v2: { x: 360, y: 1360, parent: 'unlock_breed_saving_v1' },
@@ -2236,7 +2242,7 @@ const GAME_DATA = {
     spawnX: 92,
     /** 敌人可砸门的距离 */
     gateReach: 4,
-    // 敌我单位/武器/波次数据见 config/combat-units.js（由 applyCombatUnitsData 合并）
+    // 敌我单位/铠甲/波次数据见 config/combat-units.js（由 applyCombatUnitsData 合并）
     gate: {
       maxLevel: 4,
       /** level 1..4（基础耐久已相对旧版翻倍） */
@@ -2417,8 +2423,8 @@ const GAME_DATA = {
       {
         id: 'craft_weapon',
         title: '制作第一件武器',
-        text: '自己打开「武器」页，制作任意一件武器（如木弓、木剑）。下单后请再点左侧「生产」进入加工。',
-        highlight: ['.tab-btn[data-tab="weapons"]', '#weapon-list'],
+        text: '自己打开「武器」页下单制作任意一件武器（如木弓、木剑）。下单后点左侧「生产」进入并点击做出一件。',
+        highlight: ['.tab-btn[data-tab="weapons"]', '#weapon-list .craft-overview-item'],
         progress: 'weapon',
         target: 1,
       },
@@ -2691,14 +2697,16 @@ function applyResourcePointStats(table) {
 
 /**
  * 合并敌我单位战斗数据（config/combat-units.js）
- * 覆盖 weapons / allyStats / armorStats / enemyDefaults / enemyTemplates / waves
+ * 覆盖 allyStats / armorStats / enemyDefaults / enemyTemplates / waves
  */
 function applyCombatUnitsData(data) {
   if (!data || !GAME_DATA?.defense) return;
-  const keys = ['weapons', 'allyStats', 'armorStats', 'enemyDefaults', 'enemyTemplates', 'waves'];
+  const keys = ['allyStats', 'armorStats', 'enemyDefaults', 'enemyTemplates', 'waves'];
   keys.forEach((k) => {
     if (data[k] != null) GAME_DATA.defense[k] = data[k];
   });
+  // 清理旧档/旧配置残留的冗余 weapons 表
+  if (GAME_DATA.defense.weapons) delete GAME_DATA.defense.weapons;
 }
 
 /**

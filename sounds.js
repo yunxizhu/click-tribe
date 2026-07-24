@@ -246,36 +246,47 @@ class GameSounds {
   }
 
   /**
-   * 开场漫画结束：「登~！」收尾（低沉冲击 + 动画风 jingle）
+   * 开场漫画结束：播放 clock_miss.mp3，返回 Promise（播完后 resolve）
    */
   playComicFinishSting() {
-    const ctx = this.ensureContext();
-    if (ctx) {
-      const t = ctx.currentTime + 0.008;
-      // 登：低沉一击
-      this.tone(90, t, 0.55, { type: 'sine', volume: 0.3, attack: 0.006, release: 0.48 });
-      this.tone(52, t, 0.7, { type: 'triangle', volume: 0.2, attack: 0.01, release: 0.58 });
-      this.noiseBurst(t, 0.07, 0.11);
-      // ～：短暂上扬余韵
-      this.tone(170, t + 0.1, 0.32, { type: 'sine', volume: 0.09, attack: 0.04, release: 0.26 });
-      this.tone(255, t + 0.16, 0.26, { type: 'triangle', volume: 0.055, attack: 0.035, release: 0.2 });
+    this.ensureContext();
+    const file = 'clock_miss.mp3';
+    const url = typeof window.tribeMusicUrl === 'function'
+      ? window.tribeMusicUrl(file)
+      : (`music/${file}`);
+
+    if (this._comicStingAudio) {
+      try {
+        this._comicStingAudio.pause();
+        this._comicStingAudio.onended = null;
+        this._comicStingAudio.onerror = null;
+        this._comicStingAudio.src = '';
+      } catch (_) { /* ignore */ }
+      this._comicStingAudio = null;
     }
 
-    // 动画风アイキャッチ，增强「登场结束」感
-    try {
-      const file = 'アニメ風アイキャッチ・ジングル「Jingle_Anime」_Jingle_Cute_2.mp3';
-      const url = typeof window.tribeMusicUrl === 'function'
-        ? window.tribeMusicUrl(file)
-        : (`music/${file}`);
-      if (this._comicStingAudio) {
-        try { this._comicStingAudio.pause(); this._comicStingAudio.src = ''; } catch (_) { /* ignore */ }
+    return new Promise((resolve) => {
+      let settled = false;
+      const done = () => {
+        if (settled) return;
+        settled = true;
+        resolve();
+      };
+
+      try {
+        const a = new Audio(url);
+        a.preload = 'auto';
+        const vol = Math.max(0, Math.min(1, (this._masterVolume || 0.7) * (this._sfxVolume ?? 1) * 0.85));
+        a.volume = vol <= 0 ? 0 : vol;
+        this._comicStingAudio = a;
+        const fallback = setTimeout(done, 12000);
+        const clearFb = () => clearTimeout(fallback);
+        a.addEventListener('ended', () => { clearFb(); done(); }, { once: true });
+        a.addEventListener('error', () => { clearFb(); done(); }, { once: true });
+        void a.play().catch(() => { clearFb(); done(); });
+      } catch (_) {
+        done();
       }
-      const a = new Audio(url);
-      a.preload = 'auto';
-      const vol = Math.max(0, Math.min(1, (this._masterVolume || 0.7) * (this._sfxVolume ?? 1) * 0.5));
-      a.volume = vol <= 0 ? 0 : vol;
-      this._comicStingAudio = a;
-      void a.play().catch(() => {});
-    } catch (_) { /* ignore */ }
+    });
   }
 }
