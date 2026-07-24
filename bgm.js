@@ -107,15 +107,29 @@
       this._notifyNowPlaying();
     }
 
-    /** 新手教程：音量再降一半；结束后恢复 */
-    setTutorialDuck(active) {
-      const next = active ? 0.5 : 1;
-      if (this._tutorialMul === next) {
+    /** 新手教程 / 暂停菜单：渐变音量 */
+    setTutorialDuck(active, durationMs = 2000) {
+      const target = active ? 0.5 : 1;
+      if (this._tutorialMul === target) return;
+      this._tutorialMulTarget = target;
+      const from = this._tutorialMul;
+      const startTime = performance.now();
+      const dur = Math.max(100, durationMs);
+      if (this._tutorialFadeRaf) cancelAnimationFrame(this._tutorialFadeRaf);
+      const step = (now) => {
+        const t = Math.min(1, (now - startTime) / dur);
+        const ease = t < 0.5 ? 2 * t * t : -1 + (4 - 2 * t) * t;
+        this._tutorialMul = from + (target - from) * ease;
         this._refreshAllVolumes();
-        return;
-      }
-      this._tutorialMul = next;
-      this._refreshAllVolumes();
+        if (t < 1) {
+          this._tutorialFadeRaf = requestAnimationFrame(step);
+        } else {
+          this._tutorialMul = target;
+          this._tutorialFadeRaf = null;
+          this._refreshAllVolumes();
+        }
+      };
+      this._tutorialFadeRaf = requestAnimationFrame(step);
     }
 
     _volMul() {

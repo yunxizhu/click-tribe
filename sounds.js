@@ -245,6 +245,25 @@ class GameSounds {
     this.noiseBurst(t, 0.025, 0.05);
   }
 
+  /** 打开暂停菜单 */
+  playPauseOpen() {
+    const ctx = this.ensureContext();
+    if (!ctx) return;
+    const t = ctx.currentTime + 0.005;
+    this.tone(320, t, 0.15, { type: 'sine', volume: 0.1, attack: 0.008, release: 0.12 });
+    this.tone(480, t + 0.06, 0.12, { type: 'triangle', volume: 0.08, attack: 0.01, release: 0.1 });
+    this.noiseBurst(t, 0.08, 0.03);
+  }
+
+  /** 关闭暂停菜单 */
+  playPauseClose() {
+    const ctx = this.ensureContext();
+    if (!ctx) return;
+    const t = ctx.currentTime + 0.005;
+    this.tone(480, t, 0.12, { type: 'sine', volume: 0.08, attack: 0.008, release: 0.1 });
+    this.tone(320, t + 0.06, 0.15, { type: 'triangle', volume: 0.07, attack: 0.01, release: 0.12 });
+  }
+
   /**
    * 开场漫画结束：播放 clock_miss.mp3，返回 Promise（播完后 resolve）
    */

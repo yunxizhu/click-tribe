@@ -24,9 +24,9 @@
 
   // 加载页 logo 用 rem，尽早同步 --ui-scale
   (function earlyUiScale() {
-    const refW = 1440;
-    const refH = 860;
-    const raw = Math.min(window.innerWidth / refW, window.innerHeight / refH, 1);
+    const refW = 1920;
+    const refH = 1080;
+    const raw = Math.min(window.innerWidth / refW, window.innerHeight / refH);
     const scale = Math.max(0.72, raw);
     document.documentElement.style.setProperty('--ui-scale', scale.toFixed(4));
   })();
@@ -34,6 +34,57 @@
   window.__TRIBE_CONFIG_BASE__ = useTribe ? 'tribe://config/' : 'config/';
   window.__TRIBE_MUSIC_BASE__ = useTribe ? 'tribe://music/' : 'music/';
   window.__TRIBE_IMAGE_BASE__ = useTribe ? 'tribe://image/' : 'image/';
+
+  /** 获取本地 emoji 图标的 HTML */
+  window.tribeIcon = function tribeIcon(emoji, alt) {
+    const cssMap = { '▼': 'icon-▼', '▲': 'icon-▲', '✓': 'icon-✓', '✦': 'icon-✦', '▦': 'icon-▦' };
+    if (cssMap[emoji]) return '<span class="' + cssMap[emoji] + '" aria-hidden="true"></span>';
+    const codeMap = {
+      '☮️':'262e','⚖️':'2696','💀':'1f480','🔥':'1f525','🏕️':'1f3d5','▶️':'25b6','⏩':'23e9',
+      '🍎':'1f34e','🌲':'1f332','📦':'1f4e6','🔬':'1f52c','⚗️':'2697','🪓':'1fa93','⚔️':'2694',
+      '👥':'1f465','🛡️':'1f6e1','🎉':'1f389','🛠️':'1f6e0','🎓':'1f393','🏠':'1f3e0','🎁':'1f381',
+      '🐣':'1f423','🏆':'1f3c6','🔒':'1f512','🌙':'1f319','☀️':'2600','⏱':'23f1','🔨':'1f528',
+      '👆':'1f446','🖱️':'1f5b1','👷':'1f477','🫐':'1fad0','⚡':'26a1','💨':'1f4a8','🍖':'1f356',
+      '🏗️':'1f3d7','🚪':'1f6aa','🌟':'1f31f','🔧':'1f527','👹':'1f479','💥':'1f4a5','⚠':'26a0',
+      '🧑':'1f9d1','👶':'1f476','🧒':'1f9d2','🏭':'1f3ed','✨':'2728','💪':'1f4aa','🎲':'1f3b2',
+      '📈':'1f4c8','🪵':'1fab5','🟫':'1f7eb','🪨':'1faa8','🟠':'1f7e0','🧱':'1f9f1','🏜️':'1f3dc',
+      '🪟':'1fa9f','🍯':'1f36f','🟤':'1f7e4','🔶':'1f536','🪙':'1fa99','🥉':'1f949','🔘':'1f518',
+      '🟡':'1f7e1','▫️':'25ab','⬜':'2b1c','⚫':'26ab','⬛':'2b1b','🔩':'1f529','🔹':'1f539',
+      '🖤':'1f5a4','🟨':'1f7e8','🥇':'1f947','💎':'1f48e','💠':'1f4a0','☄️':'2604','⚙️':'2699',
+      '⛏️':'26cf','🏔️':'1f3d4','🗻':'1f5fb','🕳️':'1f573','🌾':'1f33e','🐄':'1f404','🪞':'1fa9e',
+      '🥄':'1f944','🗡️':'1f5e1','🔱':'1f531','🎯':'1f3af','🥋':'1f94b','❤️':'2764','✊':'270a',
+      '👺':'1f47a','👻':'1f47b','➕':'2795','⚠️':'26a0','🔙':'1f519','🥌':'1f94c','😵':'1f635',
+      '😤':'1f624','🕊️':'1f54a','🏹':'1f3f9','🪵':'1fab5'
+    };
+    const code = codeMap[emoji];
+    if (code) {
+      const base = window.__TRIBE_IMAGE_BASE__ || 'image/';
+      return '<img class="emoji-icon-img" src="' + base + 'icon/' + code + '.png" alt="' + (alt || '') + '">';
+    }
+    return emoji;
+  };
+
+  /** 替换字符串中所有已知 emoji 为图片标签 */
+  window.tribeIconStr = function tribeIconStr(str) {
+    if (!str || typeof str !== 'string') return str || '';
+    // Match known emoji sequences (including VS16)
+    const known = [
+      '☮️','⚖️','💀','🔥','🏕️','▶️','⏩','🍎','🌲','📦','🔬','⚗️','🪓','⚔️','👥','🛡️',
+      '🎉','🛠️','🎓','🏠','🎁','🐣','🏆','🔒','🌙','☀️','⏱','🔨','👆','🖱️','👷','🫐',
+      '⚡','💨','🍖','🏗️','🚪','🌟','🔧','👹','💥','⚠','🧑','👶','🧒','🏭','✨','💪','🎲',
+      '📈','🪵','🟫','🪨','🟠','🧱','🏜️','🪟','🍯','🟤','🔶','🪙','🥉','🔘','🟡','▫️','⬜',
+      '⚫','⬛','🔩','🔹','🖤','🟨','🥇','💎','💠','☄️','⚙️','⛏️','🏔️','🗻','🕳️','🌾','🐄',
+      '🪞','🥄','🗡️','🔱','🎯','🥋','❤️','✊','👺','👻','➕','⚠️','🔙','🥌','😵','😤','🕊️','🏹'
+    ];
+    let result = str;
+    for (const emoji of known) {
+      if (result.includes(emoji)) {
+        const imgTag = window.tribeIcon(emoji);
+        result = result.split(emoji).join(imgTag);
+      }
+    }
+    return result;
+  };
 
   window.tribeMusicUrl = function tribeMusicUrl(fileName) {
     const base = window.__TRIBE_MUSIC_BASE__ || 'music/';

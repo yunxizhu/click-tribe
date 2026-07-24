@@ -3226,7 +3226,7 @@
     this.updateBattleScreenVisuals();
 
     if (logEl) {
-      logEl.innerHTML = (d.raid.log || []).slice(0, 8).map(l => `<li>${l}</li>`).join('');
+      logEl.innerHTML = (d.raid.log || []).slice(0, 8).map(l => `<li>${typeof window.tribeIconStr === 'function' ? window.tribeIconStr(l) : l}</li>`).join('');
     }
   };
 

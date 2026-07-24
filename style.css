@@ -63,6 +63,61 @@ body {
   overflow-x: hidden;
 }
 
+/* —— 图标系统：本地 emoji 图片 + CSS 图形回退 —— */
+.emoji-icon {
+  display: inline-block;
+  width: 1em;
+  height: 1em;
+  vertical-align: -0.125em;
+  background-size: contain;
+  background-repeat: no-repeat;
+  background-position: center;
+  flex-shrink: 0;
+}
+.emoji-icon-img {
+  display: inline-block;
+  width: 1em;
+  height: 1em;
+  vertical-align: -0.125em;
+}
+/* CSS 图形回退 */
+.icon-▲, .icon-▼ {
+  display: inline-block;
+  width: 0;
+  height: 0;
+  vertical-align: middle;
+  border-left: 0.45em solid transparent;
+  border-right: 0.45em solid transparent;
+}
+.icon-▲ { border-bottom: 0.55em solid currentColor; }
+.icon-▼ { border-top: 0.55em solid currentColor; }
+.icon-✓ {
+  display: inline-block;
+  width: 0.7em;
+  height: 0.6em;
+  vertical-align: middle;
+  border-bottom: 0.15em solid currentColor;
+  border-right: 0.15em solid currentColor;
+  transform: rotate(45deg) scale(0.85);
+  margin-bottom: 0.1em;
+}
+.icon-✦ {
+  display: inline-block;
+  width: 0.55em;
+  height: 0.55em;
+  vertical-align: middle;
+  background: currentColor;
+  clip-path: polygon(50% 0%, 61% 35%, 98% 35%, 68% 57%, 79% 91%, 50% 70%, 21% 91%, 32% 57%, 2% 35%, 39% 35%);
+}
+.icon-▦ {
+  display: inline-block;
+  width: 0.65em;
+  height: 0.65em;
+  vertical-align: middle;
+  border: 0.15em solid currentColor;
+  background: linear-gradient(135deg, currentColor 50%, transparent 50%);
+}
+
 /* Electron 壳：铺满工作区，去掉顶/侧空白条 */
 html.electron-shell,
 html.electron-shell body {
@@ -651,6 +706,10 @@ html.app-quitting body {
 
 .right-nav .tab-btn span {
   display: block;
+}
+
+.right-nav .tab-btn .emoji-icon-img {
+  font-size: 1.2rem;
 }
 
 .right-nav .tab-btn:hover {
@@ -1439,18 +1498,13 @@ html.app-quitting body {
 }
 
 .chest-sparkles .spark::before {
-  content: '✦';
+  content: '';
   position: absolute;
   inset: 0;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-size: inherit;
-  line-height: 1;
-  text-shadow:
-    0 0 4px #fff,
-    0 0 10px #ffd700,
-    0 0 18px rgba(255, 180, 0, 0.9);
+  background: currentColor;
+  clip-path: polygon(50% 0%, 61% 35%, 98% 35%, 68% 57%, 79% 91%, 50% 70%, 21% 91%, 32% 57%, 2% 35%, 39% 35%);
+  -webkit-clip-path: polygon(50% 0%, 61% 35%, 98% 35%, 68% 57%, 79% 91%, 50% 70%, 21% 91%, 32% 57%, 2% 35%, 39% 35%);
+  filter: drop-shadow(0 0 4px #fff) drop-shadow(0 0 10px #ffd700) drop-shadow(0 0 18px rgba(255, 180, 0, 0.9));
 }
 
 .chest-sparkles .spark.bling {
@@ -2227,8 +2281,15 @@ html.app-quitting body {
 }
 
 .btn-craft.stance-active::after {
-  content: ' ✓';
-  font-weight: bold;
+  content: '';
+  display: inline-block;
+  width: 0.7em;
+  height: 0.55em;
+  margin-left: 0.2em;
+  vertical-align: middle;
+  background: currentColor;
+  clip-path: polygon(13% 52%, 38% 77%, 87% 18%, 77% 8%, 38% 57%, 23% 42%);
+  -webkit-clip-path: polygon(13% 52%, 38% 77%, 87% 18%, 77% 8%, 38% 57%, 23% 42%);
 }
 
 .btn-craft.stance-active:hover {
@@ -2405,15 +2466,15 @@ html.app-quitting body {
 .comic-strip {
   display: grid;
   gap: 14px 16px;
-  width: min(1280px, 98vw);
-  height: min(860px, 90vh);
+  width: min(calc(1280px * var(--ui-scale)), 98vw);
+  height: min(calc(860px * var(--ui-scale)), 90vh);
   filter: drop-shadow(0 10px 28px rgba(0, 0, 0, 0.55));
 }
 
 .comic-pages {
   position: relative;
-  width: min(1280px, 98vw);
-  height: min(860px, 90vh);
+  width: min(calc(1280px * var(--ui-scale)), 98vw);
+  height: min(calc(860px * var(--ui-scale)), 90vh);
 }
 
 .comic-page {
@@ -2674,15 +2735,15 @@ html.app-quitting body {
 .difficulty-options {
   display: flex;
   flex-direction: column;
-  gap: 8px;
-  margin: 14px 0 10px;
+  gap: 10px;
+  margin: 18px 0 12px;
 }
 .diff-btn {
   display: flex;
   align-items: center;
   justify-content: center;
-  padding: 10px;
-  font-size: 1rem;
+  padding: 12px;
+  font-size: 1.15rem;
   border: 2px solid var(--border);
   border-radius: 8px;
   background: var(--bg);
@@ -4480,10 +4541,21 @@ body.tut-interaction-lock .tech-tree-canvas:active {
   justify-content: center;
   background: rgba(8, 10, 22, 0.72);
   backdrop-filter: blur(2px);
+  opacity: 0;
+  visibility: hidden;
+  transition: opacity 0.4s ease, visibility 0.4s ease;
 }
 
 .pause-menu.hidden {
-  display: none;
+  display: flex;
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+}
+
+.pause-menu.visible {
+  opacity: 1;
+  visibility: visible;
 }
 
 .pause-menu-panel {
@@ -5461,8 +5533,8 @@ body.tech-edit-mode .tech-tooltip {
 
 .boot-logo {
   position: relative;
-  width: 18rem;
-  height: 18rem;
+  width: 27rem;
+  height: 27rem;
   aspect-ratio: 1 / 1;
   flex-shrink: 0;
   background: var(--tribe-boot-logo, none) center / contain no-repeat;
@@ -5514,8 +5586,8 @@ body.tech-edit-mode .tech-tooltip {
     opacity: 1;
     background-position: 10% center;
   }
-  /* 后半约 2 倍速掠过并淡出 */
-  100% {
+  /* 后半约 3 倍速掠过并淡出（原 2 倍速 *1.5） */
+  83% {
     background-position: 180% center;
     opacity: 0;
   }
@@ -5714,8 +5786,8 @@ body.tech-edit-mode .tech-tooltip {
 
 .main-menu-home {
   /* 按钮列/遮罩尺寸用 rem，跟随 --ui-scale（html font-size）缩放 */
-  --mm-col-w: min(23.75rem, 86vw);
-  --mm-veil-w: calc(var(--mm-col-w) * 2 / 3);
+  --mm-col-w: min(28.5rem, 86vw);
+  --mm-veil-w: calc(var(--mm-col-w));
   --mm-mask-w: 66.666vw;
   --mm-veil: rgba(0, 0, 0, 0.72);
   position: absolute;
@@ -5726,7 +5798,7 @@ body.tech-edit-mode .tech-tooltip {
   display: flex;
   flex-direction: column;
   align-items: stretch;
-  gap: 0.625rem;
+  gap: 0.75rem;
   width: var(--mm-col-w);
   text-align: center;
 }
@@ -5734,11 +5806,11 @@ body.tech-edit-mode .tech-tooltip {
 /* 标题固定在屏幕上方 1/5，不随按钮列移动 */
 .main-menu-brand {
   position: absolute;
-  top: 20%;
+  top: 12%;
   left: 50%;
   transform: translate(-50%, -50%);
   z-index: 2;
-  width: min(23.75rem, 86vw);
+  width: min(28.5rem, 86vw);
   text-align: center;
   pointer-events: none;
 }
@@ -5779,7 +5851,7 @@ body.tech-edit-mode .tech-tooltip {
   box-sizing: border-box;
   text-align: center;
   /* 纯 rem，避免 vw 中间值盖掉 --ui-scale */
-  font-size: clamp(2rem, 3rem, 3.2rem);
+  font-size: clamp(3.6rem, 5.2rem, 5.6rem);
   font-weight: 800;
   letter-spacing: 0.18em;
   color: #fff;
@@ -5809,16 +5881,16 @@ body.tech-edit-mode .tech-tooltip {
 }
 
 .main-menu-tagline {
-  margin: 8px 0 0;
+  margin: 10px 0 0;
   color: var(--text-dim);
-  font-size: 0.9rem;
+  font-size: 1.1rem;
   letter-spacing: 0.08em;
 }
 
 .main-menu-actions {
   display: flex;
   flex-direction: column;
-  gap: 0.625rem;
+  gap: 0.75rem;
   width: 100%;
   margin-top: 0;
   position: relative;
@@ -5937,20 +6009,20 @@ body.tech-edit-mode .tech-tooltip {
 
 .main-menu-btn {
   appearance: none;
-  border: 1px solid var(--border);
-  border-radius: 0.625rem;
-  padding: 0.8125rem 1rem;
-  font-size: 1rem;
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  border-radius: 0.75rem;
+  padding: 1rem 1.2rem;
+  font-size: 1.15rem;
   font-weight: 600;
   color: var(--text);
-  background: rgba(15, 52, 96, 0.72);
+  background: rgba(22, 33, 62, 0.85);
   cursor: pointer;
   transition: background 0.15s, border-color 0.15s, transform 0.15s, opacity 0.15s;
 }
 
 .main-menu-btn:hover:not(:disabled) {
-  background: rgba(233, 69, 96, 0.22);
-  border-color: rgba(233, 69, 96, 0.55);
+  background: rgba(22, 33, 62, 0.95);
+  border-color: rgba(233, 69, 96, 0.5);
   transform: translateY(-1px);
 }
 
@@ -5971,15 +6043,15 @@ body.tech-edit-mode .tech-tooltip {
   /* 不用整钮 opacity，避免蓝底被遮罩吞掉；只压低字色 */
   opacity: 1;
   color: rgba(200, 210, 230, 0.62);
-  background: rgba(15, 52, 96, 0.5);
-  border-color: rgba(90, 120, 170, 0.55);
+  background: rgba(0, 0, 0, 0.2);
+  border-color: rgba(255, 255, 255, 0.06);
   box-shadow: none;
   font-weight: 600;
 }
 
 .main-menu-btn-dim:hover:not(:disabled) {
   color: rgba(230, 236, 248, 0.88);
-  background: rgba(15, 52, 96, 0.8);
+  background: rgba(255, 255, 255, 0.06);
   border-color: rgba(233, 69, 96, 0.4);
 }
 
@@ -5987,8 +6059,8 @@ body.tech-edit-mode .tech-tooltip {
   opacity: 1;
   cursor: not-allowed;
   color: rgba(180, 190, 210, 0.38);
-  background: rgba(15, 52, 96, 0.4);
-  border-color: rgba(60, 80, 120, 0.4);
+  background: rgba(0, 0, 0, 0.15);
+  border-color: rgba(255, 255, 255, 0.04);
   box-shadow: none;
 }
 
@@ -6007,14 +6079,14 @@ body.tech-edit-mode .tech-tooltip {
   position: relative;
   z-index: 2;
   width: min(640px, 94vw);
-  padding: 24px 28px 20px;
+  padding: 30px 34px 24px;
   border-radius: 14px;
   border: 1px solid var(--border);
   background: linear-gradient(160deg, #1c2744 0%, #121a2e 100%);
   box-shadow: 0 16px 48px rgba(0, 0, 0, 0.45);
   display: flex;
   flex-direction: column;
-  gap: 14px;
+  gap: 16px;
   min-height: 420px;
 }
 
@@ -6033,7 +6105,7 @@ body.tech-edit-mode .tech-tooltip {
   bottom: 16px;
   margin: 0;
   z-index: 2;
-  font-size: 0.78rem;
+  font-size: 0.9rem;
   color: rgba(170, 180, 200, 0.75);
   letter-spacing: 0.04em;
   pointer-events: none;

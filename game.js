@@ -5710,9 +5710,10 @@ class FactoryGame {
     const hungry = this.getHungryCount();
     const low = food < need || hungry > 0;
     el.classList.toggle('food-low', low);
-    el.textContent = hungry > 0
-      ? `🍎 食物 ${this.formatNumber(food)} / 需 ${this.formatNumber(need)} · 饥饿 ${hungry}`
-      : `🍎 食物 ${this.formatNumber(food)} / 需 ${this.formatNumber(need)}`;
+    const icon = window.tribeIcon ? window.tribeIcon('🍎') : '🍎';
+    el.innerHTML = hungry > 0
+      ? `${icon} 食物 ${this.formatNumber(food)} / 需 ${this.formatNumber(need)} · 饥饿 ${hungry}`
+      : `${icon} 食物 ${this.formatNumber(food)} / 需 ${this.formatNumber(need)}`;
     el.title = low
       ? '食物不足以支付今日预计消耗'
       : '今日食物库存与预计消耗';
@@ -7943,8 +7944,26 @@ class FactoryGame {
   setPauseMenuOpen(open) {
     const el = document.getElementById('pause-menu');
     if (!el) return;
+    if (this._pauseMenuAnimating) return;
     const show = !!open;
-    el.classList.toggle('hidden', !show);
+    if (show) {
+      el.classList.remove('hidden');
+      el.classList.remove('visible');
+      void el.offsetHeight;
+      el.classList.add('visible');
+    } else {
+      el.classList.remove('visible');
+      this._pauseMenuAnimating = true;
+      setTimeout(() => {
+        el.classList.add('hidden');
+        this._pauseMenuAnimating = false;
+      }, 400);
+    }
+    try {
+      this.sounds?.bgm?.setTutorialDuck?.(show, 400);
+      if (show) this.sounds?.playPauseOpen?.();
+      else this.sounds?.playPauseClose?.();
+    } catch (_) {}
     if (show) {
       this._showPauseMenuHome?.();
       if (!this._pausedByMenu) {
@@ -8960,7 +8979,7 @@ class FactoryGame {
 
   showNotification(msg) {
     const el = document.getElementById('notification');
-    el.textContent = msg;
+    el.innerHTML = window.tribeIconStr ? window.tribeIconStr(msg) : msg;
     el.classList.add('show');
     clearTimeout(this._notifTimer);
     this._notifTimer = setTimeout(() => el.classList.remove('show'), 2500);
@@ -8974,9 +8993,9 @@ class FactoryGame {
 
   /** 按视口相对设计基准同步缩小字号（不用 zoom，避免非全屏裁切） */
   updateUiScale() {
-    const refW = 1440;
-    const refH = 860;
-    const raw = Math.min(window.innerWidth / refW, window.innerHeight / refH, 1);
+    const refW = 1920;
+    const refH = 1080;
+    const raw = Math.min(window.innerWidth / refW, window.innerHeight / refH);
     const scale = Math.max(0.72, raw);
     document.documentElement.style.setProperty('--ui-scale', scale.toFixed(4));
   }
@@ -9295,7 +9314,8 @@ class FactoryGame {
 
   formatResourceIcon(resId) {
     if (!this.isResourceDiscovered(resId)) return '?';
-    return GAME_DATA.resources[resId]?.icon || resId;
+    const icon = GAME_DATA.resources[resId]?.icon || resId;
+    return window.tribeIcon ? window.tribeIcon(icon) : icon;
   }
 
   /** 材料数量展示：整数原样，否则一位小数 */
@@ -9666,7 +9686,7 @@ class FactoryGame {
       el.className = `warehouse-item discovered${amount > 0 ? ' has-stock' : ''}`;
       el.dataset.res = id;
       el.innerHTML = `
-        <span class="warehouse-icon">${def.icon}</span>
+        <span class="warehouse-icon">${window.tribeIconStr ? window.tribeIconStr(def.icon) : def.icon}</span>
         <span class="warehouse-name">${def.name}</span>
         <span class="warehouse-amount">${this.formatNumber(amount)}</span>
       `;
@@ -9722,11 +9742,12 @@ class FactoryGame {
     el.dataset.stationType = type;
     el.dataset.stationId = id;
     const demonStatus = isDemon
-      ? (this.state.divineArtifactReady ? '⚡已破防·即将总攻' : '🛡️无敌姿态')
+      ? (this.state.divineArtifactReady ? (window.tribeIconStr ? window.tribeIconStr('⚡已破防·即将总攻') : '⚡已破防·即将总攻') : (window.tribeIconStr ? window.tribeIconStr('🛡️无敌姿态') : '🛡️无敌姿态'))
       : '';
+    const iconHtml = window.tribeIconStr ? window.tribeIconStr(def.icon) : def.icon;
     el.innerHTML = `
-      <span class="station-btn-label">${def.icon} ${def.name}${isChest ? ` <small class="chest-stock">×${chestStock}</small>` : ''}${demonStatus ? ` <small class="demon-status">${demonStatus}</small>` : ''}</span>
-      ${st.assignedWorkers > 0 && !depleted && !isDemon ? `<span class="worker-badge">👷${st.assignedWorkers}</span>` : ''}
+      <span class="station-btn-label">${iconHtml} ${def.name}${isChest ? ` <small class="chest-stock">×${chestStock}</small>` : ''}${demonStatus ? ` <small class="demon-status">${demonStatus}</small>` : ''}</span>
+      ${st.assignedWorkers > 0 && !depleted && !isDemon ? `<span class="worker-badge">${window.tribeIconStr ? window.tribeIconStr('👷') : '👷'}${st.assignedWorkers}</span>` : ''}
       ${dailyEstHtml}
       ${!isDemon && !depleted ? `<div class="mini-progress-bg"><div class="${barClass}${onCooldown ? ' cooldown' : ''}" data-station-type="${type}" data-station-id="${id}" style="width:${barWidth}%"></div></div>` : ''}
     `;
@@ -9855,8 +9876,8 @@ class FactoryGame {
           : (isHead ? `${order.progress.toFixed(0)}/${max}` : `排队中`);
         const active = this.isActiveStation('recipe', recipeId);
         const label = isRepair
-          ? `🔧 修复 ${recipe.name}`
-          : `${recipe.icon} ${recipe.name}`;
+          ? window.tribeIconStr ? window.tribeIconStr('🔧 修复 ') + recipe.name : `🔧 修复 ${recipe.name}`
+          : `${window.tribeIconStr ? window.tribeIconStr(recipe.icon) : recipe.icon} ${recipe.name}`;
         const el = document.createElement('div');
         el.className = `craft-order-item ${active ? 'active' : ''}${isRepair ? ' craft-order-repair' : ''}`;
         el.dataset.recipeId = recipeId;
@@ -9965,7 +9986,7 @@ class FactoryGame {
     const isDemon = type === 'point' && (def.isDemonKing || def.isBossPoint);
     const demonInvincible = isDemon && !this.state.divineArtifactReady;
 
-    document.getElementById('point-icon').textContent = def.icon;
+    document.getElementById('point-icon').innerHTML = def.icon ? (window.tribeIcon ? window.tribeIcon(def.icon) : def.icon) : '';
     document.getElementById('point-name').textContent = def.name;
     document.getElementById('point-desc').innerHTML = isHouse
       ? `${def.description} | 进度 ${st.currentCount.toFixed(1)} / ${maxCount}`
@@ -10283,15 +10304,18 @@ class FactoryGame {
     row.className = `worker-station-row ${isActive ? 'active' : ''}`;
     row.dataset.stationType = type;
     row.dataset.stationId = id;
+    const iconHtml = window.tribeIconStr ? window.tribeIconStr(def.icon) : def.icon;
+    const restHtml = window.tribeIconStr ? window.tribeIconStr('🌙休息中') : '🌙休息中';
+    const toolHtml = window.tribeIconStr ? window.tribeIconStr('🔧') : '🔧';
     row.innerHTML = `
       <button type="button" class="worker-station-goto" data-station-type="${type}" data-station-id="${id}" title="前往此站点">
-        <span class="worker-station-icon">${def.icon}</span>
+        <span class="worker-station-icon">${iconHtml}</span>
         <span class="worker-station-info">
           <span class="worker-station-name">${def.name}</span>
           <span class="worker-station-speed">${st.assignedWorkers > 0
             ? (this.isVillagersResting()
-              ? '🌙休息中'
-              : `${autoSpeed.toFixed(2)}/秒${tooled ? ` · 🔧${tooled}` : ''}`)
+              ? restHtml
+              : `${autoSpeed.toFixed(2)}/秒${tooled ? ` · ${toolHtml}${tooled}` : ''}`)
             : '无自动进度'}</span>
         </span>
       </button>
@@ -10527,11 +10551,11 @@ class FactoryGame {
 
     el.innerHTML = `
       <div class="craft-overview-header">
-        <span>${recipe.icon} ${recipe.name}${toolLevelTag}${queueCount > 0 ? ` <small class="craft-queue-inline">×${queueCount}</small>` : ''}</span>
+        <span>${window.tribeIconStr ? window.tribeIconStr(recipe.icon) : recipe.icon} ${recipe.name}${toolLevelTag}${queueCount > 0 ? ` <small class="craft-queue-inline">×${queueCount}</small>` : ''}</span>
         ${autoControlsHtml}
       </div>
       <div class="craft-overview-recipe">${this.formatRecipeLine(recipe)}</div>
-      <div class="craft-order-hint">生产即扣材料 · 🧑${this.state.workers?.craftWorkers || 0}</div>
+      <div class="craft-order-hint">生产即扣材料 · ${window.tribeIconStr ? window.tribeIconStr('🧑') : '🧑'}${this.state.workers?.craftWorkers || 0}</div>
       <div class="craft-actions craft-produce-actions">
         <div class="craft-produce-input-wrap">
           <span class="craft-produce-label">生产</span>
@@ -10609,7 +10633,7 @@ class FactoryGame {
 
       const icon = document.createElement('div');
       icon.className = 'tool-icon';
-      icon.textContent = def.icon;
+      icon.innerHTML = window.tribeIconStr ? window.tribeIconStr(def.icon) : def.icon;
 
       const info = document.createElement('div');
       info.className = 'tool-info';
@@ -11003,7 +11027,7 @@ class FactoryGame {
     }
     if (tech.compositeIcon) {
       el.classList.add('has-composite-icon');
-      el.innerHTML = `<span class="tech-node-composite"><span class="tech-node-res">${tech.compositeIcon.resource}</span><span class="tech-node-type">${tech.compositeIcon.type}</span></span>`;
+      el.innerHTML = `<span class="tech-node-composite"><span class="tech-node-res">${window.tribeIconStr ? window.tribeIconStr(tech.compositeIcon.resource) : tech.compositeIcon.resource}</span><span class="tech-node-type">${window.tribeIconStr ? window.tribeIconStr(tech.compositeIcon.type) : tech.compositeIcon.type}</span></span>`;
       return;
     }
     el.classList.remove('has-composite-icon');
