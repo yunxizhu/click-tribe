@@ -147,6 +147,11 @@
       } else if (job.kind === 'remove') {
         const u = (d.raid.units || []).find((x) => x && x.id === job.unitId);
         if (u) delete u._rosterSwapping;
+      } else if (job.kind === 'gear_repair') {
+        const u = (d.raid.units || []).find((x) => x && x.id === job.unitId);
+        if (u) delete u._rosterSwapping;
+        const piece = this.findToolPiece?.(job.toolId, job.pieceId);
+        if (piece) piece._pendingRaidRepair = false;
       }
     });
     d.raid.rosterSwapQueue = [];
@@ -218,6 +223,55 @@
         d.raid.bareFighters = Math.max(0, (d.raid.bareFighters || 0) - 1);
       }
       this.pushRaidLog(`🔙 ${POST_DEFS.find((p) => p.id === postId)?.name || postId}卸装完成，转入修门队`);
+      return;
+    }
+
+    if (job.kind === 'gear_repair') {
+      const unit = (d.raid.units || []).find((u) => u && u.id === job.unitId);
+      if (unit) delete unit._rosterSwapping;
+      const piece = this.findToolPiece?.(job.toolId, job.pieceId);
+      if (piece) piece._pendingRaidRepair = false;
+
+      if (!piece || piece.repairing) {
+        this.pushRaidLog('⚠️ 送修失败：装备已不可用');
+        return;
+      }
+
+      // 铠甲：先卸下再入修复队列，再尝试换上备用甲
+      if (job.toolId === 'armor') {
+        if (unit && !unit.isDead && unit.armorPieceId === job.pieceId) {
+          this.stripUnitArmor(unit, false);
+        } else if (piece.equippedBy) {
+          piece.equippedBy = null;
+        }
+      }
+
+      const placed = this.placeRepairOrder(job.toolId, job.level ?? piece.level, job.pieceId, {
+        silent: true,
+        autoProduced: true,
+        allowDuringRaid: true,
+      });
+      const label = this.formatToolLabel?.(job.toolId, piece.level) || job.toolId;
+      if (placed > 0) {
+        this.pushRaidLog(`🔧 ${label} 已卸下并送修`);
+      } else {
+        this.warehousePieceAwaitingRepair?.(job.toolId, piece, { alert: true });
+        this.pushRaidLog(`⚠️ ${label} 材料不足，已收入仓库停用待修`);
+      }
+
+      if (job.toolId === 'armor' && unit && !unit.isDead && unit.soldierId) {
+        this.refitUnitArmorFromStock?.(unit);
+      }
+
+      // 武器：送修后若该编制武器不够，把这名门内士兵卸装回修门队
+      if (job.toolId !== 'armor' && unit && !unit.isDead) {
+        const postId = unit.postId || job.postId;
+        const cap = this.getPostWeaponCap(postId);
+        const living = this.countLivingAlliesByPost(postId);
+        if (living > cap) {
+          this.completeRosterSwapJob({ kind: 'remove', postId, unitId: unit.id });
+        }
+      }
     }
   };
 
@@ -227,13 +281,17 @@
     if (!Array.isArray(d.raid.rosterSwapQueue)) d.raid.rosterSwapQueue = [];
     const queue = d.raid.rosterSwapQueue;
 
-    // 换装中阵亡：取消卸装任务（人已死，不回修门名额）
+    // 换装中阵亡：取消卸装 / 送修任务
     for (let i = queue.length - 1; i >= 0; i--) {
       const job = queue[i];
-      if (job.kind !== 'remove') continue;
+      if (job.kind !== 'remove' && job.kind !== 'gear_repair') continue;
       const u = (d.raid.units || []).find((x) => x && x.id === job.unitId);
       if (!u || u.isDead) {
         if (u) delete u._rosterSwapping;
+        if (job.kind === 'gear_repair') {
+          const piece = this.findToolPiece?.(job.toolId, job.pieceId);
+          if (piece) piece._pendingRaidRepair = false;
+        }
         queue.splice(i, 1);
       }
     }
@@ -462,30 +520,12 @@
     d.raid.units = units;
   };
 
-  /** 获得某编制可用的最高级武器数据 */
-  P.getAllocatedWeaponForPost = function getAllocatedWeaponForPost(postDef, idx, totalCount) {
-    const cfg = GAME_DATA.defense || {};
-    const weapons = cfg.weapons || {};
-    if (postDef.tool) {
-      const lv = this.getBestToolLevel(postDef.tool);
-      const wd = weapons[postDef.tool]?.[lv] || weapons[postDef.tool]?.[1];
-      if (wd) return wd;
-    }
-    if (postDef.tools) {
-      // 用主武器（剑）
-      const lv = this.getBestToolLevel(postDef.tools[0]);
-      const wd = weapons[postDef.tools[0]]?.[lv] || weapons[postDef.tools[0]]?.[1];
-      if (wd) return wd;
-    }
-    return { atk: 2, def: 0, hp: 12, aspd: 1.1, range: 4, move: 14 };
-  };
-
   /** 获得某种工具当前库存的最高等级 */
   P.getBestToolLevel = function getBestToolLevel(toolId) {
     const toolDef = GAME_DATA.villagerTools?.[toolId];
     const maxLv = toolDef?.maxLevel || 4;
     for (let lv = maxLv; lv >= 1; lv--) {
-      if (this.getToolCount(toolId, lv) > 0) return lv;
+      if ((this.getUsableToolCount?.(toolId, lv) ?? this.getToolCount(toolId, lv)) > 0) return lv;
     }
     return 1;
   };
@@ -588,20 +628,21 @@
     return Math.max(1, attacker.atk * (1 - dr) - flatDr);
   };
 
-  /** 铠甲耐久打空：损毁该件，并移除减伤/移速惩罚 */
+  /** 铠甲耐久打空：卸下并保留残件以便修复，移除减伤/移速惩罚 */
   P.stripUnitArmor = function stripUnitArmor(unit, destroyed) {
     if (!unit) return;
     const pieceId = unit.armorPieceId;
     const level = unit.armorLevel || 0;
-    if (destroyed && pieceId) {
-      this.destroyArmorPiece?.(pieceId);
-      const name = GAME_DATA.villagerTools?.armor?.levelNames?.[level] || '铠甲';
-      this.pushRaidLog?.(`🥋 ${unit.icon || ''} ${unit.name || '士兵'} 的${name}损毁了`);
-    } else if (pieceId) {
+    if (pieceId) {
       const piece = this.findArmorPiece?.(pieceId);
       if (piece) {
-        piece.dur = Math.max(0, unit.armorHp || 0);
+        piece.dur = Math.max(0, destroyed ? 0 : (unit.armorHp || 0));
         piece.equippedBy = null;
+        if (piece.dur <= 0) this.tryAutoRepairPiece?.('armor', piece);
+      }
+      if (destroyed) {
+        const name = GAME_DATA.villagerTools?.armor?.levelNames?.[level] || '铠甲';
+        this.pushRaidLog?.(`🥋 ${unit.icon || ''} ${unit.name || '士兵'} 的${name}损坏了（可修复）`);
       }
     }
     unit.armorHp = 0;
@@ -1232,8 +1273,8 @@
           const piece = this.findArmorPiece?.(u.armorPieceId);
           if (piece) {
             piece.dur = Math.max(0, u.armorHp || 0);
-            if (piece.dur <= 0) this.destroyArmorPiece?.(piece.id);
-            else piece.equippedBy = null;
+            piece.equippedBy = null;
+            if (piece.dur <= 0) this.tryAutoRepairPiece?.('armor', piece);
           }
         }
         this.removeDefenseSoldier(u.soldierId);
@@ -1249,9 +1290,11 @@
         const piece = this.findArmorPiece?.(u.armorPieceId);
         if (piece) {
           piece.dur = Math.max(0, u.armorHp || 0);
-          piece.equippedBy = u.soldierId;
           if (piece.dur <= 0) {
-            this.destroyArmorPiece?.(piece.id);
+            piece.equippedBy = null;
+            this.tryAutoRepairPiece?.('armor', piece);
+          } else {
+            piece.equippedBy = u.soldierId;
           }
         }
       }
@@ -1289,10 +1332,11 @@
     const def = POST_DEFS.find(p => p.id === postId);
     if (!def) return 0;
     if (def.bare) return 99999; // 徒手无限制
+    const stockOf = (toolId) => this.getUsableToolCount?.(toolId) ?? this.getToolStockTotal(toolId);
     if (def.tools) {
-      return Math.min(...def.tools.map(t => this.getToolStockTotal(t)));
+      return Math.min(...def.tools.map(t => stockOf(t)));
     }
-    return this.getToolStockTotal(def.tool);
+    return stockOf(def.tool);
   };
 
   P.getGateLevelDef = function getGateLevelDef(level) {
@@ -1976,39 +2020,6 @@
     } else {
       this.checkPopulationGameOver('战败后人口过少，部落无法维系');
     }
-  };
-
-  P.computeAllyCombatDps = function computeAllyCombatDps() {
-    const d = this.ensureDefenseState();
-    const cfg = GAME_DATA.defense || {};
-    const weapons = cfg.weapons || {};
-    const posts = d.raid.activePosts || d.posts;
-    let dps = 0;
-
-    const addWeaponUsers = (weaponKey, count, mult = 1) => {
-      let left = count;
-      const table = weapons[weaponKey] || {};
-      const maxLv = Math.max(...Object.keys(table).map(Number), 1);
-      for (let lv = maxLv; lv >= 1 && left > 0; lv--) {
-        const stock = weaponKey === 'bare' ? left : this.getToolCount(weaponKey, lv);
-        const use = Math.min(left, stock || 0);
-        if (use <= 0) continue;
-        const w = table[lv] || table[1];
-        if (!w) continue;
-        dps += use * (w.atk || 1) * (w.aspd || 1) * mult;
-        left -= use;
-      }
-      return left;
-    };
-
-    let leftover = 0;
-    leftover += addWeaponUsers('bow', posts.bow || 0);
-    leftover += addWeaponUsers('crossbow', posts.crossbow || 0);
-    leftover += addWeaponUsers('sword', posts.sword || 0, 1);
-    leftover += addWeaponUsers('spear', posts.spear || 0, 1);
-    leftover += addWeaponUsers('shield', posts.shield || 0, 0.35);
-    leftover += addWeaponUsers('bare', (d.raid.bareFighters || 0) + leftover);
-    return Math.max(0.5, dps);
   };
 
   /** 是否需要战场平滑动画帧（移动指令 / 回城 / 战斗位移） */
@@ -3583,6 +3594,136 @@
       return 0;
     }
     return _order.call(this, recipeId, count, opts);
+  };
+
+  const _repairOrder = P.placeRepairOrder;
+  if (typeof _repairOrder === 'function') {
+    P.placeRepairOrder = function placeRepairOrderDefense(toolId, level, pieceId, opts) {
+      opts = opts || {};
+      if (this.isRaidWorkPaused() && !opts.allowDuringRaid) {
+        const piece = this.findToolPiece?.(toolId, pieceId);
+        if (this.isPieceRaidRepairBlocked?.(toolId, piece)) {
+          if (this.tryEnqueueRaidGearRepair?.(toolId, piece)) {
+            if (!opts.silent) this.showNotification('已安排门内换装送修（需换装冷却）');
+            return 1;
+          }
+          if (!opts.silent) {
+            this.showNotification('袭击中：城墙外单位的装备不能直接送修，请先调回门内');
+          }
+          return 0;
+        }
+      }
+      return _repairOrder.call(this, toolId, level, pieceId, opts);
+    };
+  }
+
+  /**
+   * 袭击中不可立刻送修的占用装备：
+   * - 铠甲：仍穿在士兵身上
+   * - 武器：属于当前编制占用的那一批
+   */
+  P.isPieceRaidRepairBlocked = function isPieceRaidRepairBlocked(toolId, piece) {
+    if (!this.isRaidCombatActive() || !piece || piece.repairing || piece.warehoused) return false;
+    if (piece._pendingRaidRepair) return true;
+    if (toolId === 'armor') return !!piece.equippedBy;
+    if (!this.isCombatGear?.(toolId)) return false;
+    return this.isWeaponPieceCombatAllocated(toolId, piece);
+  };
+
+  /** 当前编制占用的武器件（高等级优先，同级偏低耐久优先） */
+  P.isWeaponPieceCombatAllocated = function isWeaponPieceCombatAllocated(toolId, piece) {
+    if (!piece || piece.repairing || piece.warehoused || piece._pendingRaidRepair || !(piece.dur > 0)) return false;
+    const demand = this.getCombatToolDemand(toolId);
+    if (demand <= 0) return false;
+    const usable = (this.getToolPiecesList?.(toolId) || [])
+      .filter((p) => p && !p.repairing && !p.warehoused && !p._pendingRaidRepair && (p.dur || 0) > 0)
+      .sort((a, b) => {
+        if (b.level !== a.level) return b.level - a.level;
+        return (a.dur || 0) - (b.dur || 0);
+      });
+    const allocated = usable.slice(0, demand);
+    return allocated.some((p) => p.id === piece.id);
+  };
+
+  P.findRaidUnitHoldingArmor = function findRaidUnitHoldingArmor(piece) {
+    if (!piece) return null;
+    const units = this.ensureDefenseState().raid?.units || [];
+    return units.find((u) => u && u.isAlly && !u.isDead
+      && (u.armorPieceId === piece.id
+        || (piece.equippedBy && (u.soldierId === piece.equippedBy || u.id === piece.equippedBy)))) || null;
+  };
+
+  /**
+   * 门内士兵经换装冷却后卸装送修。
+   * 城墙外返回 false（不能直接拖去修）。
+   */
+  P.tryEnqueueRaidGearRepair = function tryEnqueueRaidGearRepair(toolId, piece) {
+    if (!this.isRaidCombatActive() || !piece || piece.repairing || piece._pendingRaidRepair) return false;
+    const d = this.ensureDefenseState();
+    if (!Array.isArray(d.raid.rosterSwapQueue)) d.raid.rosterSwapQueue = [];
+    if (d.raid.rosterSwapQueue.some((j) => j.kind === 'gear_repair' && j.pieceId === piece.id)) {
+      return true;
+    }
+
+    let unit = null;
+    if (toolId === 'armor') {
+      unit = this.findRaidUnitHoldingArmor(piece);
+      if (!unit) return false;
+      if (!this.isAllyInsideGate(unit)) return false;
+    } else {
+      const postId = toolId;
+      unit = (d.raid.units || [])
+        .filter((u) => u && u.postId === postId && this.isAllyInsideGate(u))
+        .sort((a, b) => (a.x || 0) - (b.x || 0))[0] || null;
+      if (!unit) return false;
+      if (!this.isWeaponPieceCombatAllocated(toolId, piece)) return false;
+    }
+
+    piece._pendingRaidRepair = true;
+    unit._rosterSwapping = true;
+    this.enqueueRosterSwapJobs([{
+      kind: 'gear_repair',
+      toolId,
+      level: piece.level,
+      pieceId: piece.id,
+      unitId: unit.id,
+      postId: unit.postId,
+    }]);
+    const name = POST_DEFS.find((p) => p.id === unit.postId)?.name || unit.name || '士兵';
+    this.pushRaidLog(`🔧 门内${name}换装送修（约 ${this.getRosterSwapSec()} 秒/人）`);
+    this.updateBattleScreenVisuals?.();
+    return true;
+  };
+
+  /** 送修卸甲后，尝试从库存再穿一件 */
+  P.refitUnitArmorFromStock = function refitUnitArmorFromStock(unit) {
+    if (!unit || unit.isDead || !unit.soldierId) return null;
+    if (unit.postId === 'bare') return null;
+    const piece = this.allocateArmorForSoldier?.(unit.soldierId);
+    if (!piece) return null;
+    const armorLevel = piece.level;
+    const armorMaxHp = piece.maxDur || this.getArmorMaxDurability?.(armorLevel) || 30;
+    const armorHp = Math.max(0, Math.min(armorMaxHp, piece.dur ?? armorMaxHp));
+    piece.dur = armorHp;
+    unit.armorPieceId = piece.id;
+    unit.armorLevel = armorLevel;
+    unit.armorMaxHp = armorMaxHp;
+    unit.armorHp = armorHp;
+    const armed = this.applyArmorStatsToSnap?.({
+      drMelee: unit.baseDrMelee || 0,
+      drRanged: unit.baseDrRanged || 0,
+      flatDr: unit.baseFlatDr || 0,
+      move: unit.baseMove != null ? unit.baseMove : unit.move,
+    }, armorLevel);
+    if (armed) {
+      unit.drMelee = armed.drMelee;
+      unit.drRanged = armed.drRanged;
+      unit.flatDr = armed.flatDr;
+      unit.move = armed.move;
+    }
+    unit.maxHp = Math.max(1, (unit.bodyMaxHp || 0) + armorMaxHp);
+    unit.hp = Math.max(0, (unit.bodyHp || 0) + armorHp);
+    return piece;
   };
 
   const _manual = P.canManualCraftClick;

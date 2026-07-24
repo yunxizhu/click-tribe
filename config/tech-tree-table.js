@@ -134,6 +134,39 @@ window.TECH_TREE_TABLE = {
         "food": 10
       }
     },
+    "unlock_food_gather_speed_v1": {
+      "x": 1600,
+      "y": 1400,
+      "parent": "unlock_farm",
+      "requires": "unlock_farm",
+      "cost": {
+        "food": 20,
+        "wood": 12,
+        "plank": 6
+      }
+    },
+    "unlock_food_gather_speed_v2": {
+      "x": 1600,
+      "y": 1220,
+      "parent": "unlock_food_gather_speed_v1",
+      "requires": "unlock_food_gather_speed_v1",
+      "cost": {
+        "food": 35,
+        "plank": 12,
+        "brick": 8
+      }
+    },
+    "unlock_food_gather_speed_v3": {
+      "x": 1600,
+      "y": 1040,
+      "parent": "unlock_food_gather_speed_v2",
+      "requires": "unlock_food_gather_speed_v2",
+      "cost": {
+        "food": 55,
+        "brick": 12,
+        "glass": 6
+      }
+    },
     "unlock_breed_saving_v1": {
       "x": 560,
       "y": 1360,

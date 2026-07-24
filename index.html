@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>点击部落</title>
-  <link rel="stylesheet" href="style.css?v=20260724an">
+  <link rel="stylesheet" href="style.css?v=20260724.1">
 </head>
 <body>
   <!-- 启动壳：加载 → 主菜单（盖住游戏） -->
@@ -117,8 +117,11 @@
         <button type="button" class="pause-menu-back" id="mm-achievements-back">返回</button>
       </div>
 
-      <p class="main-menu-version mm-reveal" id="main-menu-version">v1.0.0</p>
-      <button type="button" class="main-menu-bgm-now" id="mm-bgm-now" title="点击切换 BGM">♪ —</button>
+      <p class="main-menu-version mm-reveal" id="main-menu-version">v20260724.1</p>
+      <button type="button" class="bgm-now-btn main-menu-bgm-now" id="mm-bgm-now" title="点击切换 BGM" aria-label="当前音乐，点击切换">
+        <span class="bgm-now-icon" aria-hidden="true"><span class="bgm-disc"></span></span>
+        <span class="bgm-now-marquee"><span class="bgm-now-text">—</span></span>
+      </button>
     </div>
   </div>
 
@@ -156,6 +159,10 @@
     <header class="game-header">
       <h1>🏕️ 点击部落 <span id="diff-label" class="diff-badge"></span></h1>
       <div class="header-calendar-wrap" id="calendar-wrap">
+        <button type="button" class="bgm-now-btn" id="game-bgm-now" title="点击切换 BGM" aria-label="当前音乐，点击切换">
+          <span class="bgm-now-icon" aria-hidden="true"><span class="bgm-disc"></span></span>
+          <span class="bgm-now-marquee"><span class="bgm-now-text">—</span></span>
+        </button>
         <div class="game-clock" id="game-clock" title="游戏内时钟（24小时）">
           <div class="game-clock-face">
             <span class="game-clock-mark m0">0</span>
@@ -661,7 +668,7 @@
     <p class="comic-hint" id="comic-hint">点击继续</p>
   </div>
 
-  <script src="data.js?v=20260724j"></script>
-  <script src="boot.js?v=20260724au"></script>
+  <script src="data.js?v=20260724.1"></script>
+  <script src="boot.js?v=20260724.1"></script>
 </body>
 </html>

@@ -11,7 +11,7 @@ window.TOOL_EFFICIENCY = {
 /** 工具耐久 */
 window.TOOL_DURABILITY = {
   maxByLevel: { 1: 150, 2: 300, 3: 600, 4: 1200 },
-  repairMinMissing: 0.1,
+  repairMinMissing: 0.01,
   repairCostRatio: 0.5,
   wearPerUserPerSecond: 0.2,
 };
@@ -129,19 +129,6 @@ window.TOOL_RECIPES = [
       inputs: { wood: 2, plank: 1 },
       outputs: {},
       outputTools: { shovel: { level: 1, amount: 1 } },
-      requires: 'unlock_tool_crafting',
-      baseMaxCount: 8,
-      baseCooldown: 2000,
-      isToolRecipe: true,
-    },
-    {
-      id: 'craft_basket_1',
-      name: '木篓',
-      icon: '🧺',
-      description: '木质篓：2木头+1木板，加快浆果采集',
-      inputs: { wood: 2, plank: 1 },
-      outputs: {},
-      outputTools: { basket: { level: 1, amount: 1 } },
       requires: 'unlock_tool_crafting',
       baseMaxCount: 8,
       baseCooldown: 2000,

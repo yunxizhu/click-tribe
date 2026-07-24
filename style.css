@@ -2067,6 +2067,45 @@ html.app-quitting body {
   cursor: not-allowed;
 }
 
+.btn-repair-all-tools {
+  padding: 2px 8px;
+  font-size: 0.68rem;
+  border-radius: 4px;
+  border: 1px solid var(--border);
+  background: var(--bg-card);
+  color: var(--text);
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.btn-repair-all-tools:hover {
+  border-color: var(--accent);
+  color: #fff;
+  background: var(--accent);
+}
+
+.craft-auto-repair-controls {
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.craft-auto-repair-threshold {
+  width: 48px;
+  -moz-appearance: textfield;
+}
+
+.craft-auto-repair-threshold::-webkit-inner-spin-button,
+.craft-auto-repair-threshold::-webkit-outer-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+
+.craft-auto-threshold-label,
+.craft-auto-threshold-unit {
+  font-size: 0.72rem;
+  color: var(--text-dim);
+}
+
 .tool-repair-cost {
   font-size: 0.66rem;
   color: var(--text-dim);
@@ -2300,18 +2339,43 @@ html.app-quitting body {
   z-index: 4500;
   flex-direction: column;
   gap: 12px;
-  background: #07080c;
+  background: #000;
   cursor: pointer;
   user-select: none;
   padding: 12px 16px 18px;
   opacity: 1;
-  transition: opacity 0.55s ease;
 }
 
+/* 收尾：只渐隐分镜内容，全屏黑底保持，避免透出游戏蓝底 */
 .comic-intro.comic-outro {
-  opacity: 0;
   pointer-events: none;
   cursor: default;
+  background: #000;
+  opacity: 1;
+}
+
+.comic-intro.comic-outro .comic-pages,
+.comic-intro.comic-outro .comic-hint,
+.comic-intro.comic-outro .comic-skip {
+  opacity: 0;
+  transition: opacity 1s ease;
+  pointer-events: none;
+}
+
+/* 收尾黑屏：分镜/提示隐藏，保留纯黑全屏等音乐播完 */
+.comic-intro.comic-blackout {
+  background: #000;
+  cursor: default;
+  pointer-events: none;
+}
+
+.comic-intro.comic-blackout .comic-pages,
+.comic-intro.comic-blackout .comic-panel,
+.comic-intro.comic-blackout .comic-hint,
+.comic-intro.comic-blackout .comic-skip {
+  opacity: 0 !important;
+  visibility: hidden !important;
+  pointer-events: none !important;
 }
 
 .comic-skip {
@@ -2387,7 +2451,7 @@ html.app-quitting body {
 }
 
 #app.app-fade-in {
-  animation: app-from-comic-fade 0.75s ease forwards;
+  animation: app-from-comic-fade 2s ease forwards;
 }
 
 @keyframes app-from-comic-fade {
@@ -5432,7 +5496,7 @@ body.tech-edit-mode .tech-tooltip {
   mix-blend-mode: screen;
   pointer-events: none;
   opacity: 0;
-  animation: boot-logo-shine 0.95s ease-in-out 0.4s 1 forwards;
+  animation: boot-logo-shine 0.9s linear 0.25s 1 forwards;
 }
 
 @keyframes boot-logo-shine {
@@ -5440,9 +5504,17 @@ body.tech-edit-mode .tech-tooltip {
     background-position: -80% center;
     opacity: 0;
   }
-  12% {
+  /* 前半约 2 倍速扫入 */
+  17% {
     opacity: 1;
+    background-position: 0% center;
   }
+  /* 约 0.4s 处停顿（17%~50% ≈ 0.15~0.45s） */
+  50% {
+    opacity: 1;
+    background-position: 10% center;
+  }
+  /* 后半约 2 倍速掠过并淡出 */
   100% {
     background-position: 180% center;
     opacity: 0;
@@ -5789,6 +5861,12 @@ body.tech-edit-mode .tech-tooltip {
   animation: mm-fade-in 1.2s ease both;
 }
 
+/* 按钮：各自显完即可点，不必等后面的按钮 */
+.main-menu.mm-enter-play .main-menu-actions .main-menu-btn.mm-reveal {
+  pointer-events: none;
+  animation: mm-btn-enter 1.2s ease both;
+}
+
 .main-menu.mm-enter-play .main-menu-title.mm-reveal { animation-delay: 1s; }
 .main-menu.mm-enter-play .main-menu-title-line.mm-reveal {
   animation: mm-fade-in 1.2s ease both;
@@ -5818,9 +5896,14 @@ body.tech-edit-mode .tech-tooltip {
   transform: none;
 }
 
-/* 入场动画播完前不可点按钮 */
-.main-menu:not(.mm-enter-done) .main-menu-actions {
+/* 未完成入场的准备态：按钮不可点；入场中由各按钮自身动画控制 */
+.main-menu.mm-enter-prep .main-menu-actions .main-menu-btn,
+.main-menu:not(.mm-enter-play):not(.mm-enter-done) .main-menu-actions .main-menu-btn {
   pointer-events: none;
+}
+
+.main-menu.mm-enter-done .main-menu-actions .main-menu-btn {
+  pointer-events: auto;
 }
 
 @keyframes mm-veil-fade-in {
@@ -5834,6 +5917,21 @@ body.tech-edit-mode .tech-tooltip {
   }
   100% {
     opacity: var(--mm-end-o, 1);
+  }
+}
+
+@keyframes mm-btn-enter {
+  0% {
+    opacity: 0;
+    pointer-events: none;
+  }
+  99.9% {
+    opacity: var(--mm-end-o, 1);
+    pointer-events: none;
+  }
+  100% {
+    opacity: var(--mm-end-o, 1);
+    pointer-events: auto;
   }
 }
 
@@ -5948,32 +6046,112 @@ body.tech-edit-mode .tech-tooltip {
   bottom: 14px;
   z-index: 3;
   margin: 0;
-  max-width: min(52vw, 320px);
-  padding: 6px 10px;
-  border: 1px solid rgba(255, 255, 255, 0.14);
-  border-radius: 8px;
-  background: rgba(0, 0, 0, 0.35);
-  color: rgba(220, 228, 240, 0.88);
-  font-size: 0.78rem;
-  letter-spacing: 0.02em;
-  text-align: right;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  cursor: pointer;
-  transition: background 0.15s, border-color 0.15s, color 0.15s;
 }
 
-.main-menu-bgm-now:hover {
-  background: rgba(0, 0, 0, 0.5);
-  border-color: rgba(255, 255, 255, 0.28);
+/* —— 正在播放 BGM（主菜单 + 游戏顶栏共用） —— */
+.bgm-now-btn {
+  appearance: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  max-width: min(42vw, 200px);
+  height: 28px;
+  padding: 0 8px 0 6px;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 999px;
+  background: rgba(0, 0, 0, 0.35);
+  color: rgba(220, 228, 240, 0.92);
+  font-size: 0.72rem;
+  letter-spacing: 0.02em;
+  cursor: pointer;
+  transition: background 0.15s, border-color 0.15s, color 0.15s, opacity 0.15s;
+  flex-shrink: 0;
+}
+
+.bgm-now-btn:hover:not(:disabled) {
+  background: rgba(0, 0, 0, 0.52);
+  border-color: rgba(255, 255, 255, 0.3);
   color: #fff;
 }
 
-.main-menu-bgm-now:disabled,
-.main-menu-bgm-now.is-off {
-  opacity: 0.45;
+.bgm-now-btn:disabled,
+.bgm-now-btn.is-off {
+  opacity: 0.5;
   cursor: default;
+}
+
+.bgm-now-btn.is-off .bgm-disc,
+.bgm-now-btn:not(.is-playing) .bgm-disc {
+  animation: none;
+}
+
+.bgm-now-icon {
+  flex: 0 0 auto;
+  width: 16px;
+  height: 16px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.bgm-disc {
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  box-sizing: border-box;
+  border: 2px solid rgba(232, 200, 122, 0.95);
+  background:
+    radial-gradient(circle at 50% 50%, rgba(20, 18, 14, 0.95) 0 28%, transparent 29%),
+    repeating-radial-gradient(circle at 50% 50%,
+      rgba(232, 200, 122, 0.15) 0 1px,
+      rgba(40, 36, 28, 0.9) 1px 2.5px);
+  box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.35);
+  animation: bgm-disc-spin 2.8s linear infinite;
+}
+
+@keyframes bgm-disc-spin {
+  to { transform: rotate(360deg); }
+}
+
+.bgm-now-marquee {
+  flex: 1 1 auto;
+  min-width: 0;
+  width: 7.2em;
+  max-width: 7.2em;
+  overflow: hidden;
+  mask-image: linear-gradient(90deg, transparent 0, #000 8%, #000 92%, transparent 100%);
+  -webkit-mask-image: linear-gradient(90deg, transparent 0, #000 8%, #000 92%, transparent 100%);
+}
+
+.bgm-now-text {
+  display: inline-block;
+  white-space: nowrap;
+  will-change: transform;
+}
+
+.bgm-now-btn.is-scrolling .bgm-now-text {
+  padding-right: 1.2em;
+  animation: bgm-name-marquee 9s linear infinite;
+}
+
+@keyframes bgm-name-marquee {
+  0%, 12% { transform: translateX(0); }
+  88%, 100% { transform: translateX(var(--bgm-scroll, -40%)); }
+}
+
+#game-bgm-now {
+  background: rgba(0, 0, 0, 0.22);
+  border-color: var(--border);
+  color: var(--text);
+}
+
+#game-bgm-now:hover:not(:disabled) {
+  background: rgba(0, 0, 0, 0.38);
+  border-color: rgba(232, 200, 122, 0.45);
+}
+
+.main-menu-bgm-now {
+  max-width: min(52vw, 220px);
 }
 
 #app.app-beneath-shell {
@@ -6071,9 +6249,8 @@ body.tech-edit-mode .tech-tooltip {
 
 @keyframes boot-transition-fade {
   0% { opacity: 0; }
-  10% { opacity: 1; }
-  82% { opacity: 1; }
-  100% { opacity: 0; }
+  12% { opacity: 1; }
+  100% { opacity: 1; }
 }
 
 @keyframes boot-transition-pulse {
