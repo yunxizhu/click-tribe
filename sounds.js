@@ -54,31 +54,37 @@ class GameSounds {
     // 立即尝试创建 AudioContext（浏览器可能返回 suspended 状态）
     this.ensureContext();
 
-    // 监听 AudioContext 状态：一旦变为 running 就初始化 BGM
+    const canStartGameBgm = () => {
+      const g = this._game;
+      if (!g || !g._inGameSession || g._atMainMenu) return false;
+      // 中转黑屏不启；漫画期间可启（只会播袭击预告轨）
+      if (g._bootTransitionActive) return false;
+      return true;
+    };
+
+    // 监听 AudioContext 状态：一旦变为 running 就初始化 BGM（漫画/中转期间除外）
     if (this.ctx) {
       this.ctx.addEventListener('statechange', () => {
-        if (this.ctx.state === 'running' && !this.bgm) {
+        if (this.ctx.state === 'running' && !this.bgm && canStartGameBgm()) {
           this._initBGM();
         }
       });
       // 立即尝试 resume — 若浏览器允许自动播放（或之前授权过）会直接成功
       if (this.ctx.state === 'suspended') {
         this.ctx.resume().then(() => {
-          if (!this.bgm) this._initBGM();
+          if (!this.bgm && canStartGameBgm()) this._initBGM();
         }).catch(() => {});
       }
-      if (this.ctx.state === 'running') {
+      if (this.ctx.state === 'running' && canStartGameBgm()) {
         this._initBGM();
       }
     }
 
     const unlock = () => {
       this.ensureContext();
-      if (!this.bgm) {
-        this._initBGM();
-      } else {
-        // BGM 已初始化但可能因自动播放策略被阻止，现在有用户手势了，强制刷新
-        if (this.bgm._tick) this.bgm._tick();
+      if (canStartGameBgm()) {
+        if (!this.bgm) this._initBGM();
+        else if (this.bgm._tick) this.bgm._tick();
       }
       document.removeEventListener('pointerdown', unlock);
       document.removeEventListener('keydown', unlock);
@@ -215,5 +221,61 @@ class GameSounds {
     this.tone(330, t, 0.12, { type: 'sine', volume: 0.08, attack: 0.02, release: 0.1 });
     this.tone(440, t + 0.08, 0.14, { type: 'sine', volume: 0.1, attack: 0.02, release: 0.12 });
     this.tone(554.37, t + 0.16, 0.18, { type: 'triangle', volume: 0.09, attack: 0.02, release: 0.14 });
+  }
+
+  /** 菜单按钮悬停 / 聚焦 */
+  playUiFocus() {
+    const ctx = this.ensureContext();
+    if (!ctx) return;
+    const now = performance.now();
+    if (this._lastUiFocusAt && now - this._lastUiFocusAt < 35) return;
+    this._lastUiFocusAt = now;
+    const t = ctx.currentTime + 0.003;
+    this.tone(920, t, 0.04, { type: 'sine', volume: 0.04, attack: 0.003, release: 0.035 });
+    this.tone(1240, t + 0.012, 0.035, { type: 'triangle', volume: 0.028, attack: 0.002, release: 0.03 });
+  }
+
+  /** 菜单按钮点击 */
+  playUiClick() {
+    const ctx = this.ensureContext();
+    if (!ctx) return;
+    const t = ctx.currentTime + 0.003;
+    this.tone(480, t, 0.055, { type: 'triangle', volume: 0.18, attack: 0.002, release: 0.04 });
+    this.tone(720, t + 0.018, 0.07, { type: 'sine', volume: 0.12, attack: 0.002, release: 0.05 });
+    this.noiseBurst(t, 0.025, 0.05);
+  }
+
+  /**
+   * 开场漫画结束：「登~！」收尾（低沉冲击 + 动画风 jingle）
+   */
+  playComicFinishSting() {
+    const ctx = this.ensureContext();
+    if (ctx) {
+      const t = ctx.currentTime + 0.008;
+      // 登：低沉一击
+      this.tone(90, t, 0.55, { type: 'sine', volume: 0.3, attack: 0.006, release: 0.48 });
+      this.tone(52, t, 0.7, { type: 'triangle', volume: 0.2, attack: 0.01, release: 0.58 });
+      this.noiseBurst(t, 0.07, 0.11);
+      // ～：短暂上扬余韵
+      this.tone(170, t + 0.1, 0.32, { type: 'sine', volume: 0.09, attack: 0.04, release: 0.26 });
+      this.tone(255, t + 0.16, 0.26, { type: 'triangle', volume: 0.055, attack: 0.035, release: 0.2 });
+    }
+
+    // 动画风アイキャッチ，增强「登场结束」感
+    try {
+      const file = 'アニメ風アイキャッチ・ジングル「Jingle_Anime」_Jingle_Cute_2.mp3';
+      const url = typeof window.tribeMusicUrl === 'function'
+        ? window.tribeMusicUrl(file)
+        : (`music/${file}`);
+      if (this._comicStingAudio) {
+        try { this._comicStingAudio.pause(); this._comicStingAudio.src = ''; } catch (_) { /* ignore */ }
+      }
+      const a = new Audio(url);
+      a.preload = 'auto';
+      const vol = Math.max(0, Math.min(1, (this._masterVolume || 0.7) * (this._sfxVolume ?? 1) * 0.5));
+      a.volume = vol <= 0 ? 0 : vol;
+      this._comicStingAudio = a;
+      void a.play().catch(() => {});
+    } catch (_) { /* ignore */ }
   }
 }

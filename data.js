@@ -1403,6 +1403,7 @@ const GAME_DATA = {
   starterChest: {
     afterForestHarvests: 2,
     tip: '🎁 采集区资源点有概率掉落宝箱（觅食点除外）！这次固定掉了一个——打开后可获得制作木斧的材料。',
+    lootDialog: '拿到了不少材料，去解锁一下新科技',
     rewards: [
       { res: 'wood', amt: 10 },
       { res: 'plank', amt: 5 },
@@ -1474,7 +1475,7 @@ const GAME_DATA = {
       id: 'unlock_tool_crafting',
       name: '工具制作',
       icon: '🪓',
-      description: '开局已解锁。解锁工作台后可在工具页制作斧/镐/铲，以及弓/弩/剑/矛/盾/铠甲',
+      description: '开局已解锁。解锁工作台后可在「工具」页制作斧/镐/铲/篓，在「武器」页制作弓/弩/剑/矛/盾/铠甲',
       cost: {},
       requires: 'unlock_workbench',
       branch: 'tools',
@@ -2346,13 +2347,13 @@ const GAME_DATA = {
       {
         id: 'unlock_workbench',
         title: '解锁工作台',
-        text: '打开「科技」后，找到「工作台」并点击解锁。',
+        text: '打开「科技」后，找到「工作台」并点击解锁。解锁后请先制作木斧，再去森林派工。',
         highlight: ['.tab-btn[data-tab="tech"]', '.tech-node[data-tech-id="unlock_workbench"]'],
       },
       {
         id: 'craft_tool',
         title: '制作木斧',
-        text: '工具制作已解锁。自己打开「工具」页，用宝箱里的木头+木板下单制作「木斧」。',
+        text: '工作台已解锁。先打开「工具」页，用宝箱材料下单并加工出「木斧」，做好后再去森林派工。',
         highlight: ['.tab-btn[data-tab="tools"]', '.craft-overview-item[data-recipe-id="craft_axe_1"]'],
         progress: 'tool',
         target: 1,
@@ -2360,8 +2361,15 @@ const GAME_DATA = {
       {
         id: 'assign_forest',
         title: '分配村民',
-        text: '可以给森林分配村民，他们会自动砍树。先点左侧「森林」，再在下方工人栏点「+」派出至少 2 人。',
+        text: '木斧做好了。可以给森林分配村民，他们会自动砍树。先点左侧「森林」，再在下方工人栏点「+」派出至少 2 人。',
         highlight: ['.station-btn[data-station-id="forest"]', '#point-workers'],
+      },
+      {
+        id: 'tool_efficiency_hint',
+        title: '工具提升效率',
+        text: '森林已有村民在自动砍树。看下方效率提示——有斧头的村民效率远高于徒手。',
+        highlight: ['.station-btn[data-station-id="forest"]', '#point-workers .hint'],
+        requireNext: true,
       },
       {
         id: 'food_intro',
@@ -2372,11 +2380,10 @@ const GAME_DATA = {
         target: 3,
       },
       {
-        id: 'tool_efficiency_hint',
-        title: '工具提升效率',
-        text: '点开森林或浆果丛，注意下方效率提示——有工具的村民效率远高于徒手。之后可去「工具」页制作斧头和篓子。',
-        highlight: ['.station-btn[data-station-id="forest"]', '#point-workers .hint'],
-        requireNext: true,
+        id: 'assign_berry',
+        title: '浆果丛派工',
+        text: '手动采够了。再给「浆果丛」分配村民自动采集：在下方工人栏点「+」，派出至少 4 人。',
+        highlight: ['.station-btn[data-station-id="berry_bush"]', '#point-workers'],
       },
       {
         id: 'warehouse_food',
@@ -2395,7 +2402,7 @@ const GAME_DATA = {
       {
         id: 'worker_manage',
         title: '统一分配工作',
-        text: '打开「村民」页后，下方可以统一分配/收回工作；中心采集区下方也能就地加减工人。两种方式效果相同。',
+        text: '「村民」页下方可统一查看/收回/恢复各站点派工。看完点「下一步」。',
         highlight: ['.tab-btn[data-tab="workers"]', '#tutorial-worker-manage', '.worker-station-list'],
         requireNext: true,
       },
@@ -2410,8 +2417,8 @@ const GAME_DATA = {
       {
         id: 'craft_weapon',
         title: '制作第一件武器',
-        text: '自己打开「工具」页，制作任意一件武器（如木弓、木剑）。下单后请再点左侧「生产」进入加工。',
-        highlight: ['.tab-btn[data-tab="tools"]', '#tool-list'],
+        text: '自己打开「武器」页，制作任意一件武器（如木弓、木剑）。下单后请再点左侧「生产」进入加工。',
+        highlight: ['.tab-btn[data-tab="weapons"]', '#weapon-list'],
         progress: 'weapon',
         target: 1,
       },

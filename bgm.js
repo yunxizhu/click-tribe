@@ -55,7 +55,7 @@
       this._suspenseVol = 0;
       this._fightVol = 0;
 
-      this._fadeDuration = 2;
+      this._fadeDuration = 5;
       this._updateTimer = null;
 
       // 特殊音效冷却
@@ -69,6 +69,10 @@
       this._prevRestActive = false;
       this._prevSuspenseActive = false;
       this._prevFightActive = false;
+      /** 上次 BGM 所见的日历日；用于跨日快进时强制重开白天/黄昏轨 */
+      this._bgmCalDay = null;
+      this._lastDayFile = '';
+      this._lastDuskFile = '';
 
       this._userPlayBgm = true;
       this._userMaster = 1;
@@ -101,6 +105,78 @@
       return Math.max(0, Math.min(1, (Number(base) || 0) * this._volMul()));
     }
 
+    /** 浮点小时（0~24），用于切轨前渐弱 */
+    _getHoursFloat() {
+      try {
+        const t = this._owner.getGameTimeOfDay();
+        if (Number.isFinite(t?.frac)) return Math.max(0, Math.min(24, t.frac * 24));
+        return (t.hours || 0) + (t.minutes || 0) / 60 + (t.seconds || 0) / 3600;
+      } catch (e) {
+        return 12;
+      }
+    }
+
+    /** 距下一指定整点还有多少小时（跨日则 +24） */
+    _hoursUntilClock(endHour, now = this._getHoursFloat()) {
+      let d = endHour - now;
+      if (d <= 0) d += 24;
+      return d;
+    }
+
+    /**
+     * 切轨前音量倍率：最后 0.5 游戏小时内从 1→0.2，最后 5 分钟保持 0.2。
+     * 这是倍率，不是绝对音量：最低 = 设置目标音量 × 20%（例如目标 35% → 最低 7%）。
+     */
+    _endApproachTaper(hoursUntilEnd) {
+      const FADE_START_H = 0.5;
+      const MIN_HOLD_H = 5 / 60;
+      const MIN_MUL = 0.2;
+      const h = Number(hoursUntilEnd);
+      if (!Number.isFinite(h) || h >= FADE_START_H) return 1;
+      if (h <= MIN_HOLD_H) return MIN_MUL;
+      const t = (h - MIN_HOLD_H) / (FADE_START_H - MIN_HOLD_H);
+      return MIN_MUL + t * (1 - MIN_MUL);
+    }
+
+    /** 各时段音轨距结束的小时数；非渐弱轨返回 null */
+    _hoursUntilSlotEnd(slotKey) {
+      const now = this._getHoursFloat();
+      if (slotKey === '_dayAudio' || slotKey === '_dayAltAudio') {
+        if (!(now >= 6 && now < 18)) return null;
+        return 18 - now;
+      }
+      if (slotKey === '_duskAudio') {
+        if (!(now >= 18 && now < 22)) return null;
+        return 22 - now;
+      }
+      if (slotKey === '_nightAudio') {
+        if (!(now >= 19 || now < 6)) return null;
+        return this._hoursUntilClock(6, now);
+      }
+      if (slotKey === '_restAudio') {
+        if (!(now >= 22 || now < 6)) return null;
+        return this._hoursUntilClock(6, now);
+      }
+      return null;
+    }
+
+    _slotTaperMul(slotKey) {
+      const until = this._hoursUntilSlotEnd(slotKey);
+      if (until == null) return 1;
+      return this._endApproachTaper(until);
+    }
+
+    /**
+     * 实际输出音量 = 该轨设置目标音量 × 切轨前渐弱倍率。
+     * 设置目标 = 轨基音量 × 全局音量；最低为设置目标的 20%，不会压到绝对 20%。
+     * 例：设置目标 0.35 → 最低 0.35×0.2=0.07。
+     */
+    _effectiveOutVol(baseVol, slotKey) {
+      const setVol = this._outVol(baseVol);
+      const mul = this._slotTaperMul(slotKey);
+      return Math.max(0, Math.min(1, setVol * mul));
+    }
+
     _allTrackSlots() {
       return [
         ['_dayAudio', '_dayVol'],
@@ -117,7 +193,24 @@
       this._allTrackSlots().forEach(([aKey, vKey]) => {
         const a = this[aKey];
         if (!a) return;
-        try { a.volume = this._outVol(this[vKey]); } catch (_) { /* ignore */ }
+        try { a.volume = this._effectiveOutVol(this[vKey], aKey); } catch (_) { /* ignore */ }
+      });
+    }
+
+    /** 每 tick 同步时段轨音量（切轨前渐弱），不打断淡入中的轨 */
+    _syncPeriodEndVolumes() {
+      if (!this._userPlayBgm) return;
+      const slots = [
+        ['_dayAudio', '_dayVol'],
+        ['_dayAltAudio', '_dayAltVol'],
+        ['_duskAudio', '_duskVol'],
+        ['_nightAudio', '_nightVol'],
+        ['_restAudio', '_restVol'],
+      ];
+      slots.forEach(([aKey, vKey]) => {
+        const a = this[aKey];
+        if (!a || a._bgmFadingIn) return;
+        try { a.volume = this._effectiveOutVol(this[vKey], aKey); } catch (_) { /* ignore */ }
       });
     }
 
@@ -145,7 +238,7 @@
         return;
       }
       this[slotKey] = audio;
-      try { audio.volume = this._outVol(baseVol); } catch (_) { /* ignore */ }
+      try { audio.volume = this._effectiveOutVol(baseVol, slotKey); } catch (_) { /* ignore */ }
       if (audio.paused) {
         audio.play().catch(() => {});
       }
@@ -177,10 +270,10 @@
 
     _startUpdateTimer() {
       if (this._updateTimer) clearInterval(this._updateTimer);
-      this._updateTimer = setInterval(() => this._tick(), 1000);
+      this._updateTimer = setInterval(() => this._tick(), 500);
     }
 
-    /** 每天小时数（浮点） */
+    /** 每天小时数（整数，整点音效用）；渐弱请用 _getHoursFloat */
     _getHours() {
       try {
         return this._owner.getGameTimeOfDay().hours;
@@ -237,6 +330,64 @@
 
     _tick() {
       if (!this._loaded || !this._owner) return;
+
+      // 中转黑屏：全部静音
+      if (this._owner._bootTransitionActive) {
+        if (this._dayAudio || this._dayAltAudio || this._duskAudio || this._nightAudio
+          || this._restAudio || this._suspenseAudio || this._fightAudio) {
+          this.stop();
+          this._prevDayActive = false;
+          this._prevDuskActive = false;
+          this._prevNightActive = false;
+          this._prevRestActive = false;
+          this._prevSuspenseActive = false;
+          this._prevFightActive = false;
+          this._startUpdateTimer();
+        }
+        return;
+      }
+
+      // 开场漫画：只播袭击预告轨，结束后由正常逻辑切白天轨
+      if (this._owner._comicTimeHold) {
+        if (!this._userPlayBgm) {
+          if (this._suspenseAudio) {
+            this._prevSuspenseActive = false;
+            this._stopSuspense();
+          }
+          return;
+        }
+        if (this._dayAudio || this._dayAltAudio) {
+          this._prevDayActive = false;
+          this._stopDay();
+        }
+        if (this._duskAudio) {
+          this._prevDuskActive = false;
+          this._stopDusk();
+        }
+        if (this._nightAudio) {
+          this._prevNightActive = false;
+          this._stopNight();
+        }
+        if (this._restAudio) {
+          this._prevRestActive = false;
+          this._stopRest();
+        }
+        if (this._fightAudio) {
+          this._prevFightActive = false;
+          this._stopFight();
+        }
+        this._prevDayActive = false;
+        this._prevDuskActive = false;
+        this._prevNightActive = false;
+        this._prevRestActive = false;
+        this._prevFightActive = false;
+        if (!this._suspenseAudio) {
+          this._startSuspense({ forceVol: 0.12 });
+        }
+        this._prevSuspenseActive = true;
+        return;
+      }
+
       if (!this._userPlayBgm) {
         if (this._dayAudio || this._dayAltAudio || this._prevDayActive) {
           this._prevDayActive = false;
@@ -279,55 +430,68 @@
         const restShouldPlay = restActive && !fightActive;
         const suspShouldPlay = suspActive && !fightActive;
 
-        // 每条轨独立控制开关（仅在状态变化时启停）
+        const calDay = Number(this._owner.state?.day) || 1;
+        if (this._bgmCalDay == null) this._bgmCalDay = calDay;
+        const crossedCalDay = calDay !== this._bgmCalDay;
+
+        // 每条轨独立控制开关；切入时重新随机并从头播放
         if (dayShouldPlay !== this._prevDayActive) {
           this._prevDayActive = dayShouldPlay;
-          if (dayShouldPlay) this._startDay();
+          if (dayShouldPlay) this._startDay({ fresh: true });
           else this._stopDay();
+        } else if (dayShouldPlay && crossedCalDay) {
+          // 跨日但仍在白天（快进跳过了夜晚）：强制换曲重开
+          this._startDay({ fresh: true });
         } else if (dayShouldPlay && !this._dayAudio && !this._dayAltAudio) {
-          // 应在播放但音轨对象为 null（上次 play() 被浏览器阻止），重试
-          this._startDay();
+          this._startDay({ fresh: true });
         }
 
         if (duskShouldPlay !== this._prevDuskActive) {
           this._prevDuskActive = duskShouldPlay;
-          if (duskShouldPlay) this._startDusk();
+          if (duskShouldPlay) this._startDusk({ fresh: true });
           else this._stopDusk();
+        } else if (duskShouldPlay && crossedCalDay) {
+          this._startDusk({ fresh: true });
         } else if (duskShouldPlay && !this._duskAudio) {
-          this._startDusk();
+          this._startDusk({ fresh: true });
         }
 
         if (nightShouldPlay !== this._prevNightActive) {
           this._prevNightActive = nightShouldPlay;
-          if (nightShouldPlay) this._startNight();
+          if (nightShouldPlay) this._startNight({ fresh: true });
           else this._stopNight();
         } else if (nightShouldPlay && !this._nightAudio) {
-          this._startNight();
+          this._startNight({ fresh: true });
         }
 
         if (restShouldPlay !== this._prevRestActive) {
           this._prevRestActive = restShouldPlay;
-          if (restShouldPlay) this._startRest();
+          if (restShouldPlay) this._startRest({ fresh: true });
           else this._stopRest();
         } else if (restShouldPlay && !this._restAudio) {
-          this._startRest();
+          this._startRest({ fresh: true });
         }
 
         if (suspShouldPlay !== this._prevSuspenseActive) {
           this._prevSuspenseActive = suspShouldPlay;
-          if (suspShouldPlay) this._startSuspense();
+          if (suspShouldPlay) this._startSuspense({ fresh: true });
           else this._stopSuspense();
         } else if (suspShouldPlay && !this._suspenseAudio) {
-          this._startSuspense();
+          this._startSuspense({ fresh: true });
         }
 
         if (fightActive !== this._prevFightActive) {
           this._prevFightActive = fightActive;
-          if (fightActive) this._startFight();
+          if (fightActive) this._startFight({ fresh: true });
           else this._stopFight();
         } else if (fightActive && !this._fightAudio) {
-          this._startFight();
+          this._startFight({ fresh: true });
         }
+
+        this._bgmCalDay = calDay;
+
+        // 切轨前半小时渐弱（最低 = 设置目标音量 × 20%，非绝对 20%）
+        this._syncPeriodEndVolumes();
 
         // 特殊整点音效（6:00 Heartwarming，22:00 Healing）
         const hours = this._getHours();
@@ -350,20 +514,31 @@
 
     // ========== 音量缓动工具 ==========
 
-    _fadeIn(audio, targetVol) {
+    _fadeIn(audio, targetVol, slotKey = null) {
       if (!audio) return;
       const gen = this._fadeGen;
       const durMs = this._fadeDuration * 1000;
       const stepMs = 50;
       const steps = Math.ceil(durMs / stepMs);
       let step = 0;
+      audio._bgmFadingIn = true;
       audio.volume = 0;
       const tick = () => {
-        if (gen !== this._fadeGen || !this._userPlayBgm) return;
+        if (gen !== this._fadeGen || !this._userPlayBgm) {
+          audio._bgmFadingIn = false;
+          return;
+        }
         step++;
         const progress = Math.min(1, step / steps);
-        audio.volume = progress * this._outVol(targetVol);
-        if (step < steps) setTimeout(tick, stepMs);
+        const tapered = slotKey
+          ? this._effectiveOutVol(targetVol, slotKey)
+          : this._outVol(targetVol);
+        audio.volume = progress * tapered;
+        if (step < steps) {
+          setTimeout(tick, stepMs);
+        } else {
+          audio._bgmFadingIn = false;
+        }
       };
       tick();
     }
@@ -395,15 +570,35 @@
 
     // ========== 白天轨（6:00~18:00） ==========
 
+    _pickFromList(list, lastFile) {
+      const files = Array.isArray(list) ? list.filter(Boolean) : [];
+      if (!files.length) return '';
+      if (files.length === 1) return files[0];
+      const pool = lastFile ? files.filter((f) => f !== lastFile) : files;
+      const use = pool.length ? pool : files;
+      return use[Math.floor(Math.random() * use.length)];
+    }
+
     _pickDayTrackFile() {
-      const list = this._dayTrackFiles || [];
-      if (!list.length) return 'ほのぼのした日常曲「Positive2」_PerituneMaterial_Positive2_loop.mp3';
-      return list[Math.floor(Math.random() * list.length)];
+      const fallback = 'ほのぼのした日常曲「Positive2」_PerituneMaterial_Positive2_loop.mp3';
+      return this._pickFromList(this._dayTrackFiles, this._lastDayFile) || fallback;
+    }
+
+    _killDayAudioImmediate() {
+      const a = this._dayAudio;
+      const b = this._dayAltAudio;
+      this._dayAudio = null;
+      this._dayAltAudio = null;
+      this._fadeGen = (this._fadeGen || 0) + 1;
+      this._destroyAudio(a);
+      this._destroyAudio(b);
     }
 
     _createDayAudios() {
       if (!this._userPlayBgm) return;
+      if (this._dayAudio || this._dayAltAudio) return;
       const file = this._pickDayTrackFile();
+      this._lastDayFile = file;
       const urlDay = musicUrl(file);
       // 仅换曲目；音量/倍速沿用原白天轨
       const mainVol = 0.3;
@@ -413,16 +608,27 @@
       this._dayAltAudio = null;
 
       const a = this._createAudio(urlDay, true, rate);
+      // 先占坑，避免 play() 完成前每秒 tick 重复 _startDay 叠出多轨
+      this._dayAudio = a;
+      try { a.volume = 0; a.currentTime = 0; } catch (_) { /* ignore */ }
       a.play().then(() => {
+        if (this._dayAudio !== a) {
+          this._destroyAudio(a);
+          return;
+        }
         this._onTrackReady(a, '_dayAudio', mainVol);
-        if (this._dayAudio === a && this._initialFade !== 0) this._fadeIn(a, mainVol);
+        if (this._dayAudio === a && this._initialFade !== 0) this._fadeIn(a, mainVol, '_dayAudio');
         console.log('[BGM] 白天音轨选用:', file);
-      }).catch(e => console.warn('[BGM] 白天音轨播放失败:', e));
+      }).catch(e => {
+        console.warn('[BGM] 白天音轨播放失败:', e);
+        if (this._dayAudio === a) this._dayAudio = null;
+      });
     }
 
-    _startDay() {
+    _startDay(opts = {}) {
       if (!this._userPlayBgm) return;
-      if (this._dayAudio || this._dayAltAudio) return; // 已在播放
+      if (opts.fresh) this._killDayAudioImmediate();
+      else if (this._dayAudio || this._dayAltAudio) return; // 已在播放 / 启动中
       console.log('[BGM] 启动白天音轨（6:00~18:00）');
       this._createDayAudios();
     }
@@ -439,30 +645,47 @@
     // ========== 黄昏轨（18:00~22:00） ==========
 
     _pickDuskTrackFile() {
-      const list = this._duskTrackFiles || [];
-      if (!list.length) return 'Satie Gymnopedie No 1.mp3';
-      return list[Math.floor(Math.random() * list.length)];
+      return this._pickFromList(this._duskTrackFiles, this._lastDuskFile) || 'Satie Gymnopedie No 1.mp3';
+    }
+
+    _killDuskAudioImmediate() {
+      const a = this._duskAudio;
+      this._duskAudio = null;
+      this._fadeGen = (this._fadeGen || 0) + 1;
+      this._destroyAudio(a);
     }
 
     _createDuskAudio() {
       if (!this._userPlayBgm) return;
+      if (this._duskAudio) return;
       const file = this._pickDuskTrackFile();
+      this._lastDuskFile = file;
       const url = musicUrl(file);
       // 仅换曲目；音量/倍速沿用原黄昏轨
       const vol = 0.25;
       const rate = 0.8;
       this._duskVol = vol;
       const a = this._createAudio(url, true, rate);
+      this._duskAudio = a;
+      try { a.volume = 0; a.currentTime = 0; } catch (_) { /* ignore */ }
       a.play().then(() => {
+        if (this._duskAudio !== a) {
+          this._destroyAudio(a);
+          return;
+        }
         this._onTrackReady(a, '_duskAudio', vol);
-        if (this._duskAudio === a && this._initialFade !== 0) this._fadeIn(a, vol);
+        if (this._duskAudio === a && this._initialFade !== 0) this._fadeIn(a, vol, '_duskAudio');
         console.log('[BGM] 黄昏音轨选用:', file);
-      }).catch(e => console.warn('[BGM] 黄昏音轨播放失败:', e));
+      }).catch(e => {
+        console.warn('[BGM] 黄昏音轨播放失败:', e);
+        if (this._duskAudio === a) this._duskAudio = null;
+      });
     }
 
-    _startDusk() {
+    _startDusk(opts = {}) {
       if (!this._userPlayBgm) return;
-      if (this._duskAudio) return;
+      if (opts.fresh) this._killDuskAudioImmediate();
+      else if (this._duskAudio) return;
       console.log('[BGM] 启动黄昏音轨（18:00~22:00）');
       this._createDuskAudio();
     }
@@ -477,18 +700,35 @@
 
     // ========== 夜间轨（19:00~6:00） ==========
 
-    _startNight() {
+    _killNightAudioImmediate() {
+      const a = this._nightAudio;
+      this._nightAudio = null;
+      this._fadeGen = (this._fadeGen || 0) + 1;
+      this._destroyAudio(a);
+    }
+
+    _startNight(opts = {}) {
       if (!this._userPlayBgm) return;
-      if (this._nightAudio) return;
+      if (opts.fresh) this._killNightAudioImmediate();
+      else if (this._nightAudio) return;
       console.log('[BGM] 启动夜间音轨（19:00~6:00）');
       const url = musicUrl('night_bgm.mp3');
       const vol = 0.65;
       this._nightVol = vol;
       const a = this._createAudio(url, true, 1.0);
+      this._nightAudio = a;
+      try { a.volume = 0; a.currentTime = 0; } catch (_) { /* ignore */ }
       a.play().then(() => {
+        if (this._nightAudio !== a) {
+          this._destroyAudio(a);
+          return;
+        }
         this._onTrackReady(a, '_nightAudio', vol);
-        if (this._nightAudio === a && this._initialFade !== 0) this._fadeIn(a, vol);
-      }).catch(e => console.warn('[BGM] 夜间音轨播放失败:', e));
+        if (this._nightAudio === a && this._initialFade !== 0) this._fadeIn(a, vol, '_nightAudio');
+      }).catch(e => {
+        console.warn('[BGM] 夜间音轨播放失败:', e);
+        if (this._nightAudio === a) this._nightAudio = null;
+      });
     }
 
     _stopNight() {
@@ -501,18 +741,35 @@
 
     // ========== 休息轨（22:00~6:00） ==========
 
-    _startRest() {
+    _killRestAudioImmediate() {
+      const a = this._restAudio;
+      this._restAudio = null;
+      this._fadeGen = (this._fadeGen || 0) + 1;
+      this._destroyAudio(a);
+    }
+
+    _startRest(opts = {}) {
       if (!this._userPlayBgm) return;
-      if (this._restAudio) return;
+      if (opts.fresh) this._killRestAudioImmediate();
+      else if (this._restAudio) return;
       console.log('[BGM] 启动休息音轨（22:00~6:00）');
       const url = musicUrl('Satie Gymnopedie No 1.mp3');
       const vol = 0.20;
       this._restVol = vol;
       const a = this._createAudio(url, true, 0.5);
+      this._restAudio = a;
+      try { a.volume = 0; a.currentTime = 0; } catch (_) { /* ignore */ }
       a.play().then(() => {
+        if (this._restAudio !== a) {
+          this._destroyAudio(a);
+          return;
+        }
         this._onTrackReady(a, '_restAudio', vol);
-        if (this._restAudio === a && this._initialFade !== 0) this._fadeIn(a, vol);
-      }).catch(e => console.warn('[BGM] 休息音轨播放失败:', e));
+        if (this._restAudio === a && this._initialFade !== 0) this._fadeIn(a, vol, '_restAudio');
+      }).catch(e => {
+        console.warn('[BGM] 休息音轨播放失败:', e);
+        if (this._restAudio === a) this._restAudio = null;
+      });
     }
 
     _stopRest() {
@@ -525,18 +782,37 @@
 
     // ========== 袭击轨 ==========
 
-    _startSuspense() {
+    _killSuspenseAudioImmediate() {
+      const a = this._suspenseAudio;
+      this._suspenseAudio = null;
+      this._fadeGen = (this._fadeGen || 0) + 1;
+      this._destroyAudio(a);
+    }
+
+    _startSuspense(opts = {}) {
       if (!this._userPlayBgm) return;
-      if (this._suspenseAudio) return;
-      const vol = this._shouldNightPlay() ? 0.05 : 0.10;
+      if (opts.fresh) this._killSuspenseAudioImmediate();
+      else if (this._suspenseAudio) return;
+      const vol = opts.forceVol != null
+        ? Number(opts.forceVol)
+        : (this._shouldNightPlay() ? 0.05 : 0.10);
       this._suspenseVol = vol;
       console.log('[BGM] 启动袭击音轨, vol:', vol);
       const url = musicUrl('Suspense7_PerituneMaterial_Suspense7_loop.mp3');
       const a = this._createAudio(url, true, 1.0);
+      this._suspenseAudio = a;
+      try { a.volume = 0; a.currentTime = 0; } catch (_) { /* ignore */ }
       a.play().then(() => {
+        if (this._suspenseAudio !== a) {
+          this._destroyAudio(a);
+          return;
+        }
         this._onTrackReady(a, '_suspenseAudio', vol);
-        if (this._suspenseAudio === a) this._fadeIn(a, vol);
-      }).catch(e => console.warn('[BGM] Suspense 播放失败:', e));
+        if (this._suspenseAudio === a) this._fadeIn(a, vol, '_suspenseAudio');
+      }).catch(e => {
+        console.warn('[BGM] Suspense 播放失败:', e);
+        if (this._suspenseAudio === a) this._suspenseAudio = null;
+      });
     }
 
     _stopSuspense() {
@@ -549,18 +825,35 @@
 
     // ========== 战斗轨 ==========
 
-    _startFight() {
+    _killFightAudioImmediate() {
+      const a = this._fightAudio;
+      this._fightAudio = null;
+      this._fadeGen = (this._fadeGen || 0) + 1;
+      this._destroyAudio(a);
+    }
+
+    _startFight(opts = {}) {
       if (!this._userPlayBgm) return;
-      if (this._fightAudio) return;
+      if (opts.fresh) this._killFightAudioImmediate();
+      else if (this._fightAudio) return;
       const vol = 0.30;
       this._fightVol = vol;
       console.log('[BGM] 启动战斗音轨, vol:', vol);
       const url = musicUrl('Fight」_PerituneMaterial_Fight_loop.mp3');
       const a = this._createAudio(url, true, 1.0);
+      this._fightAudio = a;
+      try { a.volume = 0; a.currentTime = 0; } catch (_) { /* ignore */ }
       a.play().then(() => {
+        if (this._fightAudio !== a) {
+          this._destroyAudio(a);
+          return;
+        }
         this._onTrackReady(a, '_fightAudio', vol);
-        if (this._fightAudio === a && this._initialFade !== 0) this._fadeIn(a, vol);
-      }).catch(e => console.warn('[BGM] Fight 播放失败:', e));
+        if (this._fightAudio === a && this._initialFade !== 0) this._fadeIn(a, vol, '_fightAudio');
+      }).catch(e => {
+        console.warn('[BGM] Fight 播放失败:', e);
+        if (this._fightAudio === a) this._fightAudio = null;
+      });
     }
 
     _stopFight() {

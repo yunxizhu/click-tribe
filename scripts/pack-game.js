@@ -1,7 +1,7 @@
 /**
  * Electron 打包：
  * - 游戏代码打进 asar（白名单，避免打入 node_modules/dist 等）
- * - config/、music/ 放在 exe 同级，可单独替换
+ * - config/、music/、image/ 放在 exe 同级，可单独替换
  * - 输出：output/点击部落-win32-x64/
  *
  * 用法：npm run pack  或双击 一键打包.bat
@@ -117,6 +117,7 @@ function pruneLocales(builtDir) {
 async function main() {
   const configSrc = path.join(root, 'config');
   const musicSrc = path.join(root, 'music');
+  const imageSrc = path.join(root, 'image');
 
   if (!fs.existsSync(configSrc)) fail('缺少 config/ 目录');
   for (const f of CONFIG_FILES) {
@@ -143,6 +144,9 @@ async function main() {
 
   if (!fs.existsSync(musicSrc)) {
     console.warn('[pack] 警告：缺少 music/，将打出空音乐目录');
+  }
+  if (!fs.existsSync(imageSrc)) {
+    console.warn('[pack] 警告：缺少 image/，主菜单/漫画背景将缺失');
   }
 
   console.log('[pack] electron-packager …');
@@ -212,6 +216,24 @@ async function main() {
     'utf8'
   );
 
+  console.log('[pack] 复制外置 image/ …');
+  const imageDest = path.join(built, 'image');
+  if (fs.existsSync(imageSrc)) copyDir(imageSrc, imageDest);
+  else ensureDir(imageDest);
+  fs.writeFileSync(
+    path.join(imageDest, '说明.txt'),
+    [
+      '图片资源目录（与 exe 同级）',
+      '',
+      '  cafee80e0ce868.png              — 主菜单背景',
+      '  background_introduction/       — 开局漫画分镜 1~9',
+      '',
+      '可替换同名文件，重启后生效。',
+      '',
+    ].join('\r\n'),
+    'utf8'
+  );
+
   console.log('[pack] 准备外置 saves/（始终空档，不拷贝开发存档）…');
   const savesDest = path.join(built, 'saves');
   ensureDir(savesDest);
@@ -239,10 +261,10 @@ async function main() {
     [
       '点击部落 — Electron 版',
       '',
-      '【可单独替换】config/  music/  saves/',
+      '【可单独替换】config/  music/  image/  saves/',
       '【勿改】exe 与 resources/ 等运行库',
       '',
-      '替换配置或音乐后请完全关闭再重新打开。',
+      '替换配置、音乐或图片后请完全关闭再重新打开。',
       '',
     ].join('\r\n'),
     'utf8'
