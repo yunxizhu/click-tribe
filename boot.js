@@ -124,6 +124,7 @@
 
   /** 外置配置（须在 game.js 之前加载；顺序可影响互相依赖） */
   const EXTERNAL_CONFIGS = [
+    'craft-recipes.js',
     'tool-recipes.js',
     'resource-points.js',
     'combat-units.js',

@@ -1,5 +1,5 @@
 // 游戏数据定义
-const POINT_UPGRADE_CAPS = { count: 10, cooldown: 10, double: 1 };
+const POINT_UPGRADE_CAPS = { count: 10, cooldown: 5, double: 1 };
 
 const POINT_UPGRADE_TYPE_META = {
   count: { label: '采集升级', typeIcon: '⚡' },
@@ -9,6 +9,7 @@ const POINT_UPGRADE_TYPE_META = {
   dropRate: { label: '宝箱爆率', typeIcon: '🎲' },
   rewardTypes: { label: '奖励种类', typeIcon: '🎁' },
   rewardAmount: { label: '奖励数量', typeIcon: '📈' },
+  quality: { label: '宝箱资源品质', typeIcon: '💎' },
 };
 
 function pointUpgradeTechId(pointId, type) {
@@ -132,7 +133,7 @@ function generatePointUpgradeTechEntries(resourcePoints, chestUpgradeCosts) {
     }
 
     if (def.isTreasureChest) {
-      ['dropRate', 'rewardTypes', 'rewardAmount'].forEach((type) => {
+      ['dropRate', 'rewardTypes', 'rewardAmount', 'quality'].forEach((type) => {
         const meta = POINT_UPGRADE_TYPE_META[type];
         const chestCosts = chestUpgradeCosts[type] || [];
         entries.push({
@@ -144,7 +145,9 @@ function generatePointUpgradeTechEntries(resourcePoints, chestUpgradeCosts) {
             ? '提高采集区资源点掉落宝箱的概率（觅食除外）'
             : type === 'rewardTypes'
               ? '提高宝箱奖励资源种类上限'
-              : '提高宝箱每种资源的奖励数量',
+              : type === 'quality'
+                ? '提高宝箱开出合成物资的概率'
+                : '提高宝箱每种资源的奖励数量',
           requires: anchor,
           repeatable: true,
           maxRepeat: def.maxUpgrades[type],
@@ -506,7 +509,7 @@ function generatePointUpgradeTechLayout(resourcePoints, existingNodes) {
  * @param {{ resource: string, processed: string, others?: string[], scale?: number }} cfg
  */
 function getPointUpgradeBaseScale(pointIndex = 1) {
-  return 1 + Math.max(0, pointIndex - 1) * 0.2;
+  return 1 + Math.max(0, pointIndex - 1) * 0.6;
 }
 
 function makePointUpgradeCosts(cfg) {
@@ -917,7 +920,7 @@ const GAME_DATA = {
       isTreasureChest: true,
       baseMaxCount: 4,
       baseCooldown: 500,
-      maxUpgrades: { dropRate: 8, rewardTypes: 3, rewardAmount: 3 },
+      maxUpgrades: { dropRate: 8, rewardTypes: 3, rewardAmount: 3, quality: 5 },
       unlockRequires: 'unlock_treasure_chest',
     },
   },
@@ -2197,16 +2200,29 @@ const GAME_DATA = {
       { wood: 40, plank: 20, stone: 10 },
       { wood: 60, plank: 30, copper_ingot: 5 },
     ],
+    quality: [
+      { wood: 30, stone: 20, plank: 10 },
+      { wood: 50, stone: 30, plank: 20, copper_ore: 5 },
+      { wood: 80, stone: 50, plank: 30, copper_ingot: 5 },
+      { wood: 110, stone: 70, plank: 45, iron_ore: 8 },
+      { wood: 150, stone: 100, plank: 60, iron_ingot: 5 },
+    ],
   },
 
   treasureChest: {
     baseDropRate: 0.01,
     dropRatePerLevel: 0.005,
     maxDropRate: 0.05,
-    baseRewardTypesMin: 1,
-    baseRewardTypesMax: 2,
-    baseRewardAmountMin: 1,
-    baseRewardAmountMax: 2,
+    baseRewardTypesMin: 2,
+    baseRewardTypesMax: 3,
+    baseRewardAmountMin: 3,
+    baseRewardAmountMax: 4,
+    qualityWeights: {
+      // [food, resource, composite] 按等级 0~5 线性插值
+      0: [6, 6, 3],
+      5: [1, 6, 8],
+    },
+    maxQualityLevel: 5,
   },
 
   /**

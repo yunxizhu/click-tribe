@@ -2641,6 +2641,7 @@ class FactoryGame {
     if (id === 'unlock_workbench') return (this.state.unlockedTech || []).includes('unlock_workbench');
     if (id === 'open_tech_tree') return this.state.activeTab === 'tech';
     if (id === 'craft_tool') return this.getTutorialProgressValue('tool') >= 1;
+    if (id === 'craft_weapon') return this.getTutorialProgressValue('weapon') >= 1;
     if (id === 'craft_plank' || id === 'unlock_plank') {
       return (this.state.tutorial?.planksCrafted || 0) >= (step.target || 1);
     }
@@ -3170,6 +3171,31 @@ class FactoryGame {
     return true;
   }
 
+  /** 周期扫描：满足自动生产条件但未下单的，自动补单 */
+  _scanAutoProduceConditions() {
+    const now = performance.now();
+    if (this._lastAutoProduceScan && now - this._lastAutoProduceScan < 2000) return;
+    this._lastAutoProduceScan = now;
+    if (!this.state.craftStations) return;
+    Object.entries(this.state.craftStations).forEach(([recipeId, st]) => {
+      if (!st.autoProduce) return;
+      const mode = st.autoMode || 'always';
+      if (mode !== 'stock') return;
+      const recipe = GAME_DATA.recipes.find(r => r.id === recipeId);
+      if (!recipe || recipe.isToolRecipe) return;
+      const resId = recipe.outputs ? Object.keys(recipe.outputs)[0] : null;
+      if (!resId) return;
+      const cur = this.state.resources[resId] || 0;
+      const threshold = st.autoThreshold ?? 10;
+      if (cur >= threshold) return;
+      const hasQueued = (this.state.craftOrderQueue || []).some(
+        o => o.recipeId === recipeId && (o.autoProduced || o.kind === 'craft')
+      );
+      if (hasQueued) return;
+      this.placeCraftOrder(recipeId, 1, { silent: true, autoProduced: true });
+    });
+  }
+
   /** 下单（普通/自动） */
   placeCraftOrder(recipeId, count = 1, { silent = false, autoProduced = false } = {}) {
     const recipe = GAME_DATA.recipes.find(r => r.id === recipeId);
@@ -3215,7 +3241,16 @@ class FactoryGame {
         piece.repairing = false;
         piece.repairOrderId = null;
       }
-      Object.entries(order.paidCost || {}).forEach(([res, amt]) => this.addResource(res, amt));
+      if (order.repairBatchId && this.state._repairBatchCosts?.[order.repairBatchId] != null) {
+        const batchOrders = queue.filter(o => o.repairBatchId === order.repairBatchId && o.id !== order.id);
+        if (batchOrders.length === 0) {
+          const batchCost = this.state._repairBatchCosts[order.repairBatchId];
+          Object.entries(batchCost || {}).forEach(([res, amt]) => this.addResource(res, amt));
+          delete this.state._repairBatchCosts[order.repairBatchId];
+        }
+      } else {
+        Object.entries(order.paidCost || {}).forEach(([res, amt]) => this.addResource(res, amt));
+      }
       queue.splice(idx, 1);
       this.showNotification(`已取消修复：${this.formatToolLabel(order.toolId, order.level)}`);
       this.render();
@@ -3352,7 +3387,13 @@ class FactoryGame {
     if (!recipe) return;
 
     if (order.kind === 'repair') {
-      const piece = this.findToolPiece(order.toolId, order.pieceId);
+      // 合并订单：从 pieceIds 取下一个待修的
+      let currentPieceId = order.pieceId;
+      if (Array.isArray(order.pieceIds) && order.pieceIds.length > 0) {
+        currentPieceId = order.pieceIds.shift();
+        order.pieceId = currentPieceId;
+      }
+      const piece = this.findToolPiece(order.toolId, currentPieceId);
       if (piece) {
         piece.dur = piece.maxDur;
         piece.repairing = false;
@@ -3360,7 +3401,7 @@ class FactoryGame {
         piece.warehoused = false;
         this.removePendingAutoRepair?.(order.toolId, piece.id);
       }
-      order.count -= 1;
+      order.count = (order.pieceIds?.length || 0) + 1;
       order.progress = 0;
       const st = this.state.craftStations[recipeId];
       if (st) this.startCooldown('recipe', recipeId);
@@ -4034,22 +4075,35 @@ class FactoryGame {
     const repairClicks = this.getRepairClicks(recipe, info.factor);
     if (!Array.isArray(this.state.craftOrderQueue)) this.state.craftOrderQueue = [];
     if (this.state.craftOrderSeq == null) this.state.craftOrderSeq = 0;
-    const order = {
-      id: this.state.craftOrderSeq++,
-      kind: 'repair',
-      recipeId: recipe.id,
-      toolId,
-      level: Number(level),
-      pieceId: piece.id,
-      count: 1,
-      progress: 0,
-      repairClicks,
-      paidCost: { ...cost },
-      autoProduced: !!autoProduced,
-    };
-    piece.repairing = true;
-    piece.repairOrderId = order.id;
-    this.state.craftOrderQueue.push(order);
+    // 合并：队列最后一个是同工具同等级的修复订单时，追加到该订单
+    const queue = this.state.craftOrderQueue;
+    const last = queue.length > 0 ? queue[queue.length - 1] : null;
+    if (last && last.kind === 'repair' && last.toolId === toolId && last.level === Number(level) && !last.repairBatchId) {
+      if (!Array.isArray(last.pieceIds)) last.pieceIds = [last.pieceId];
+      last.pieceIds.push(piece.id);
+      last.count = last.pieceIds.length;
+      last.paidCost = {};
+      piece.repairing = true;
+      piece.repairOrderId = last.id;
+    } else {
+      const order = {
+        id: this.state.craftOrderSeq++,
+        kind: 'repair',
+        recipeId: recipe.id,
+        toolId,
+        level: Number(level),
+        pieceId: piece.id,
+        pieceIds: [piece.id],
+        count: 1,
+        progress: 0,
+        repairClicks,
+        paidCost: { ...cost },
+        autoProduced: !!autoProduced,
+      };
+      piece.repairing = true;
+      piece.repairOrderId = order.id;
+      queue.push(order);
+    }
     if (!silent) {
       this.showNotification(`已加入修复队列：${this.formatToolLabel(toolId, level)}`);
       this.render();
@@ -4170,47 +4224,105 @@ class FactoryGame {
     }
   }
 
-  repairAllTools(toolId, level) {
+  getRepairAllCosts(toolId, level) {
     const recipe = this.getToolRecipe(toolId, level);
-    if (!recipe) {
-      this.showNotification('找不到对应配方');
-      return 0;
-    }
+    if (!recipe) return null;
     const pieces = this.getRepairablePieces(toolId, level);
-    if (!pieces.length) {
-      this.showNotification('没有需要修复的装备');
-      return 0;
-    }
-    const plans = [];
-    const totalCost = {};
+    if (!pieces.length) return null;
+    let totalMissing = 0;
+    let totalMax = 0;
     pieces.forEach((piece) => {
       const info = this.getPieceRepairFactor(toolId, piece);
       if (!info) return;
-      const cost = this.computeRepairCostFromFactor(recipe, info.factor);
-      plans.push({ piece, cost });
-      Object.entries(cost).forEach(([res, amt]) => {
-        totalCost[res] = (totalCost[res] || 0) + amt;
-      });
+      totalMissing += info.missing * info.max;
+      totalMax += info.max;
     });
-    Object.keys(totalCost).forEach((k) => {
-      totalCost[k] = this.roundResource(totalCost[k]);
+    if (totalMax <= 0) return null;
+    const aggregateFactor = (GAME_DATA.toolDurability?.repairCostRatio ?? 0.5) * (totalMissing / totalMax);
+    const totalCost = this.computeRepairCostFromFactor(recipe, aggregateFactor);
+    return { plans: pieces.map(piece => ({ piece, cost: null })), totalCost, recipe, pieces, aggregateFactor };
+  }
+
+  getRepairAllCostsForCount(toolId, level, count) {
+    const recipe = this.getToolRecipe(toolId, level);
+    if (!recipe) return null;
+    const pieces = this.getRepairablePieces(toolId, level);
+    if (!pieces.length) return null;
+    const target = pieces.slice(0, count);
+    let aggMissing = 0, aggMax = 0;
+    target.forEach(p => {
+      const info = this.getPieceRepairFactor(toolId, p);
+      if (!info) return;
+      aggMissing += info.missing * info.max;
+      aggMax += info.max;
     });
-    if (!plans.length) {
+    if (aggMax <= 0) return null;
+    const aggregateFactor = (GAME_DATA.toolDurability?.repairCostRatio ?? 0.5) * (aggMissing / aggMax);
+    const totalCost = this.computeRepairCostFromFactor(recipe, aggregateFactor);
+    return { totalCost, recipe, pieces: target, aggregateFactor };
+  }
+
+  repairAllTools(toolId, level, maxCount) {
+    const data = this.getRepairAllCosts(toolId, level);
+    if (!data) {
       this.showNotification('没有需要修复的装备');
       return 0;
     }
-    if (!this.canAfford(totalCost)) {
-      this.showNotification('材料不足，无法修复全部');
+    const { totalCost, recipe, pieces, aggregateFactor } = data;
+    let targetPieces = pieces;
+    if (maxCount != null && maxCount > 0 && maxCount < pieces.length) {
+      targetPieces = pieces.slice(0, maxCount);
+      let aggMissing = 0, aggMax = 0;
+      targetPieces.forEach(p => {
+        const info = this.getPieceRepairFactor(toolId, p);
+        if (!info) return;
+        aggMissing += info.missing * info.max;
+        aggMax += info.max;
+      });
+      if (aggMax <= 0) { this.showNotification('没有需要修复的装备'); return 0; }
+      const partialFactor = (GAME_DATA.toolDurability?.repairCostRatio ?? 0.5) * (aggMissing / aggMax);
+      var partialCost = this.computeRepairCostFromFactor(recipe, partialFactor);
+    }
+    const costToUse = partialCost || totalCost;
+    if (!this.canAfford(costToUse)) {
+      this.showNotification('材料不足，无法修复');
       return 0;
     }
+    if (!this.spend(costToUse)) return 0;
+    const batchId = this.state._repairBatchSeq = (this.state._repairBatchSeq || 0) + 1;
+    if (!this.state._repairBatchCosts) this.state._repairBatchCosts = {};
+    this.state._repairBatchCosts[batchId] = { ...costToUse };
     let n = 0;
     let queuedSwap = 0;
-    plans.forEach(({ piece }) => {
+    targetPieces.forEach((piece) => {
       if (this.isRaidCombatActive?.() && this.isPieceRaidRepairBlocked?.(toolId, piece)) {
         if (this.tryEnqueueRaidGearRepair?.(toolId, piece)) queuedSwap += 1;
         return;
       }
-      n += this.placeRepairOrder(toolId, level, piece.id, { silent: true, allowDuringRaid: true });
+      if (!piece || piece.repairing) return;
+      piece.warehoused = false;
+      this.removePendingAutoRepair(toolId, piece.id);
+      const repairClicks = this.getRepairClicks(recipe, aggregateFactor);
+      if (!Array.isArray(this.state.craftOrderQueue)) this.state.craftOrderQueue = [];
+      if (this.state.craftOrderSeq == null) this.state.craftOrderSeq = 0;
+      const order = {
+        id: this.state.craftOrderSeq++,
+        kind: 'repair',
+        recipeId: recipe.id,
+        toolId,
+        level: Number(level),
+        pieceId: piece.id,
+        count: 1,
+        progress: 0,
+        repairClicks,
+        paidCost: {},
+        autoProduced: false,
+        repairBatchId: batchId,
+      };
+      piece.repairing = true;
+      piece.repairOrderId = order.id;
+      this.state.craftOrderQueue.push(order);
+      n++;
     });
     if (n > 0 || queuedSwap > 0) {
       const parts = [];
@@ -4262,7 +4374,13 @@ class FactoryGame {
 
     const cost = this.computeRepairCostFromFactor(recipe, info.factor);
     if (!Object.keys(cost).length || !this.canAfford(cost)) {
-      this.warehousePieceAwaitingRepair(toolId, piece, { alert: true });
+      // 如果有同类型工具已在维修队列或待修中，不重复提醒
+      const alreadyHandled = this.getToolPiecesList(toolId).some(p =>
+        p.id !== piece.id && (p.repairing || p.warehoused || p._pendingRaidRepair)
+      ) || (this.state.craftOrderQueue || []).some(o =>
+        o.kind === 'repair' && o.toolId === toolId
+      );
+      this.warehousePieceAwaitingRepair(toolId, piece, { alert: !alreadyHandled });
       return false;
     }
 
@@ -4274,6 +4392,7 @@ class FactoryGame {
     if (placed > 0) {
       this._needToolUiRefresh = true;
       this._needCraftListRefresh = true;
+      this._needStationUiRefresh = true;
     }
     return placed > 0;
   }
@@ -4291,8 +4410,16 @@ class FactoryGame {
     const idx = queue.findIndex((o) => o.id === orderId);
     if (idx < 0) return;
     const order = queue[idx];
-    if (refund && order?.paidCost) {
-      Object.entries(order.paidCost).forEach(([res, amt]) => this.addResource(res, amt));
+    if (refund) {
+      if (order.repairBatchId && this.state._repairBatchCosts?.[order.repairBatchId] != null) {
+        const batchOrders = queue.filter(o => o.repairBatchId === order.repairBatchId && o.id !== order.id);
+        if (batchOrders.length === 0) {
+          Object.entries(this.state._repairBatchCosts[order.repairBatchId] || {}).forEach(([res, amt]) => this.addResource(res, amt));
+          delete this.state._repairBatchCosts[order.repairBatchId];
+        }
+      } else if (order.paidCost) {
+        Object.entries(order.paidCost).forEach(([res, amt]) => this.addResource(res, amt));
+      }
     }
     queue.splice(idx, 1);
   }
@@ -4487,6 +4614,11 @@ class FactoryGame {
       this.save();
     }
 
+    if (this._needStationUiRefresh) {
+      this._needStationUiRefresh = false;
+      this.renderActiveStation();
+    }
+
     if (anyBroken && this._brokenToolsThisTick.length) {
       const list = this._brokenToolsThisTick;
       this.showNotification(
@@ -4628,18 +4760,60 @@ class FactoryGame {
   }
 
   rollChestRewards() {
-    const pool = this.getDiscoveredResourceIds();
-    if (!pool.length) return [{ res: 'wood', amt: 1 }];
-
     const typeRange = this.getChestRewardTypeRange();
-    const numTypes = Math.min(pool.length, this.rollInt(typeRange.min, typeRange.max));
-    const shuffled = [...pool].sort(() => Math.random() - 0.5).slice(0, numTypes);
+    const numTypes = this.rollInt(typeRange.min, typeRange.max);
     const amountRange = this.getChestRewardAmountRange();
+    const cfg = GAME_DATA.treasureChest || {};
+    const qWeights = cfg.qualityWeights || {};
+    const maxQlv = cfg.maxQualityLevel || 5;
+    const qlv = Math.min(maxQlv, this.getPointUpgradeLevel('treasure_chest', 'quality') || 0);
 
-    return shuffled.map(res => ({
-      res,
-      amt: this.rollInt(amountRange.min, amountRange.max),
-    }));
+    // 按品质等级线性插值权重 [food, resource, composite]
+    const w0 = qWeights[0] || [6, 6, 3];
+    const w5 = qWeights[5] || [1, 6, 8];
+    const t = maxQlv > 0 ? qlv / maxQlv : 0;
+    const weights = w0.map((v, i) => v + (w5[i] - v) * t);
+
+    // 分类资源池
+    const discovered = this.getDiscoveredResourceIds();
+    const compositeOutputs = new Set();
+    GAME_DATA.recipes.forEach(r => {
+      if (r.outputs) Object.keys(r.outputs).forEach(id => compositeOutputs.add(id));
+    });
+    const foodPool = ['food'];
+    const rawPool = discovered.filter(id => id !== 'food' && !compositeOutputs.has(id));
+    const compPool = discovered.filter(id => compositeOutputs.has(id));
+    const pools = [foodPool, rawPool, compPool];
+
+    let totalFood = 0;
+    const results = [];
+
+    for (let i = 0; i < numTypes; i++) {
+      const catIdx = this._weightedRandom(weights);
+      const pool = pools[catIdx] || [];
+      if (!pool.length) continue;
+      const res = pool[this.rollInt(0, pool.length - 1)];
+      const amt = this.rollInt(amountRange.min, amountRange.max);
+      if (catIdx === 0) {
+        totalFood += amt;
+      } else {
+        results.push({ res, amt });
+      }
+    }
+
+    if (totalFood > 0) results.unshift({ res: 'food', amt: totalFood });
+    if (!results.length) results.push({ res: 'wood', amt: 1 });
+    return results;
+  }
+
+  _weightedRandom(weights) {
+    const total = weights.reduce((s, w) => s + w, 0);
+    let r = Math.random() * total;
+    for (let i = 0; i < weights.length; i++) {
+      r -= weights[i];
+      if (r <= 0) return i;
+    }
+    return weights.length - 1;
   }
 
   tryChestDrop(fromPointId) {
@@ -5139,10 +5313,20 @@ class FactoryGame {
     return total;
   }
 
-  /** 有效空闲劳动力 = 有效总劳动力 - 已分配人数（分配按人头计） */
+  /** 有效空闲劳动力 = 有效总劳动力 - 已分配的有效劳动力 */
   getEffectiveUnassigned() {
+    const ages = this.state.villagerAges || [];
     const assigned = (this.state.workers.total || 0) - (this.state.workers.unassigned || 0);
-    return Math.max(0, this.getEffectiveWorkforce() - assigned);
+    let effectiveAssigned = 0;
+    let count = 0;
+    for (const entry of ages) {
+      if (count >= assigned) break;
+      if (this.isVillagerInfant(entry)) { count++; continue; }
+      if (this.isVillagerGrowing(entry)) effectiveAssigned += 0.5;
+      else effectiveAssigned += 1;
+      count++;
+    }
+    return Math.max(0, this.getEffectiveWorkforce() - effectiveAssigned);
   }
 
   getHouseLevelLabel(level) {
@@ -5947,7 +6131,10 @@ class FactoryGame {
       // 连续第二次挨饿的原饥饿村民 → 死亡；其余挨饿村民进入/保持饥饿
       deaths = Math.min(newHungry, prevHungry);
       hungry = newHungry - deaths;
-      if (deaths > 0) this.applyStarvation(deaths);
+      if (deaths > 0) {
+        this.applyStarvation(deaths);
+        this.rebalanceWorkersAfterDeath();
+      }
       this.state.hungryCount = Math.min(hungry, this.state.workers.total || 0);
       hungry = this.getHungryCount();
     }
@@ -6033,6 +6220,58 @@ class FactoryGame {
     }
   }
 
+  /** 村民减少后重新平衡岗位：从最后分配的岗位开始缩减 */
+  rebalanceWorkersAfterDeath() {
+    const total = this.state.workers.total || 0;
+    const effWorkforce = this.getEffectiveWorkforce();
+    // 实际统计各岗位人数
+    const stations = [];
+    let totalAssigned = 0;
+    Object.keys(GAME_DATA.resourcePoints).forEach(id => {
+      const st = this.getStationState('point', id);
+      if (st && (st.assignedWorkers || 0) > 0) {
+        stations.push({ type: 'point', id, assigned: st.assignedWorkers, seq: st._assignSeq || 0 });
+        totalAssigned += st.assignedWorkers;
+      }
+    });
+    const cw = this.state.workers?.craftWorkers || 0;
+    totalAssigned += cw;
+
+    if (totalAssigned <= effWorkforce) return;
+
+    // 按序号升序排列（先分配的在前），从末尾开始缩减
+    stations.sort((a, b) => a.seq - b.seq);
+
+    let excess = totalAssigned - effWorkforce;
+
+    // 先减采集点（从最后分配的开始）
+    for (let i = stations.length - 1; i >= 0 && excess > 0; i--) {
+      const s = stations[i];
+      const st = this.getStationState(s.type, s.id);
+      if (!st) continue;
+      const take = Math.min(excess, st.assignedWorkers || 0);
+      if (take <= 0) continue;
+      st.assignedWorkers -= take;
+      excess -= take;
+      const key = this.stationKey(s.type, s.id);
+      if (this.state.workerLayout) this.state.workerLayout[key] = st.assignedWorkers;
+      this.state.workers.unassigned = (this.state.workers.unassigned || 0) + take;
+    }
+
+    // 再减全局生产工人
+    if (excess > 0 && cw > 0) {
+      const fromCraft = Math.min(excess, cw);
+      this.state.workers.craftWorkers = cw - fromCraft;
+      excess -= fromCraft;
+      this.state.workers.unassigned = (this.state.workers.unassigned || 0) + fromCraft;
+    }
+
+    // 确保 unassigned 不超过 total
+    if (this.state.workers.unassigned > total) {
+      this.state.workers.unassigned = total;
+    }
+  }
+
   applyStarvation(count) {
     let remaining = Math.min(count, this.state.workers.total || 0);
     if (remaining <= 0) return 0;
@@ -6041,32 +6280,6 @@ class FactoryGame {
     const fromIdle = Math.min(remaining, this.state.workers.unassigned || 0);
     this.state.workers.unassigned -= fromIdle;
     remaining -= fromIdle;
-
-    if (remaining > 0) {
-      const stations = [
-        ...Object.keys(GAME_DATA.resourcePoints).map(id => ({ type: 'point', id })),
-      ];
-      for (const { type, id } of stations) {
-        if (remaining <= 0) break;
-        const st = this.getStationState(type, id);
-        if (!st || !(st.assignedWorkers > 0)) continue;
-        const take = Math.min(remaining, st.assignedWorkers);
-        st.assignedWorkers -= take;
-        remaining -= take;
-        const key = this.stationKey(type, id);
-        if (this.state.workerLayout) {
-          this.state.workerLayout[key] = st.assignedWorkers;
-        }
-      }
-    }
-
-    // 饥饿优先减少生产工人和订单分配
-    if (remaining > 0) {
-      const cw = this.state.workers?.craftWorkers || 0;
-      const fromCraft = Math.min(remaining, cw);
-      this.state.workers.craftWorkers = Math.max(0, cw - fromCraft);
-      remaining -= fromCraft;
-    }
 
     this.state.workers.total = Math.max(0, (this.state.workers.total || 0) - killed);
     if (this.state.workers.unassigned > this.state.workers.total) {
@@ -6754,7 +6967,7 @@ class FactoryGame {
 
   runGameSimulation(dt) {
     if (dt <= 0 || this.state.gameOver || this.shouldFreezeGameTime()) return;
-    const step = 200;
+    const step = 50;
     let remaining = dt;
     while (remaining > 0 && !this.state.gameOver && !this.shouldFreezeGameTime()) {
       const chunk = Math.min(step, remaining);
@@ -7175,6 +7388,8 @@ class FactoryGame {
       const cap = this.getStationWorkerCap(type, id);
       while (st.assignedWorkers < target && this.state.workers.unassigned > 0) {
         if (Number.isFinite(cap) && st.assignedWorkers >= cap) break;
+        const curAssigned = this.state.workers.total - this.state.workers.unassigned;
+        if (curAssigned >= this.getEffectiveWorkforce()) break;
         st.assignedWorkers++;
         this.state.workers.unassigned--;
       }
@@ -7198,7 +7413,12 @@ class FactoryGame {
     const st = this.getStationState(type, id);
     const cap = this.getStationWorkerCap(type, id);
     if (Number.isFinite(cap) && (st.assignedWorkers || 0) >= cap) return false;
-    return (this.state.workers.unassigned || 0) > 0;
+    if ((this.state.workers.unassigned || 0) <= 0) return false;
+    // 检查有效劳动力上限（成长期按0.5计）
+    const assigned = (this.state.workers.total || 0) - (this.state.workers.unassigned || 0);
+    const effWorkforce = this.getEffectiveWorkforce();
+    if (assigned >= effWorkforce) return false;
+    return true;
   }
 
   canDecreaseWorkerAllocation(type, id) {
@@ -7247,8 +7467,11 @@ class FactoryGame {
     if (delta > 0) {
       if (Number.isFinite(cap) && (st.assignedWorkers || 0) >= cap) return false;
       if ((this.state.workers.unassigned || 0) > 0) {
+        const assigned = (this.state.workers.total || 0) - (this.state.workers.unassigned || 0);
+        if (assigned >= this.getEffectiveWorkforce()) return false;
         st.assignedWorkers = (st.assignedWorkers || 0) + 1;
         this.state.workers.unassigned--;
+        st._assignSeq = (this.state._workerAssignSeq = (this.state._workerAssignSeq || 0) + 1);
         if (this.state.workerLayout) this.state.workerLayout[key] = st.assignedWorkers;
         return true;
       }
@@ -7610,6 +7833,41 @@ class FactoryGame {
     const app = document.getElementById('app');
     if (app) {
       app.addEventListener('pointerdown', (e) => this.capturePointerActionFromEvent(e), true);
+    }
+
+    // 修复全部悬浮提示
+    if (app) {
+      app.addEventListener('pointerover', (e) => {
+        const wrap = e.target.closest?.('.repair-all-wrap');
+        if (!wrap) return;
+        const related = e.relatedTarget?.closest?.('.repair-all-wrap');
+        if (related === wrap) return;
+        const btn = wrap.querySelector('.btn-repair-all-tools');
+        const tooltip = wrap.querySelector('.repair-all-tooltip');
+        if (!btn || !tooltip) return;
+        const toolId = btn.dataset.toolId;
+        const level = Number(btn.dataset.toolLevel);
+        const data = this.getRepairAllCosts(toolId, level);
+        if (!data) return;
+        const { pieces, totalCost, aggregateFactor } = data;
+        let html = `<div class="repair-tooltip-summary">共 ${pieces.length} 件 · 平均损耗 ${Math.round(aggregateFactor / (GAME_DATA.toolDurability?.repairCostRatio ?? 0.5) * 100)}%</div>`;
+        const totalStr = Object.entries(totalCost)
+          .map(([res, amt]) => `${this.formatResourceIcon(res)}${this.formatNumber(amt)}`)
+          .join(' ');
+        html += `<div class="repair-tooltip-total">合计：${totalStr}</div>`;
+        tooltip.querySelector('.repair-all-tooltip-cost').innerHTML = html;
+        const canAfford = this.canAfford(data.totalCost);
+        tooltip.querySelector('.btn-repair-partial')?.classList.toggle('hidden', canAfford);
+        tooltip.classList.remove('hidden');
+      }, true);
+      app.addEventListener('pointerout', (e) => {
+        const wrap = e.target.closest?.('.repair-all-wrap');
+        if (!wrap) return;
+        const related = e.relatedTarget?.closest?.('.repair-all-wrap');
+        if (related === wrap) return;
+        const tooltip = wrap.querySelector('.repair-all-tooltip');
+        if (tooltip) tooltip.classList.add('hidden');
+      }, true);
     }
 
     document.addEventListener('keydown', (e) => {
@@ -8864,6 +9122,31 @@ class FactoryGame {
         return;
       }
 
+      const repairPartBtn = e.target.closest('.btn-repair-partial');
+      if (repairPartBtn) {
+        const wrap = repairPartBtn.closest('.repair-all-wrap');
+        const tooltip = wrap?.querySelector('.repair-all-tooltip');
+        const toolId = repairPartBtn.dataset.toolId;
+        const level = Number(repairPartBtn.dataset.toolLevel);
+        const pieces = this.getRepairablePieces(toolId, level);
+        if (pieces.length) {
+          let lo = 1, hi = pieces.length, best = 0;
+          while (lo <= hi) {
+            const mid = (lo + hi) >> 1;
+            const info = this.getRepairAllCostsForCount(toolId, level, mid);
+            if (info && this.canAfford(info.totalCost)) { best = mid; lo = mid + 1; } else hi = mid - 1;
+          }
+          if (best > 0) {
+            this.repairAllTools(toolId, level, best);
+            if (tooltip) tooltip.classList.add('hidden');
+          } else {
+            this.showNotification('材料不足，无法修复任何装备');
+          }
+        }
+        return;
+      }
+
+
       const repairToolBtn = e.target.closest('.btn-repair-tool');
       if (repairToolBtn && !repairToolBtn.disabled) {
         this.repairAllTools(repairToolBtn.dataset.toolId, Number(repairToolBtn.dataset.toolLevel));
@@ -9397,6 +9680,10 @@ class FactoryGame {
     this.updateHeaderFoodDisplay();
     this.updateCalendarDisplay();
 
+    // 周期检查待修队列与自动生产
+    this.drainPendingAutoRepairs();
+    this._scanAutoProduceConditions();
+
     if (this._needToolUiRefresh && (this.state.activeTab === 'tools' || this.state.activeTab === 'weapons')) {
       this._needToolUiRefresh = false;
       this._needToolDurabilityPaint = false;
@@ -9842,6 +10129,12 @@ class FactoryGame {
     }
     if (gatherTitle) {
       gatherTitle.classList.toggle('unlock-flash-menu', this.shouldFlashUnlockSection('gather'));
+    }
+
+    const cwCountEl = document.getElementById('craft-worker-count');
+    if (cwCountEl) {
+      const cw = this.state.workers?.craftWorkers || 0;
+      cwCountEl.textContent = cw > 0 ? `🧑${cw}` : '';
     }
 
     let hasCraft = this.getCraftRecipesUnlocked().length > 0;
@@ -10487,7 +10780,7 @@ class FactoryGame {
   }
 
   /** 合成/工具共用的订单卡片 */
-  createCraftOrderCard(recipe) {
+  createCraftOrderCard(recipe, hideHint, displayName) {
     const canCraftOne = this.canAffordCraft(recipe.id, 1);
     const st = this.state.craftStations[recipe.id];
     if (!st) return null;
@@ -10527,7 +10820,13 @@ class FactoryGame {
               title="耐久百分比低于此值时自动排队修复">
             <span class="craft-auto-threshold-unit">%</span>
           </span>
-          <button type="button" class="btn-repair-all-tools" data-tool-id="${toolId}" data-tool-level="${toolLevel}">修复全部</button>
+          <span class="repair-all-wrap">
+            <button type="button" class="btn-repair-all-tools" data-tool-id="${toolId}" data-tool-level="${toolLevel}">修复全部</button>
+            <div class="repair-all-tooltip hidden" data-tool-id="${toolId}" data-tool-level="${toolLevel}">
+              <div class="repair-all-tooltip-cost"></div>
+              <button type="button" class="btn-repair-partial hidden" data-tool-id="${toolId}" data-tool-level="${toolLevel}">修复部分</button>
+            </div>
+          </span>
         </div>`;
     } else {
       autoControlsHtml = `
@@ -10551,17 +10850,18 @@ class FactoryGame {
 
     el.innerHTML = `
       <div class="craft-overview-header">
-        <span>${window.tribeIconStr ? window.tribeIconStr(recipe.icon) : recipe.icon} ${recipe.name}${toolLevelTag}${queueCount > 0 ? ` <small class="craft-queue-inline">×${queueCount}</small>` : ''}</span>
+        <span>${window.tribeIconStr ? window.tribeIconStr(recipe.icon) : recipe.icon} ${displayName || recipe.name}${displayName || hideHint ? '' : toolLevelTag}${queueCount > 0 ? ` <small class="craft-queue-inline">×${queueCount}</small>` : ''}</span>
         ${autoControlsHtml}
       </div>
       <div class="craft-overview-recipe">${this.formatRecipeLine(recipe)}</div>
-      <div class="craft-order-hint">生产即扣材料 · ${window.tribeIconStr ? window.tribeIconStr('🧑') : '🧑'}${this.state.workers?.craftWorkers || 0}</div>
+      <div class="craft-order-hint" ${hideHint ? 'style="display:none"' : ''}>生产即扣材料 · ${window.tribeIconStr ? window.tribeIconStr('🧑') : '🧑'}${this.state.workers?.craftWorkers || 0}</div>
       <div class="craft-actions craft-produce-actions">
         <div class="craft-produce-input-wrap">
           <span class="craft-produce-label">生产</span>
           <input type="number" class="craft-produce-input" data-recipe-id="${recipe.id}" min="1" value="1" inputmode="numeric">
         </div>
         <button type="button" class="btn-craft btn-craft-produce-confirm" data-recipe-id="${recipe.id}" ${canCraftOne ? '' : 'disabled'}>确定</button>
+        <span class="craft-count-hint">需${this.getMaxCount('recipe', recipe.id)}次</span>
       </div>
     `;
     return el;
@@ -10621,7 +10921,6 @@ class FactoryGame {
 
       anyShown = true;
       const total = this.getToolCount(id);
-      const highestShown = levels[levels.length - 1].lv;
       const targets = (def.targets || [])
         .map(pid => GAME_DATA.resourcePoints[pid]?.name)
         .filter(Boolean)
@@ -10639,7 +10938,6 @@ class FactoryGame {
       info.className = 'tool-info';
       info.innerHTML = `
         <div class="tool-name">${def.name} <strong>共 ${total}</strong>
-          <small class="level-tag">当前可见 ${this.formatUpgradeLevel(highestShown, max)}</small>
         </div>
         <div class="tool-desc">${
           def.combat && targets
@@ -10661,7 +10959,7 @@ class FactoryGame {
           block.innerHTML = `
             <div class="tool-level-row" data-tool-id="${id}" data-tool-level="${lv}">
               <div class="tool-level-main">
-                <span>${def.icon} ${name} <small class="level-tag">${this.formatUpgradeLevel(lv, max)}</small></span>
+                <span>${def.icon} ${name}</span>
                 <span>×0</span>
                 <span class="tool-level-speed">${
                   def.combat && targets
@@ -10693,7 +10991,7 @@ class FactoryGame {
           block.innerHTML = `
             <div class="tool-level-row has-stock ${pct < 35 ? 'durability-low' : ''}" data-tool-id="${id}" data-tool-level="${lv}">
               <div class="tool-level-main">
-                <span>${def.icon} ${name} <small class="level-tag">${this.formatUpgradeLevel(lv, max)}</small></span>
+                <span>${def.icon} ${name}</span>
                 <span class="tool-level-count">${countLabel}</span>
                 <span class="tool-level-speed">${
                   def.combat && targets
@@ -10714,7 +11012,7 @@ class FactoryGame {
         if (recipe) {
           const craftWrap = document.createElement('div');
           craftWrap.className = 'tool-level-craft';
-          const card = this.createCraftOrderCard(recipe);
+          const card = this.createCraftOrderCard(recipe, true, name);
           if (card) craftWrap.appendChild(card);
           block.appendChild(craftWrap);
         }

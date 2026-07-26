@@ -1880,6 +1880,7 @@
       const pop = this.state.workers.total || 0;
       this.state.workers.total = Math.max(0, pop - died);
       this.state.workers.unassigned = Math.min(this.state.workers.unassigned || 0, this.state.workers.total);
+      this.rebalanceWorkersAfterDeath();
       this.pushRaidLog(`😵 ${died} 名村民在战斗中牺牲`);
     }
     // -----------------------------
@@ -1951,6 +1952,7 @@
       const pop = this.state.workers.total || 0;
       this.state.workers.total = Math.max(0, pop - died);
       this.state.workers.unassigned = Math.min(this.state.workers.unassigned || 0, this.state.workers.total);
+      this.rebalanceWorkersAfterDeath();
       this.pushRaidLog(`😵 ${died} 名村民在战斗中牺牲`);
     }
 
@@ -1990,22 +1992,13 @@
     if (loseN > 0) {
       this.state.workers.total = Math.max(0, (this.state.workers.total || 0) - loseN);
       this.state.workers.unassigned = Math.min(this.state.workers.unassigned || 0, this.state.workers.total);
+      this.rebalanceWorkersAfterDeath();
       // 同步清理年龄记录
       if (Array.isArray(this.state.villagerAges)) {
         while (this.state.villagerAges.length > (this.state.workers.total || 0)) {
           this.state.villagerAges.pop();
         }
       }
-      // 清掉超编岗
-      Object.values(this.state.resourcePoints || {}).forEach(pt => {
-        if ((pt.assignedWorkers || 0) > 0) {
-          const take = Math.min(pt.assignedWorkers, loseN);
-          // 简化：全部收回后按布局恢复
-          pt.assignedWorkers = 0;
-        }
-      });
-      Object.values(this.state.craftStations || {}).forEach(st => { st.assignedWorkers = 0; });
-      this.state.workers.unassigned = this.state.workers.total;
     }
     this.state.resources.food = Math.max(0, (this.state.resources.food || 0) - (pen.foodPanicExtra || 0));
   };

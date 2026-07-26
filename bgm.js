@@ -346,10 +346,10 @@
       return h >= 18 && h < 22;
     }
 
-    /** 夜间轨是否应播放（19:00~6:00） */
+    /** 夜间轨是否应播放（19:00~22:00，22:00 后由休息轨替代） */
     _shouldNightPlay() {
       const h = this._getHours();
-      return h >= 19 || h < 6;
+      return h >= 19 && h < 22;
     }
 
     /** 休息轨是否应播放（22:00~6:00） */
@@ -478,8 +478,8 @@
         // 战斗期间独占播放；预警期间暂停白天/黄昏，只保留袭击音轨
         const dayShouldPlay = dayActive && !suspActive && !fightActive;
         const duskShouldPlay = duskActive && !suspActive && !fightActive;
-        const nightShouldPlay = nightActive && !fightActive;
-        const restShouldPlay = restActive && !fightActive;
+        const nightShouldPlay = nightActive && !suspActive && !fightActive;
+        const restShouldPlay = restActive && !suspActive && !fightActive;
         const suspShouldPlay = suspActive && !fightActive;
 
         const calDay = Number(this._owner.state?.day) || 1;
