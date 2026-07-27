@@ -182,9 +182,9 @@
     }
 
     /**
-     * 切轨前音量倍率：以 1× 下「最后 0.5 游戏小时」为基准，并按当前倍速拉长游戏时间窗口，
-     * 使真实经过时间大致不变（4× 时约提前 2 游戏小时开始渐弱），避免高速下跳过渐弱。
-     * 最低 = 设置目标音量 × 20%。
+     * 切轨前音量倍率：以 1× 下「最后 0.5 游戏小时」为基准（5:30 / 17:30 / 21:30 起），
+     * 并按当前倍速拉长游戏时间窗口，使真实经过时间大致不变。
+     * 曲线用立方，半窗内就明显变小；最低 = 设置目标音量 × 20%。
      */
     _getGameTimeScale() {
       try {
@@ -201,30 +201,40 @@
       const MIN_HOLD_H = Math.min(FADE_START_H * 0.25, (5 / 60) * scale);
       const MIN_MUL = 0.2;
       const h = Number(hoursUntilEnd);
-      if (!Number.isFinite(h) || h >= FADE_START_H) return 1;
+      if (!Number.isFinite(h) || h > FADE_START_H) return 1;
       if (h <= MIN_HOLD_H || FADE_START_H <= MIN_HOLD_H) return MIN_MUL;
+      // t: 1 刚进入渐弱窗 → 0 到达最低保持；立方使前半段就明显变小
       const t = (h - MIN_HOLD_H) / (FADE_START_H - MIN_HOLD_H);
-      return MIN_MUL + t * (1 - MIN_MUL);
+      const shaped = t * t * t;
+      return MIN_MUL + shaped * (1 - MIN_MUL);
     }
 
-    /** 各时段音轨距结束的小时数；非渐弱轨返回 null */
+    /**
+     * 各时段音轨距结束的小时数。
+     * 已过结束点但音轨尚未停时返回 0（保持最低渐弱），切勿返回 null，
+     * 否则倍率会回到 1，出现「切轨前突然拉回满音」。
+     */
     _hoursUntilSlotEnd(slotKey) {
       const now = this._getHoursFloat();
       if (slotKey === '_dayAudio' || slotKey === '_dayAltAudio') {
-        if (!(now >= 6 && now < 18)) return null;
-        return 18 - now;
+        if (now >= 6 && now < 18) return 18 - now;
+        if (this[slotKey] && now >= 18) return 0;
+        return null;
       }
       if (slotKey === '_duskAudio') {
-        if (!(now >= 18 && now < 22)) return null;
-        return 22 - now;
+        if (now >= 18 && now < 22) return 22 - now;
+        if (this[slotKey] && now >= 22) return 0;
+        return null;
       }
       if (slotKey === '_nightAudio') {
-        if (!(now >= 19 || now < 6)) return null;
-        return this._hoursUntilClock(6, now);
+        if (now >= 19 || now < 6) return this._hoursUntilClock(6, now);
+        if (this[slotKey] && now >= 6 && now < 19) return 0;
+        return null;
       }
       if (slotKey === '_restAudio') {
-        if (!(now >= 22 || now < 6)) return null;
-        return this._hoursUntilClock(6, now);
+        if (now >= 22 || now < 6) return this._hoursUntilClock(6, now);
+        if (this[slotKey] && now >= 6 && now < 22) return 0;
+        return null;
       }
       return null;
     }
@@ -490,6 +500,9 @@
         return;
       }
       try {
+        // 先按当前时刻压低即将结束的轨，再判切轨，避免过点后音量被短暂拉回满音
+        this._syncPeriodEndVolumes();
+
         const dayActive = this._shouldDayPlay();
         const duskActive = this._shouldDuskPlay();
         const nightActive = this._shouldNightPlay();

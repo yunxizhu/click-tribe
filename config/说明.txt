@@ -1,9 +1,11 @@
 外置游戏配置（开发与打包共用）
 
-  tool-recipes.js     — 工具/武器/护甲制作配方、持工具效率(TOOL_EFFICIENCY)、工具耐久(TOOL_DURABILITY)
-  resource-points.js  — 各资源点初始计数值(baseMaxCount)与冷却(baseCooldown)
-  combat-units.js     — 敌我单位、武器表、铠甲、波次
-  tech-tree-table.js  — 科技树布局 / 依赖 / 费用
+  tool-recipes.js         — 工具/武器/护甲制作配方、持工具效率(TOOL_EFFICIENCY)、工具耐久(TOOL_DURABILITY)
+  resource-points.js      — 资源点完整定义（名称/解锁/产量/冷却/升级上限等）
+  point-upgrade-costs.js  — 各资源点采集/资源恢复/精炼升级费用
+  combat-units.js         — 敌我单位、铠甲、波次
+  tech-tree-table.js      — 科技树布局 / 依赖 / 费用（覆盖 data.js 中已有科技；名称/图标等仍在 data.js）
+  gameplay.js             — 通用玩法数值（如生产订单完成后冷却 craftOrderCooldownMs）
 
 打包后这些文件会出现在 exe 同级的 config/ 下，可单独替换。
 

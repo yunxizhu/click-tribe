@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>点击部落</title>
-  <link rel="stylesheet" href="style.css?v=20260727.1">
+  <link rel="stylesheet" href="style.css?v=20260727.2">
 </head>
 <body>
   <!-- 启动壳：加载 → 主菜单（盖住游戏） -->
@@ -29,15 +29,15 @@
           <div class="main-menu-title-line mm-reveal" aria-hidden="true"></div>
         </div>
         <div class="main-menu-home" id="main-menu-home">
-          <div class="main-menu-actions">
-          <button type="button" class="main-menu-btn mm-reveal" id="mm-start">新游戏</button>
-          <button type="button" class="main-menu-btn mm-reveal" id="mm-load">加载存档</button>
-          <button type="button" class="main-menu-btn mm-reveal" id="mm-settings">设置</button>
-          <button type="button" class="main-menu-btn mm-reveal" id="mm-achievements">成就</button>
-          <button type="button" class="main-menu-btn mm-reveal" id="mm-dev">开发人员</button>
-          <button type="button" class="main-menu-btn mm-reveal" id="mm-quit">退出游戏</button>
+          <div class="main-menu-actions mm-reveal">
+            <button type="button" class="main-menu-btn" id="mm-start">新游戏</button>
+            <button type="button" class="main-menu-btn" id="mm-load">加载存档</button>
+            <button type="button" class="main-menu-btn" id="mm-settings">设置</button>
+            <button type="button" class="main-menu-btn" id="mm-achievements">成就</button>
+            <button type="button" class="main-menu-btn" id="mm-dev">开发人员</button>
+            <button type="button" class="main-menu-btn" id="mm-quit">退出游戏</button>
+          </div>
         </div>
-      </div>
 
       <div class="main-menu-panel pause-menu-wide hidden" id="main-menu-settings">
         <div class="pause-sub-header">
@@ -117,8 +117,8 @@
         <button type="button" class="pause-menu-back" id="mm-achievements-back">返回</button>
       </div>
 
-      <p class="main-menu-version mm-reveal" id="main-menu-version">v20260727.1</p>
-      <button type="button" class="bgm-now-btn main-menu-bgm-now" id="mm-bgm-now" title="点击切换 BGM" aria-label="当前音乐，点击切换">
+      <p class="main-menu-version mm-reveal" id="main-menu-version">v20260727.2</p>
+      <button type="button" class="bgm-now-btn main-menu-bgm-now mm-reveal" id="mm-bgm-now" title="点击切换 BGM" aria-label="当前音乐，点击切换">
         <span class="bgm-now-icon" aria-hidden="true"><span class="bgm-disc"></span></span>
         <span class="bgm-now-marquee"><span class="bgm-now-text">—</span></span>
       </button>
@@ -126,6 +126,8 @@
   </div>
 
   <!-- 难度选择：在主菜单确认后、进游戏前（也可用于重置） -->
+
+  <div id="scene-blackout" class="scene-blackout hidden" aria-hidden="true"></div>
   <div id="difficulty-select" class="defense-intro boot-overlay hidden">
     <div class="defense-intro-dialog">
       <h3>选择难度</h3>
