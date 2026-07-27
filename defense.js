@@ -1562,7 +1562,7 @@
         pos.x = Math.max(0, Math.min(fieldLen, pos.x + Math.sign(dx) * step));
         left.push(uid);
       }
-      const el = container?.querySelector(`.bf-unit[data-unit-id="${uid}"]`);
+      const el = this._queryBattleUnitEl(uid) || container?.querySelector(`.bf-unit[data-unit-id="${uid}"]`);
       if (el) {
         el.classList.add('is-recalling');
         this._applyUnitDomPos(el, pos.x, pos.y || 0);
@@ -2030,6 +2030,25 @@
     return false;
   };
 
+  /** 属性选择器用：避免 CSS.escape 缺失或异常 ID 抛错卡死动画帧 */
+  P._cssEscape = function _cssEscape(value) {
+    const s = String(value ?? '');
+    try {
+      if (typeof CSS !== 'undefined' && typeof CSS.escape === 'function') return CSS.escape(s);
+    } catch (_) { /* fall through */ }
+    return s.replace(/[^a-zA-Z0-9_-]/g, (ch) => `\\${ch}`);
+  };
+
+  /** 查询战场单位 DOM */
+  P._queryBattleUnitEl = function _queryBattleUnitEl(unitId) {
+    if (unitId == null || unitId === '') return null;
+    try {
+      return document.querySelector(`#battle-embed-units .bf-unit[data-unit-id="${this._cssEscape(unitId)}"]`);
+    } catch (_) {
+      return null;
+    }
+  };
+
   /**
    * 用 rAF 按显示器刷新率推进单位位移，避免 10Hz 逻辑 tick 造成高速单位卡顿。
    * dt 约定与 processDefense 一致：已含 timeScale 的仿真毫秒。
@@ -2038,29 +2057,39 @@
     if (this._battleAnimRaf) return;
     if (!this._battleAnimNeeds()) return;
     const frame = (ts) => {
-      if (!this._battleAnimNeeds()) {
-        this._battleAnimRaf = null;
-        this._battleAnimLastTs = 0;
-        return;
-      }
-
-      const last = this._battleAnimLastTs || ts;
-      this._battleAnimLastTs = ts;
-      let wallDt = ts - last;
-      if (!(wallDt > 0) || wallDt > 250) wallDt = 16.67;
-      wallDt = Math.min(64, wallDt);
-
-      if (!this.state?.gameOver && !(this.shouldFreezeGameTime?.() ?? this.paused)) {
-        const simDt = wallDt * (this.timeScale || this.devTimeScale || 1);
-        this.processUnitMoveOrders(simDt);
-        this.processFormationRecall(simDt);
-
-        const raid = this.state?.defense?.raid;
-        if (raid?.phase === 'combat') {
-          // 战斗位移也按帧推进；胜负/修门仍由 100ms processDefense 判定
-          this.processCombatTick(simDt);
-          this.updateBattleScreenVisuals();
+      // 先清空句柄：帧内抛错时也能被后续 kick 重新拉起，避免界面永久卡死
+      this._battleAnimRaf = null;
+      try {
+        if (!this._battleAnimNeeds()) {
+          this._battleAnimLastTs = 0;
+          return;
         }
+
+        const last = this._battleAnimLastTs || ts;
+        this._battleAnimLastTs = ts;
+        let wallDt = ts - last;
+        if (!(wallDt > 0) || wallDt > 250) wallDt = 16.67;
+        wallDt = Math.min(64, wallDt);
+
+        if (!this.state?.gameOver) {
+          const simDt = wallDt * (this.timeScale || this.devTimeScale || 1);
+          const frozen = !!(this.shouldFreezeGameTime?.() ?? this.paused);
+          // 右键/列阵移动与回城：日历冻结时也要推进，否则指令残留会卡住战场刷新
+          this.processUnitMoveOrders(simDt);
+          this.processFormationRecall(simDt);
+
+          const raid = this.state?.defense?.raid;
+          if (!frozen && raid?.phase === 'combat') {
+            // 战斗位移也按帧推进；胜负/修门仍由 100ms processDefense 判定
+            this.processCombatTick(simDt);
+            this.updateBattleScreenVisuals();
+          }
+        }
+      } catch (err) {
+        console.warn('[battle-anim]', err);
+        this._formationBusy = false;
+        this._draggingUnitId = null;
+        this._draggingUnitIds = null;
       }
 
       // 保持 _battleAnimRaf 非空直到确认不再需要，避免与 processDefense 叠 tick
@@ -2555,7 +2584,7 @@
       const key = u.soldierId || u.id;
       if (!key) return;
       d.unitPositions[key] = { x: u.x, y: u.y || 0 };
-      const el = document.querySelector(`#battle-embed-units .bf-unit[data-unit-id="${CSS.escape(u.id)}"]`);
+      const el = this._queryBattleUnitEl(u.id);
       if (el) this._applyUnitDomPos(el, u.x, u.y || 0);
     });
   };
@@ -2607,7 +2636,7 @@
       const postDef = POST_DEFS.find(p => p.id === m[1]);
       if (postDef) return postDef.role || 'melee';
     }
-    const el = document.querySelector(`#battle-embed-units .bf-unit[data-unit-id="${CSS.escape(unitId)}"]`);
+    const el = this._queryBattleUnitEl(unitId);
     return el?.dataset.role || 'melee';
   };
 
@@ -2642,7 +2671,7 @@
     if (d.unitPositions[unitId]) {
       return { x: d.unitPositions[unitId].x, y: d.unitPositions[unitId].y || 0 };
     }
-    const el = document.querySelector(`#battle-embed-units .bf-unit[data-unit-id="${CSS.escape(unitId)}"]`);
+    const el = this._queryBattleUnitEl(unitId);
     const fieldLen = GAME_DATA.defense?.fieldLength || 100;
     if (!el) return { x: (GAME_DATA.defense?.wallX || 10) - 1, y: 0 };
     return {
@@ -2688,7 +2717,7 @@
       if (!d.unitPositions) d.unitPositions = {};
       d.unitPositions[unitId] = pos;
     }
-    const el = document.querySelector(`#battle-embed-units .bf-unit[data-unit-id="${CSS.escape(unitId)}"]`);
+    const el = this._queryBattleUnitEl(unitId);
     if (el) this._applyUnitDomPos(el, pos.x, pos.y);
     return pos;
   };
@@ -2754,27 +2783,32 @@
     const arrived = [];
 
     ids.forEach((id) => {
-      const order = this._moveOrders[id];
-      if (!order) return;
-      const pos = this._readUnitBattlePos(id);
-      const speed = this._getUnitMoveSpeed(id) * realSec * timeScale;
-      const dx = order.x - pos.x;
-      const dy = order.y - pos.y;
-      const dist = Math.hypot(dx, dy);
-      if (dist <= arriveEps || speed >= dist) {
-        // 精确落到预定格，途中不做碰撞打断
-        this._writeUnitBattlePos(id, order.x, order.y, { resolveOverlap: false });
+      try {
+        const order = this._moveOrders[id];
+        if (!order) return;
+        const pos = this._readUnitBattlePos(id);
+        const speed = this._getUnitMoveSpeed(id) * realSec * timeScale;
+        const dx = order.x - pos.x;
+        const dy = order.y - pos.y;
+        const dist = Math.hypot(dx, dy);
+        if (dist <= arriveEps || speed >= dist) {
+          // 精确落到预定格，途中不做碰撞打断
+          this._writeUnitBattlePos(id, order.x, order.y, { resolveOverlap: false });
+          arrived.push(id);
+          return;
+        }
+        const nx = pos.x + (dx / dist) * speed;
+        const ny = pos.y + (dy / dist) * speed;
+        this._writeUnitBattlePos(
+          id,
+          Math.max(0, Math.min(fieldLen, nx)),
+          this.clampBattleY(ny),
+          { resolveOverlap: false }
+        );
+      } catch (err) {
+        console.warn('[move-order]', id, err);
         arrived.push(id);
-        return;
       }
-      const nx = pos.x + (dx / dist) * speed;
-      const ny = pos.y + (dy / dist) * speed;
-      this._writeUnitBattlePos(
-        id,
-        Math.max(0, Math.min(fieldLen, nx)),
-        this.clampBattleY(ny),
-        { resolveOverlap: false }
-      );
     });
 
     arrived.forEach((id) => delete this._moveOrders[id]);
@@ -3059,6 +3093,7 @@
     const startY = e.clientY;
     const fieldRect = field.getBoundingClientRect();
     let dragging = false;
+    let finished = false;
     const DRAG_THRESH = 5;
 
     this._formationBusy = true;
@@ -3083,9 +3118,12 @@
     };
 
     const end = (ev) => {
+      if (finished) return;
+      finished = true;
       field.removeEventListener('pointermove', onMove);
       field.removeEventListener('pointerup', end);
       field.removeEventListener('pointercancel', end);
+      field.removeEventListener('lostpointercapture', end);
       try { field.releasePointerCapture(e.pointerId); } catch (_) { /* ignore */ }
       marquee.classList.remove('active');
       marquee.style.width = '0';
@@ -3095,37 +3133,43 @@
       const endX = ev?.clientX ?? startX;
       const endY = ev?.clientY ?? startY;
 
-      if (dragging) {
-        const left = Math.min(startX, endX);
-        const right = Math.max(startX, endX);
-        const top = Math.min(startY, endY);
-        const bottom = Math.max(startY, endY);
-        const hit = [];
-        document.querySelectorAll('#battle-embed-units .bf-unit[data-is-ally="1"]').forEach((el) => {
-          const r = el.getBoundingClientRect();
-          const cx = (r.left + r.right) / 2;
-          const cy = (r.top + r.bottom) / 2;
-          if (cx >= left && cx <= right && cy >= top && cy <= bottom) {
-            hit.push(el.dataset.unitId);
+      try {
+        if (dragging) {
+          const left = Math.min(startX, endX);
+          const right = Math.max(startX, endX);
+          const top = Math.min(startY, endY);
+          const bottom = Math.max(startY, endY);
+          const hit = [];
+          document.querySelectorAll('#battle-embed-units .bf-unit[data-is-ally="1"]').forEach((el) => {
+            const r = el.getBoundingClientRect();
+            const cx = (r.left + r.right) / 2;
+            const cy = (r.top + r.bottom) / 2;
+            if (cx >= left && cx <= right && cy >= top && cy <= bottom) {
+              hit.push(el.dataset.unitId);
+            }
+          });
+          if ((e.shiftKey || e.ctrlKey || e.metaKey) && this._selectedUnitIds?.size) {
+            const next = new Set(this._selectedUnitIds);
+            hit.forEach((id) => next.add(id));
+            this._setFormationSelection([...next]);
+          } else {
+            this._setFormationSelection(hit);
           }
-        });
-        if ((e.shiftKey || e.ctrlKey || e.metaKey) && this._selectedUnitIds?.size) {
-          const next = new Set(this._selectedUnitIds);
-          hit.forEach((id) => next.add(id));
-          this._setFormationSelection([...next]);
-        } else {
-          this._setFormationSelection(hit);
+          return;
         }
-        return;
-      }
 
-      // 单击空白：清空选中
-      this._setFormationSelection([]);
+        // 单击空白：清空选中
+        this._setFormationSelection([]);
+      } catch (err) {
+        console.warn('[formation-box]', err);
+        this._formationBusy = false;
+      }
     };
 
     field.addEventListener('pointermove', onMove);
     field.addEventListener('pointerup', end);
     field.addEventListener('pointercancel', end);
+    field.addEventListener('lostpointercapture', end);
   };
 
   /** 渲染非战斗时的预览单位（不修改 raid.units） */
@@ -3527,14 +3571,14 @@
     _render.call(this);
     this.renderDefenseOverview();
     this.updateRaidStatus();
-    if (!this._draggingUnitId && !this._formationRecalling) this.updateBattleScreen();
+    if (!this._draggingUnitId && !this._formationRecalling && !this._formationBusy) this.updateBattleScreen();
   };
 
   const _tick = P.renderTick;
   P.renderTick = function renderTickDefense() {
     _tick.call(this);
     this.updateRaidStatus();
-    if (!this._draggingUnitId && !this._formationRecalling) this.updateBattleScreen();
+    if (!this._draggingUnitId && !this._formationRecalling && !this._formationBusy) this.updateBattleScreen();
     if (
       this.state.activeTab === 'defense'
       && this.isRaidCombatActive()
