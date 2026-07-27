@@ -5374,6 +5374,9 @@ body.tut-interaction-lock .tutorial-panel {
   word-break: break-all;
   min-height: 2.4em;
 }
+.tech-edit-desc {
+  white-space: pre-line;
+}
 .tech-edit-xy-row {
   display: grid;
   grid-template-columns: 1fr 1fr;
@@ -5419,7 +5422,22 @@ body.tech-edit-mode .tech-node.tech-edit-selected {
   box-shadow: 0 0 16px rgba(78, 205, 196, 0.55);
   z-index: 5;
 }
+body.tech-edit-mode .tech-node.tech-edit-selected-primary {
+  outline-color: #ffd166;
+  box-shadow: 0 0 18px rgba(255, 209, 102, 0.65);
+}
 body.tech-edit-mode .tech-tooltip {
+  display: none !important;
+}
+.tech-edit-marquee {
+  position: absolute;
+  border: 1px dashed rgba(78, 205, 196, 0.95);
+  background: rgba(78, 205, 196, 0.14);
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.08);
+  pointer-events: none;
+  z-index: 12;
+}
+.tech-edit-marquee.hidden {
   display: none !important;
 }
 
@@ -5825,7 +5843,7 @@ body.tech-edit-mode .tech-tooltip {
   left: 0;
 }
 
-/* 主菜单入场：先遮盖 1s 渐显，再标题/按钮在 3s 内自上而下渐显 */
+/* 主菜单入场：遮盖 1s → 标题 2.5s → 停顿 0.5s → 整块按钮区 1.5s */
 .mm-reveal {
   opacity: 0;
   transform: none;
@@ -5856,29 +5874,21 @@ body.tech-edit-mode .tech-tooltip {
   animation: mm-veil-fade-in 1s ease both;
 }
 
-/* 标题/按钮：遮盖完成后（1s）起，在 3s 内自上而下全部显完 */
-.main-menu.mm-enter-play .mm-reveal {
-  animation: mm-fade-in 1.2s ease both;
-}
-
-/* 按钮：各自显完即可点，不必等后面的按钮 */
-.main-menu.mm-enter-play .main-menu-actions .main-menu-btn.mm-reveal {
-  pointer-events: none;
-  animation: mm-btn-enter 1.2s ease both;
-}
-
-.main-menu.mm-enter-play .main-menu-title.mm-reveal { animation-delay: 1s; }
+/* 标题区：遮盖完成后开始，2.5s 渐显（ease-in：后半段才明显显完，避免早早就“显完”却还空等） */
+.main-menu.mm-enter-play .main-menu-title.mm-reveal,
 .main-menu.mm-enter-play .main-menu-title-line.mm-reveal {
-  animation: mm-fade-in 1.2s ease both;
-  animation-delay: 1.2s;
+  animation: mm-fade-in 2.5s ease-in both;
+  animation-delay: 1s;
 }
-.main-menu.mm-enter-play .main-menu-actions .mm-reveal:nth-child(1) { animation-delay: 1.4s; }
-.main-menu.mm-enter-play .main-menu-actions .mm-reveal:nth-child(2) { animation-delay: 1.65s; }
-.main-menu.mm-enter-play .main-menu-actions .mm-reveal:nth-child(3) { animation-delay: 1.9s; }
-.main-menu.mm-enter-play .main-menu-actions .mm-reveal:nth-child(4) { animation-delay: 2.15s; }
-.main-menu.mm-enter-play .main-menu-actions .mm-reveal:nth-child(5) { animation-delay: 2.4s; }
-.main-menu.mm-enter-play .main-menu-actions .mm-reveal:nth-child(6) { animation-delay: 2.65s; }
-.main-menu.mm-enter-play .main-menu-version.mm-reveal { animation-delay: 2.8s; }
+
+/* 按钮区整体：标题动画结束（3.5s）后再隔 0.5s，即 delay 4s */
+.main-menu.mm-enter-play .main-menu-actions.mm-reveal,
+.main-menu.mm-enter-play .main-menu-version.mm-reveal,
+.main-menu.mm-enter-play .main-menu-bgm-now.mm-reveal {
+  pointer-events: none;
+  animation: mm-fade-in 1.5s ease-out both;
+  animation-delay: 4s;
+}
 
 .main-menu.mm-enter-done .main-menu-home::before {
   opacity: 1;
@@ -5896,13 +5906,14 @@ body.tech-edit-mode .tech-tooltip {
   transform: none;
 }
 
-/* 未完成入场的准备态：按钮不可点；入场中由各按钮自身动画控制 */
-.main-menu.mm-enter-prep .main-menu-actions .main-menu-btn,
-.main-menu:not(.mm-enter-play):not(.mm-enter-done) .main-menu-actions .main-menu-btn {
+/* 准备态 / 入场未完成：按钮不可点 */
+.main-menu.mm-enter-prep .main-menu-actions,
+.main-menu.mm-enter-play .main-menu-actions,
+.main-menu:not(.mm-enter-play):not(.mm-enter-done) .main-menu-actions {
   pointer-events: none;
 }
 
-.main-menu.mm-enter-done .main-menu-actions .main-menu-btn {
+.main-menu.mm-enter-done .main-menu-actions {
   pointer-events: auto;
 }
 
@@ -5917,21 +5928,6 @@ body.tech-edit-mode .tech-tooltip {
   }
   100% {
     opacity: var(--mm-end-o, 1);
-  }
-}
-
-@keyframes mm-btn-enter {
-  0% {
-    opacity: 0;
-    pointer-events: none;
-  }
-  99.9% {
-    opacity: var(--mm-end-o, 1);
-    pointer-events: none;
-  }
-  100% {
-    opacity: var(--mm-end-o, 1);
-    pointer-events: auto;
   }
 }
 
@@ -6037,6 +6033,10 @@ body.tech-edit-mode .tech-tooltip {
   color: rgba(170, 180, 200, 0.75);
   letter-spacing: 0.04em;
   pointer-events: none;
+}
+
+.main-menu.mm-enter-done .main-menu-bgm-now.mm-reveal {
+  pointer-events: auto;
 }
 
 .main-menu-bgm-now {
@@ -6204,6 +6204,68 @@ body.tech-edit-mode .tech-tooltip {
     linear-gradient(165deg, #0b1020 0%, #121a2e 100%);
   opacity: 0;
   pointer-events: none;
+  transition: opacity 0.75s ease;
+}
+
+.scene-blackout {
+  position: fixed;
+  inset: 0;
+  z-index: 5150;
+  background: #000;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.4s ease;
+}
+
+.scene-blackout.hidden {
+  display: none !important;
+}
+
+.scene-blackout.scene-blackout-visible {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.scene-blackout.scene-blackout-fade-out {
+  opacity: 0;
+  pointer-events: none;
+}
+
+.scene-exit-fade-out {
+  animation: scene-exit-fade 0.7s ease forwards;
+  pointer-events: none;
+}
+
+@keyframes scene-exit-fade {
+  from { opacity: 1; }
+  to { opacity: 0; }
+}
+
+.boot-transition.boot-transition-fade-in {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.boot-transition.boot-transition-fade-out {
+  opacity: 0;
+  pointer-events: none;
+}
+
+.defense-intro.scene-enter-fade-in,
+.boot-overlay.scene-enter-fade-in {
+  animation: scene-enter-fade 0.85s ease forwards;
+}
+
+#app.scene-enter-prep,
+.defense-intro.scene-enter-prep,
+.boot-overlay.scene-enter-prep {
+  opacity: 0 !important;
+  pointer-events: none;
+}
+
+@keyframes scene-enter-fade {
+  from { opacity: 0; }
+  to { opacity: 1; }
 }
 
 .boot-transition.hidden {

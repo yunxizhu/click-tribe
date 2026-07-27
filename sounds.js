@@ -201,11 +201,12 @@ class GameSounds {
       brick: 415.3,
       copper_ore: 466.16,
       coal: 349.23,
-      iron_ore: 415.3,
       copper_ingot: 554.37,
-      iron_ingot: 587.33,
-      steel: 659.25,
-      gear: 622.25,
+      bronze: 587.33,
+      brass: 622.25,
+      lime: 659.25,
+      coke: 698.46,
+      gear: 739.99,
       food: 523.25,
     };
     const base = pitchMap[resourceId] || 480;
@@ -243,6 +244,11 @@ class GameSounds {
     this.tone(480, t, 0.055, { type: 'triangle', volume: 0.18, attack: 0.002, release: 0.04 });
     this.tone(720, t + 0.018, 0.07, { type: 'sine', volume: 0.12, attack: 0.002, release: 0.05 });
     this.noiseBurst(t, 0.025, 0.05);
+  }
+
+  /** clock_miss.mp3：菜单离场 / 漫画收尾等「登」音效 */
+  playClockMissSting() {
+    return this.playComicFinishSting();
   }
 
   /**

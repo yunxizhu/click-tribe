@@ -35,8 +35,10 @@ const KEEP_FILES = new Set([
 const CONFIG_FILES = [
   'tool-recipes.js',
   'resource-points.js',
+  'point-upgrade-costs.js',
   'combat-units.js',
   'tech-tree-table.js',
+  'gameplay.js',
 ];
 
 const KEEP_LOCALES = new Set(['zh-CN.pak', 'en-US.pak']);
