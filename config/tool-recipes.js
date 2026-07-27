@@ -13,7 +13,7 @@ window.TOOL_DURABILITY = {
   maxByLevel: { 1: 150, 2: 300, 3: 600, 4: 1200 },
   repairMinMissing: 0.01,
   repairCostRatio: 0.5,
-  wearPerUserPerSecond: 0.2,
+  wearPerUserPerSecond: 0.07,
 };
 
 window.TOOL_RECIPES = [

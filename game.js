@@ -246,6 +246,7 @@ class FactoryGame {
     void this.refreshMainMenuLoadButton();
     this.playMainMenuEnterAnim();
     this.sounds?.bgm?.setTutorialDuck?.(false);
+    this.sounds?.bgm?.setPauseDuck?.(false, 0);
     this.startMenuBgm({ forceNew: true });
   }
 
@@ -1029,6 +1030,7 @@ class FactoryGame {
       forestHarvests: 0,
       starterChestOpened: false,
       axesCrafted: 0,
+      weaponsCrafted: 0,
       planksCrafted: 0,
     };
   }
@@ -2129,7 +2131,8 @@ class FactoryGame {
       return (t.axesCrafted || 0) >= 1 ? 1 : 0;
     }
     if (kind === 'weapon') {
-      return ['bow', 'crossbow', 'sword', 'spear', 'shield', 'armor'].some(id => this.getToolStockTotal(id) > 0) ? 1 : 0;
+      // 必须教程中亲手做出任意一件进攻武器（剑/矛/弓/弩）；库存不算
+      return (t.weaponsCrafted || 0) >= 1 ? 1 : 0;
     }
     return 0;
   }
@@ -2241,13 +2244,13 @@ class FactoryGame {
       if (!onTab('weapons')) {
         return {
           ...step,
-          text: '自己点右侧「武器」，制作任意一件武器（如木弓、木剑）。',
+          text: '自己点右侧「武器」，制作任意一件武器（剑/矛/弓/弩均可）。',
           highlight: ['.tab-btn[data-tab="weapons"]'],
         };
       }
       return {
         ...step,
-        text: '在武器列表里下单制作任意一件武器（点「确定」）。',
+        text: '在武器列表里下单制作任意一件武器（剑/矛/弓/弩，点「确定」）。',
         highlight: ['#weapon-list .craft-overview-item'],
       };
     }
@@ -2641,6 +2644,7 @@ class FactoryGame {
     if (id === 'unlock_workbench') return (this.state.unlockedTech || []).includes('unlock_workbench');
     if (id === 'open_tech_tree') return this.state.activeTab === 'tech';
     if (id === 'craft_tool') return this.getTutorialProgressValue('tool') >= 1;
+    if (id === 'craft_weapon') return this.getTutorialProgressValue('weapon') >= 1;
     if (id === 'craft_plank' || id === 'unlock_plank') {
       return (this.state.tutorial?.planksCrafted || 0) >= (step.target || 1);
     }
@@ -3043,13 +3047,15 @@ class FactoryGame {
     return q ? q.quantity : 0;
   }
 
-  /** 生产队列中第一件战斗装备配方（教程「制作武器」用） */
+  /** 生产队列中第一件教程武器配方（剑/矛/弓/弩） */
   getQueuedCombatWeaponRecipeId() {
+    const weaponIds = new Set(['bow', 'crossbow', 'sword', 'spear']);
     for (const order of this.state.craftOrderQueue || []) {
+      if (order?.kind === 'repair') continue;
       const recipe = GAME_DATA.recipes.find(r => r.id === order.recipeId);
       if (!recipe?.isToolRecipe || !recipe.outputTools) continue;
       const toolId = Object.keys(recipe.outputTools)[0];
-      if (toolId && this.isCombatGear(toolId)) return order.recipeId;
+      if (toolId && weaponIds.has(toolId)) return order.recipeId;
     }
     return null;
   }
@@ -3401,6 +3407,10 @@ class FactoryGame {
       }
       if (recipeId === 'craft_axe_1') {
         this.state.tutorial.axesCrafted = (this.state.tutorial.axesCrafted || 0) + 1;
+      }
+      const outToolId = recipe.outputTools && Object.keys(recipe.outputTools)[0];
+      if (outToolId && ['bow', 'crossbow', 'sword', 'spear'].includes(outToolId)) {
+        this.state.tutorial.weaponsCrafted = (this.state.tutorial.weaponsCrafted || 0) + 1;
       }
     }
 
@@ -7605,6 +7615,22 @@ class FactoryGame {
     return this.isStationUnlocked(type, id) && this.isOnCooldown(type, id);
   }
 
+  /** 资源点界面：空格默认绑定中间计数点击区（无需先鼠标点过） */
+  bindSpaceToActiveResourcePoint() {
+    const { type, id } = this.state.activeStation || {};
+    if (type !== 'point' || !id) return false;
+    // 合屏挡住中间采集区时不抢空格
+    if (this.state.activeTab === 'tech' || this.state.activeTab === 'defense') return false;
+    this._lastPointerAction = {
+      selector: '#click-area',
+      tab: this.state.activeTab,
+      bindStation: true,
+      stationType: type,
+      stationId: id,
+    };
+    return true;
+  }
+
   setupSpaceRepeatClick() {
     const app = document.getElementById('app');
     if (app) {
@@ -7616,7 +7642,14 @@ class FactoryGame {
       if (e.altKey || e.ctrlKey || e.metaKey) return;
       const tag = e.target?.tagName;
       if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || e.target?.isContentEditable) return;
-      if (!this._lastPointerAction) return;
+
+      // 资源点界面：空格固定点中间计数区（与鼠标点 #click-area 相同）
+      if (this.state.activeStation?.type === 'point') {
+        if (!this.bindSpaceToActiveResourcePoint()) return;
+      } else if (!this._lastPointerAction) {
+        return;
+      }
+
       e.preventDefault();
       if (e.repeat) return;
       this.startSpaceHold();
@@ -7944,6 +7977,7 @@ class FactoryGame {
     const el = document.getElementById('pause-menu');
     if (!el) return;
     const show = !!open;
+    const wasOpen = !el.classList.contains('hidden');
     el.classList.toggle('hidden', !show);
     if (show) {
       this._showPauseMenuHome?.();
@@ -7953,11 +7987,13 @@ class FactoryGame {
       }
       this.paused = true;
       this.lastTick = Date.now();
-    } else if (this._pausedByMenu) {
+      if (!wasOpen) this.sounds?.bgm?.setPauseDuck?.(true);
+    } else if (this._pausedByMenu || wasOpen) {
       const restore = this._pauseMenuPrevPaused;
       this._pausedByMenu = false;
       this._pauseMenuPrevPaused = false;
       this._showPauseMenuHome?.();
+      this.sounds?.bgm?.setPauseDuck?.(false);
       // 漫画/中转/主菜单仍冻结时不要误开时间
       if (restore || this._comicTimeHold || this._bootTransitionActive || this._atMainMenu || !this._inGameSession) {
         this.paused = true;

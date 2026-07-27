@@ -2423,7 +2423,7 @@ const GAME_DATA = {
       {
         id: 'craft_weapon',
         title: '制作第一件武器',
-        text: '自己打开「武器」页下单制作任意一件武器（如木弓、木剑）。下单后点左侧「生产」进入并点击做出一件。',
+        text: '自己打开「武器」页下单制作任意一件武器（剑/矛/弓/弩均可）。下单后点左侧「生产」进入并点击做出一件。',
         highlight: ['.tab-btn[data-tab="weapons"]', '#weapon-list .craft-overview-item'],
         progress: 'weapon',
         target: 1,

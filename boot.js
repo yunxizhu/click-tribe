@@ -16,7 +16,7 @@
   const isElectron = /Electron/i.test(navigator.userAgent || '');
   const useTribe = !!(window.__TRIBE_EXTERNAL_PROTOCOL__);
   window.__TRIBE_IS_ELECTRON__ = isElectron;
-  window.__TRIBE_VERSION__ = '20260724.1';
+  window.__TRIBE_VERSION__ = '20260727.1';
 
   if (isElectron || useTribe) {
     document.documentElement.classList.add('electron-shell');
@@ -63,7 +63,7 @@
 
   const cfg = window.__TRIBE_CONFIG_BASE__;
   // 改脚本/配置后递增，避免浏览器强缓存
-  const bust = '?v=20260724.1';
+  const bust = '?v=20260727.1';
 
   /** 加载页一次性音效（相对 music/）；进主菜单前必须停掉，避免与菜单 BGM 叠音 */
   const BOOT_LOADING_SFX = 'アニメ風アイキャッチ・ジングル「Jingle_Anime」_Jingle_Cute_2.mp3';

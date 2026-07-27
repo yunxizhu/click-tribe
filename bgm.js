@@ -85,6 +85,9 @@
       this._userMaster = 1;
       /** 新手教程期间额外压低 BGM（相对设置音量） */
       this._tutorialMul = 1;
+      /** Esc 暂停菜单：相对当前目标音量再压到 50% */
+      this._pauseMul = 1;
+      this._pauseMulFadeTimer = null;
       this._fadeGen = 0;
     }
 
@@ -118,11 +121,42 @@
       this._refreshAllVolumes();
     }
 
+    /** Esc 暂停菜单：渐变到原音量 50%；关闭菜单再渐变回原音量 */
+    setPauseDuck(active, durationMs = 600) {
+      this._fadePauseMulTo(active ? 0.5 : 1, durationMs);
+    }
+
+    _cancelPauseMulFade() {
+      if (this._pauseMulFadeTimer) {
+        clearInterval(this._pauseMulFadeTimer);
+        this._pauseMulFadeTimer = null;
+      }
+    }
+
+    _fadePauseMulTo(target, durationMs = 600) {
+      this._cancelPauseMulFade();
+      const start = Math.max(0, Math.min(1, Number(this._pauseMul) || 1));
+      const end = Math.max(0, Math.min(1, Number(target) || 0));
+      if (durationMs <= 0 || Math.abs(end - start) < 0.008) {
+        this._pauseMul = end;
+        this._refreshAllVolumes();
+        return;
+      }
+      const t0 = performance.now();
+      this._pauseMulFadeTimer = setInterval(() => {
+        const t = Math.min(1, (performance.now() - t0) / durationMs);
+        this._pauseMul = start + (end - start) * t;
+        this._refreshAllVolumes();
+        if (t >= 1) this._cancelPauseMulFade();
+      }, 40);
+    }
+
     _volMul() {
       if (!this._userPlayBgm) return 0;
       const master = Math.max(0, Math.min(1, Number(this._userMaster) || 0));
       const tut = Math.max(0, Math.min(1, Number(this._tutorialMul) || 1));
-      return master * tut;
+      const pause = Math.max(0, Math.min(1, Number(this._pauseMul) || 1));
+      return master * tut * pause;
     }
 
     _outVol(base) {
@@ -251,6 +285,8 @@
 
     _hardStopAllTracks() {
       this._fadeGen = (this._fadeGen || 0) + 1;
+      this._cancelPauseMulFade();
+      this._pauseMul = 1;
       const keys = ['_dayAudio', '_dayAltAudio', '_duskAudio', '_nightAudio', '_restAudio', '_suspenseAudio', '_fightAudio'];
       keys.forEach((k) => {
         const a = this[k];
