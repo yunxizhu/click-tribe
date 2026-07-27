@@ -2676,6 +2676,9 @@ function applyTechTreeTable(table) {
     if (row.cost && typeof row.cost === 'object') {
       tech.cost = { ...row.cost };
     }
+    if (Object.prototype.hasOwnProperty.call(row, 'requires')) {
+      tech.requires = Array.isArray(row.requires) ? [...row.requires] : row.requires;
+    }
     applyLayoutRow(id, row);
   });
 

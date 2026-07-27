@@ -88,6 +88,11 @@
     return [];
   }
 
+  function getTechRequiresList(tech) {
+    if (!tech || !tech.requires) return [];
+    return Array.isArray(tech.requires) ? [...tech.requires] : [tech.requires];
+  }
+
   Ctor.prototype.buildTechTreeTableSnapshot = function buildTechTreeTableSnapshot() {
     const layout = GAME_DATA.techTreeLayout;
     const techs = {};
@@ -109,6 +114,9 @@
       if (parents.length > 1) row.parents = parents;
       if (tech && !isPointUpgradeTechId(id)) {
         row.cost = tech.cost ? { ...tech.cost } : {};
+        if (tech.requires) {
+          row.requires = Array.isArray(tech.requires) ? [...tech.requires] : tech.requires;
+        }
       }
       techs[id] = row;
     });
@@ -267,8 +275,8 @@
         <label>布局父节点 id（多个用逗号，如精炼双线）
           <input id="tech-edit-parents" type="text" spellcheck="false" placeholder="id_a, id_b">
         </label>
-        <label>解锁依赖（自动跟随布局父节点）
-          <input id="tech-edit-requires" type="text" spellcheck="false" placeholder="自动同步，无需编辑">
+        <label>解锁依赖（独立于布局父节点，多个用逗号）
+          <input id="tech-edit-requires" type="text" spellcheck="false" placeholder="id_a, id_b">
         </label>
         <div class="tech-edit-cost-head">
           <span>材料费用</span>
@@ -346,7 +354,7 @@
       this._applyTechEditForm({ pushUndo, silent: true, refreshHud: false });
     };
 
-    ['tech-edit-x', 'tech-edit-y', 'tech-edit-parents'].forEach((id) => {
+    ['tech-edit-x', 'tech-edit-y', 'tech-edit-parents', 'tech-edit-requires'].forEach((id) => {
       const el = document.getElementById(id);
       if (!el) return;
       el.addEventListener('focus', markUndo);
@@ -468,7 +476,7 @@
 
       const isPointUp = isPointUpgradeTechId(id);
       const multiSelected = selectedIds.length > 1;
-      reqInput.disabled = true;
+      reqInput.disabled = isPointUp || multiSelected;
       if (costAdd) costAdd.disabled = isPointUp || multiSelected;
       if (distributeXBtn) distributeXBtn.disabled = !multiSelected;
       if (distributeYBtn) distributeYBtn.disabled = !multiSelected;
@@ -501,7 +509,7 @@
         costList.appendChild(hint);
       }
 
-      reqInput.value = getLayoutParents(node).join(', ');
+      reqInput.value = getTechRequiresList(tech).join(', ');
       const costEntries = Object.entries(tech?.cost || {}).filter(([, amt]) => Number(amt) > 0);
       costEntries.forEach(([res, amt]) => this._addTechEditCostRow(res, amt));
     } finally {
@@ -552,13 +560,11 @@
     setLayoutParents(node, parentIds);
 
     if (tech && !isPointUpgradeTechId(id)) {
-      let requires = null;
-      if (parentIds.length) {
-        requires = parentIds.length <= 1 ? parentIds[0] : [...parentIds];
-      } else if (id === 'unlock_workbench') {
-        requires = null;
-      }
-      tech.requires = requires;
+      const requireIds = parseIdList(document.getElementById('tech-edit-requires')?.value || '')
+        .filter((rid) => rid !== id);
+      tech.requires = requireIds.length === 0
+        ? null
+        : (requireIds.length === 1 ? requireIds[0] : [...requireIds]);
 
       const cost = {};
       document.querySelectorAll('#tech-edit-cost-list .tech-edit-cost-row').forEach((rowEl) => {
@@ -581,9 +587,6 @@
     this._rebuildTechTreeEdges();
     this._updateTechTreeDisplay();
     this._highlightTechEditSelection();
-
-    const reqInput = document.getElementById('tech-edit-requires');
-    if (reqInput) reqInput.value = getLayoutParents(node).join(', ');
 
     if (refreshHud) this._refreshTechEditHud();
     if (!silent) this.showNotification(`已更新：${tech?.name || id}`);
@@ -836,17 +839,19 @@
     if (alreadyLinked) {
       setLayoutParents(childNode, parents.filter((pid) => pid !== targetId));
       if (canEditRequires) {
-        const nextParents = getLayoutParents(childNode);
-        child.requires = nextParents.length === 0
-          ? null
-          : (nextParents.length === 1 ? nextParents[0] : nextParents);
+        const curReqs = getTechRequiresList(child);
+        const nextReqs = curReqs.filter((rid) => rid !== targetId);
+        child.requires = nextReqs.length === 0 ? null
+          : (nextReqs.length === 1 ? nextReqs[0] : nextReqs);
       }
       this.showNotification(`已从 ${childId} 移除父节点：${targetId}`);
     } else {
       if (!parents.includes(targetId)) parents.push(targetId);
       setLayoutParents(childNode, parents);
       if (canEditRequires) {
-        child.requires = parents.length === 1 ? parents[0] : [...parents];
+        const curReqs = getTechRequiresList(child);
+        if (!curReqs.includes(targetId)) curReqs.push(targetId);
+        child.requires = curReqs.length === 1 ? curReqs[0] : curReqs;
       }
       this.showNotification(`已为 ${childId} 添加父节点：${targetId}`);
     }
@@ -889,7 +894,9 @@
           if (!parents.includes(id)) parents.push(id);
           setLayoutParents(childNode, parents);
           if (child && !isPointUpgradeTechId(childId)) {
-            child.requires = parents.length <= 1 ? parents[0] : [...parents];
+            const curReqs = getTechRequiresList(child);
+            if (!curReqs.includes(id)) curReqs.push(id);
+            child.requires = curReqs.length === 1 ? curReqs[0] : curReqs;
           }
           this._techEditSelectedId = childId;
           this._techEditLinkSource = null;

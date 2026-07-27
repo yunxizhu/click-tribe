@@ -2201,6 +2201,7 @@ class FactoryGame {
     const app = document.getElementById('app');
     if (!app) return;
     app.classList.remove('app-awaiting-comic');
+    app.classList.remove('app-beneath-shell');
     app.classList.remove('app-fade-in');
     void app.offsetWidth;
     app.classList.add('app-fade-in');
