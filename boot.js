@@ -1,13 +1,13 @@
 /**
- * ??????????????? + ?????
- * - ?? Electron?preload ????tribe://config|music|image ? exe/????????
- * - ???? HTML / ???????????? config/?music/?image/
+ * 启动加载器：按顺序拉取外置配置 + 游戏脚本。
+ * - 正式 Electron（preload 标记）：tribe://config|music|image → exe/项目同级外置目录
+ * - 直接打开 HTML / 无协议的测试窗：相对路径 config/、music/、image/
  *
- * ?????????????????
- *   1) ?? EXTERNAL_CONFIGS
- *   2) scripts/pack-game.js ? CONFIG_FILES
- *   3) config/??.txt
- * ??????? pack ??? boot ?????
+ * 【新增配置文件时】必须同步改三处：
+ *   1) 下方 EXTERNAL_CONFIGS
+ *   2) scripts/pack-game.js → CONFIG_FILES
+ *   3) config/说明.txt
+ * 打包脚本会校验 pack 清单与 boot 是否一致。
  */
 
 (function () {
@@ -22,7 +22,7 @@
     document.documentElement.classList.add('electron-shell');
   }
 
-  // ??? logo ? rem????? --ui-scale
+  // 加载页 logo 用 rem，尽早同步 --ui-scale
   (function earlyUiScale() {
     const refW = 1440;
     const refH = 860;
@@ -47,7 +47,7 @@
     return base + name;
   };
 
-  /** ??? CSS ?? image/ ??? asar ????????? tribe://image/ */
+  /** 打包后 CSS 相对 image/ 会指到 asar 内；用变量指到外置 tribe://image/ */
   (function applyImageCssVars() {
     const b = window.__TRIBE_IMAGE_BASE__ || 'image/';
     const root = document.documentElement;
@@ -62,16 +62,16 @@
   })();
 
   const cfg = window.__TRIBE_CONFIG_BASE__;
-  // ???/??????????????
+  // 改脚本/配置后递增，避免浏览器强缓存
   const bust = '?v=20260727.3';
 
-  /** ??????????? music/????????????????? BGM ?? */
-  const BOOT_LOADING_SFX = '????????????????Jingle_Anime?_Jingle_Cute_2.mp3';
+  /** 加载页一次性音效（相对 music/）；进主菜单前必须停掉，避免与菜单 BGM 叠音 */
+  const BOOT_LOADING_SFX = 'アニメ風アイキャッチ・ジングル「Jingle_Anime」_Jingle_Cute_2.mp3';
   let bootLoadingAudio = null;
   let bootLoadingTried = false;
   let bootLoadingClosed = false;
 
-  /** ??????? game.js ??????????????? */
+  /** 外置配置（须在 game.js 之前加载；顺序可影响互相依赖） */
   const EXTERNAL_CONFIGS = [
     'tool-recipes.js',
     'resource-points.js',
@@ -110,7 +110,7 @@
     return new Promise((r) => setTimeout(r, Math.max(0, ms || 0)));
   }
 
-  /** ??????????? / ?????? */
+  /** 停止加载音效（进主菜单 / 进局前调用） */
   function stopBootLoadingSfx() {
     bootLoadingClosed = true;
     const a = bootLoadingAudio;
@@ -124,7 +124,7 @@
   }
   window.__TRIBE_STOP_BOOT_SFX__ = stopBootLoadingSfx;
 
-  /** ???????????????? Audio????? */
+  /** 加载开始时播一次；全程只保留一个 Audio，避免叠音 */
   function playBootLoadingSfx() {
     const file = String(BOOT_LOADING_SFX || '').trim();
     if (!file || bootLoadingTried || bootLoadingClosed) return;
@@ -178,15 +178,15 @@
   }
 
   /**
-   * ??????? 4s???? 0.5s ????0?100 ?????
-   * ???????????????????
+   * 假进度：总时长 4s（含两次 0.5s 停顿），0→100 逐渐增加。
+   * 停顿点在进度轴上随机选取（互不重叠）。
    */
   async function runBootProgress(totalMs = 4000) {
     const pauseMs = 500;
     const pauseCount = 2;
     const moveMs = Math.max(500, totalMs - pauseMs * pauseCount);
 
-    // ?????????? (12~42) ? (55~88)?????
+    // 两次停顿百分比：落在 (12~42) 与 (55~88)，保证间隔
     let a = 12 + Math.random() * 30;
     let b = 55 + Math.random() * 33;
     if (a > b) {
@@ -240,24 +240,24 @@
       setBootProgressPct(0);
       playBootLoadingSfx();
 
-      // ??????????????????? 4s
+      // 进度条与真实脚本加载并行；总展示至少约 4s
       await Promise.all([loadAllScripts(), runBootProgress(4000)]);
       setBootProgressPct(100);
 
-      // ? game.js / tech-tree-editor.js / defense.js ??????????
+      // 等 game.js / tech-tree-editor.js / defense.js 全部挂好补丁后再开壳
       if (typeof window.startFactoryGame === 'function') {
         await window.startFactoryGame();
       } else {
-        throw new Error('startFactoryGame ????game.js ???????');
+        throw new Error('startFactoryGame 未定义（game.js 可能加载失败）');
       }
     } catch (err) {
       console.error('[boot]', err);
       const tip = document.createElement('div');
       tip.style.cssText = 'position:fixed;inset:0;display:flex;align-items:center;justify-content:center;background:#000;color:#f66;font:16px/1.5 sans-serif;padding:24px;text-align:center;z-index:99999';
       const hint = useTribe
-        ? '???? exe ???? config/?music/?image/ ????'
-        : '???? index.html ???? config/?music/?image/ ????';
-      tip.textContent = '???????' + (err && err.message ? err.message : err) + hint;
+        ? '。请确认 exe 同级存在 config/、music/、image/ 文件夹。'
+        : '。请确认 index.html 同级存在 config/、music/、image/ 文件夹。';
+      tip.textContent = '资源加载失败：' + (err && err.message ? err.message : err) + hint;
       document.body.appendChild(tip);
     }
   })();

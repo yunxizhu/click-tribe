@@ -3,14 +3,14 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>????</title>
+  <title>点击部落</title>
   <link rel="stylesheet" href="style.css?v=20260727.3">
 </head>
 <body>
-  <!-- ?????? ? ????????? -->
+  <!-- 启动壳：加载 → 主菜单（盖住游戏） -->
   <div id="boot-shell" class="boot-shell" aria-live="polite">
     <div id="boot-loading" class="boot-layer boot-loading">
-      <!-- logo ?????????????1:1?? --ui-scale ??? -->
+      <!-- logo 路径稍后提供；先留空占位（1:1，随 --ui-scale 缩放） -->
       <div class="boot-logo" id="boot-logo" role="img" aria-label="Logo">
         <img id="boot-logo-img" class="boot-logo-img" alt="" src="" hidden>
       </div>
@@ -25,147 +25,147 @@
     <div id="main-menu" class="boot-layer main-menu hidden">
       <div class="main-menu-bg" aria-hidden="true"></div>
         <div class="main-menu-brand" id="main-menu-brand">
-          <h1 class="main-menu-title mm-reveal">????</h1>
+          <h1 class="main-menu-title mm-reveal">点击部落</h1>
           <div class="main-menu-title-line mm-reveal" aria-hidden="true"></div>
         </div>
         <div class="main-menu-home" id="main-menu-home">
           <div class="main-menu-actions mm-reveal">
-            <button type="button" class="main-menu-btn" id="mm-start">???</button>
-            <button type="button" class="main-menu-btn" id="mm-load">????</button>
-            <button type="button" class="main-menu-btn" id="mm-settings">??</button>
-            <button type="button" class="main-menu-btn" id="mm-achievements">??</button>
-            <button type="button" class="main-menu-btn" id="mm-dev">????</button>
-            <button type="button" class="main-menu-btn" id="mm-quit">????</button>
+            <button type="button" class="main-menu-btn" id="mm-start">新游戏</button>
+            <button type="button" class="main-menu-btn" id="mm-load">加载存档</button>
+            <button type="button" class="main-menu-btn" id="mm-settings">设置</button>
+            <button type="button" class="main-menu-btn" id="mm-achievements">成就</button>
+            <button type="button" class="main-menu-btn" id="mm-dev">开发人员</button>
+            <button type="button" class="main-menu-btn" id="mm-quit">退出游戏</button>
           </div>
         </div>
 
       <div class="main-menu-panel pause-menu-wide hidden" id="main-menu-settings">
         <div class="pause-sub-header">
-          <h2 class="pause-sub-title">??</h2>
-          <div class="pause-settings-tabs" role="tablist" aria-label="????">
-            <button type="button" class="pause-settings-tab active" role="tab" aria-selected="true" data-mm-settings-tab="display" id="mm-tab-display">??</button>
-            <button type="button" class="pause-settings-tab" role="tab" aria-selected="false" data-mm-settings-tab="audio" id="mm-tab-audio">??</button>
-            <button type="button" class="pause-settings-tab" role="tab" aria-selected="false" data-mm-settings-tab="game" id="mm-tab-game">??</button>
+          <h2 class="pause-sub-title">设置</h2>
+          <div class="pause-settings-tabs" role="tablist" aria-label="设置分类">
+            <button type="button" class="pause-settings-tab active" role="tab" aria-selected="true" data-mm-settings-tab="display" id="mm-tab-display">显示</button>
+            <button type="button" class="pause-settings-tab" role="tab" aria-selected="false" data-mm-settings-tab="audio" id="mm-tab-audio">音量</button>
+            <button type="button" class="pause-settings-tab" role="tab" aria-selected="false" data-mm-settings-tab="game" id="mm-tab-game">游戏</button>
           </div>
         </div>
         <div class="pause-settings-body">
           <div class="pause-settings-pane" id="mm-pane-display" data-mm-settings-pane="display" role="tabpanel">
             <div class="pause-setting-block">
-              <label class="pause-setting-label" for="mm-set-display-mode">????</label>
+              <label class="pause-setting-label" for="mm-set-display-mode">显示模式</label>
               <select id="mm-set-display-mode" class="pause-select">
-                <option value="fullscreen">??</option>
-                <option value="windowed">???</option>
+                <option value="fullscreen">全屏</option>
+                <option value="windowed">窗口化</option>
               </select>
             </div>
             <div class="pause-setting-block">
-              <label class="pause-setting-label" for="mm-set-display-res">?????????????</label>
+              <label class="pause-setting-label" for="mm-set-display-res">窗口分辨率（窗口化时生效）</label>
               <select id="mm-set-display-res" class="pause-select"></select>
             </div>
             <p class="pause-menu-hint" id="mm-pause-display-hint"></p>
           </div>
           <div class="pause-settings-pane hidden" id="mm-pane-audio" data-mm-settings-pane="audio" role="tabpanel">
             <div class="pause-setting-block">
-              <label class="pause-check"><input type="checkbox" id="mm-set-bgm-enabled" checked> ?? BGM</label>
+              <label class="pause-check"><input type="checkbox" id="mm-set-bgm-enabled" checked> 播放 BGM</label>
             </div>
             <div class="pause-setting-block">
-              <label class="pause-setting-label" for="mm-set-vol-master">???? <span id="mm-set-vol-master-val">70%</span></label>
+              <label class="pause-setting-label" for="mm-set-vol-master">全局音量 <span id="mm-set-vol-master-val">70%</span></label>
               <input type="range" id="mm-set-vol-master" class="pause-slider" min="0" max="100" value="70" step="1">
             </div>
             <div class="pause-setting-block">
-              <label class="pause-setting-label" for="mm-set-vol-sfx">????? <span id="mm-set-vol-sfx-val">100%</span></label>
+              <label class="pause-setting-label" for="mm-set-vol-sfx">资源区音效 <span id="mm-set-vol-sfx-val">100%</span></label>
               <input type="range" id="mm-set-vol-sfx" class="pause-slider" min="0" max="100" value="100" step="1">
             </div>
           </div>
           <div class="pause-settings-pane hidden" id="mm-pane-game" data-mm-settings-pane="game" role="tabpanel">
             <div class="pause-setting-block">
-              <label class="pause-check"><input type="checkbox" id="mm-set-enable-tutorial" checked> ??????</label>
+              <label class="pause-check"><input type="checkbox" id="mm-set-enable-tutorial" checked> 启动新手教程</label>
             </div>
-            <p class="pause-menu-hint">?????????????????????</p>
+            <p class="pause-menu-hint">新开局时是否自动开始新手教程（默认开启）。</p>
             <div class="pause-setting-block" style="margin-top:16px;">
-              <label class="pause-check"><input type="checkbox" id="mm-set-resource-gain-notify" checked> ??????</label>
+              <label class="pause-check"><input type="checkbox" id="mm-set-resource-gain-notify" checked> 资源获得提示</label>
             </div>
-            <p class="pause-menu-hint">????????????????????????????????</p>
+            <p class="pause-menu-hint">采集、开箱、生产完成时，是否在下方弹出获得资源提示（默认开启）。</p>
             <div class="pause-setting-block" style="margin-top:16px;">
-              <button type="button" class="pause-settings-action pause-settings-action-danger" id="mm-set-reset-save">????</button>
+              <button type="button" class="pause-settings-action pause-settings-action-danger" id="mm-set-reset-save">重置存档</button>
             </div>
-            <p class="pause-menu-hint">?????????????????</p>
+            <p class="pause-menu-hint">清空本地存档进度，此操作不可撤销。</p>
           </div>
         </div>
-        <button type="button" class="pause-menu-back" id="mm-settings-back">??</button>
+        <button type="button" class="pause-menu-back" id="mm-settings-back">返回</button>
       </div>
 
       <div class="main-menu-panel pause-menu-wide pause-menu-dev-panel hidden" id="main-menu-dev">
         <div class="pause-sub-header">
-          <h2 class="pause-sub-title">????</h2>
+          <h2 class="pause-sub-title">开发人员</h2>
         </div>
         <div class="pause-settings-body pause-menu-dev-body">
-          <p class="pause-menu-dev-status">???</p>
-          <p class="pause-menu-dev-label">?????</p>
-          <p class="pause-menu-dev-name">??-?</p>
+          <p class="pause-menu-dev-status">开发中</p>
+          <p class="pause-menu-dev-label">开发人员：</p>
+          <p class="pause-menu-dev-name">夕云-朱</p>
         </div>
-        <button type="button" class="pause-menu-back" id="mm-dev-back">??</button>
+        <button type="button" class="pause-menu-back" id="mm-dev-back">返回</button>
       </div>
 
       <div class="main-menu-panel pause-menu-wide hidden" id="main-menu-achievements">
         <div class="pause-sub-header">
-          <h2 class="pause-sub-title">??</h2>
+          <h2 class="pause-sub-title">成就</h2>
         </div>
         <div class="pause-settings-body achievements-body">
           <p class="achievements-summary" data-achievements-summary></p>
           <div class="achievements-list" data-achievements-list></div>
         </div>
-        <button type="button" class="pause-menu-back" id="mm-achievements-back">??</button>
+        <button type="button" class="pause-menu-back" id="mm-achievements-back">返回</button>
       </div>
 
       <p class="main-menu-version mm-reveal" id="main-menu-version">v20260727.3</p>
-      <button type="button" class="bgm-now-btn main-menu-bgm-now mm-reveal" id="mm-bgm-now" title="???? BGM" aria-label="?????????">
+      <button type="button" class="bgm-now-btn main-menu-bgm-now mm-reveal" id="mm-bgm-now" title="点击切换 BGM" aria-label="当前音乐，点击切换">
         <span class="bgm-now-icon" aria-hidden="true"><span class="bgm-disc"></span></span>
-        <span class="bgm-now-marquee"><span class="bgm-now-text">?</span></span>
+        <span class="bgm-now-marquee"><span class="bgm-now-text">—</span></span>
       </button>
     </div>
   </div>
 
-  <!-- ????????????????????????? -->
+  <!-- 难度选择：在主菜单确认后、进游戏前（也可用于重置） -->
 
   <div id="scene-blackout" class="scene-blackout hidden" aria-hidden="true"></div>
   <div id="difficulty-select" class="defense-intro boot-overlay hidden">
     <div class="defense-intro-dialog">
-      <h3>????</h3>
-      <p>??????????</p>
+      <h3>选择难度</h3>
+      <p>选择适合你的游戏难度</p>
       <div class="difficulty-options" id="difficulty-options">
-        <button type="button" class="diff-btn" data-difficulty="peaceful">?? ??</button>
-        <button type="button" class="diff-btn" data-difficulty="normal">?? ??</button>
-        <button type="button" class="diff-btn" data-difficulty="hard">?? ??</button>
-        <button type="button" class="diff-btn" data-difficulty="hell">?? ??</button>
+        <button type="button" class="diff-btn" data-difficulty="peaceful">☮️ 和平</button>
+        <button type="button" class="diff-btn" data-difficulty="normal">⚖️ 正常</button>
+        <button type="button" class="diff-btn" data-difficulty="hard">💀 困难</button>
+        <button type="button" class="diff-btn" data-difficulty="hell">🔥 地狱</button>
       </div>
       <p id="diff-desc" class="diff-desc"></p>
-      <button type="button" class="diff-back-btn" id="diff-back">??</button>
-      <p class="diff-esc-hint">? Esc ????</p>
+      <button type="button" class="diff-back-btn" id="diff-back">返回</button>
+      <p class="diff-esc-hint">按 Esc 也可返回</p>
     </div>
   </div>
 
-  <!-- ???????????? -->
+  <!-- 选完难度后进入游戏的中转 -->
   <div id="boot-transition" class="boot-transition hidden" aria-live="polite">
     <div class="boot-transition-inner">
       <div class="boot-spinner-wrap boot-spinner-wrap-lg" aria-hidden="true">
         <div class="boot-spinner boot-spinner-outer"></div>
         <div class="boot-spinner boot-spinner-inner"></div>
       </div>
-      <p class="boot-transition-brand">????</p>
-      <p class="boot-transition-text" id="boot-transition-text">???????</p>
-      <p class="boot-transition-sub">???</p>
+      <p class="boot-transition-brand">点击部落</p>
+      <p class="boot-transition-text" id="boot-transition-text">正在进入村落…</p>
+      <p class="boot-transition-sub">加载中</p>
     </div>
   </div>
 
   <div id="app" class="app-beneath-shell">
     <header class="game-header">
-      <h1>??? ???? <span id="diff-label" class="diff-badge"></span></h1>
+      <h1>🏕️ 点击部落 <span id="diff-label" class="diff-badge"></span></h1>
       <div class="header-calendar-wrap" id="calendar-wrap">
-        <button type="button" class="bgm-now-btn" id="game-bgm-now" title="???? BGM" aria-label="?????????">
+        <button type="button" class="bgm-now-btn" id="game-bgm-now" title="点击切换 BGM" aria-label="当前音乐，点击切换">
           <span class="bgm-now-icon" aria-hidden="true"><span class="bgm-disc"></span></span>
-          <span class="bgm-now-marquee"><span class="bgm-now-text">?</span></span>
+          <span class="bgm-now-marquee"><span class="bgm-now-text">—</span></span>
         </button>
-        <div class="game-clock" id="game-clock" title="??????24???">
+        <div class="game-clock" id="game-clock" title="游戏内时钟（24小时）">
           <div class="game-clock-face">
             <span class="game-clock-mark m0">0</span>
             <span class="game-clock-mark m6">6</span>
@@ -176,51 +176,51 @@
             <div class="game-clock-center"></div>
           </div>
         </div>
-        <span id="calendar-display" class="header-calendar">? 1 ? 08:00</span>
-        <div class="header-speed" id="header-speed" title="????????????????????? Tab ?? 1� / 2� / 4�">
+        <span id="calendar-display" class="header-calendar">第 1 天 08:00</span>
+        <div class="header-speed" id="header-speed" title="游戏时间加速（不影响手动点击单次收益）。按 Tab 切换 1× / 2× / 4×">
           <span class="speed-thumb" id="speed-thumb" aria-hidden="true"></span>
-          <button type="button" class="speed-btn active" data-speed="1" aria-label="???? 1�" title="????">
-            <span class="speed-tag">1�</span>
+          <button type="button" class="speed-btn active" data-speed="1" aria-label="正常速度 1×" title="正常速度">
+            <span class="speed-tag">1×</span>
           </button>
-          <button type="button" class="speed-btn" data-speed="2" aria-label="2??" title="2??">
-            <span class="speed-icon" aria-hidden="true">??</span><span class="speed-tag">2�</span>
+          <button type="button" class="speed-btn" data-speed="2" aria-label="2倍速" title="2倍速">
+            <span class="speed-icon" aria-hidden="true">▶️</span><span class="speed-tag">2×</span>
           </button>
-          <button type="button" class="speed-btn" data-speed="4" aria-label="4??" title="4??">
-            <span class="speed-icon" aria-hidden="true">?</span><span class="speed-tag">4�</span>
+          <button type="button" class="speed-btn" data-speed="4" aria-label="4倍速" title="4倍速">
+            <span class="speed-icon" aria-hidden="true">⏩</span><span class="speed-tag">4×</span>
           </button>
         </div>
-        <button type="button" id="tech-edit-exit-btn" class="tech-edit-exit-btn hidden" title="??????????">?????????</button>
+        <button type="button" id="tech-edit-exit-btn" class="tech-edit-exit-btn hidden" title="退出科技树编辑并保存">退出编辑模式并保存</button>
       </div>
       <div class="header-right">
-        <span id="raid-status" class="raid-status" title="????">??</span>
-        <span id="header-food" class="header-food" title="???????????">?? ?? 0 / ? 0</span>
+        <span id="raid-status" class="raid-status" title="来袭状态">和平</span>
+        <span id="header-food" class="header-food" title="今日食物库存与预计消耗">🍎 食物 0 / 需 0</span>
       </div>
     </header>
 
     <main class="game-main">
       <aside class="sidebar left">
         <div class="sidebar-section sidebar-section-static" id="chest-section" data-section="chest">
-          <h3 id="chest-section-title" class="section-title">??</h3>
+          <h3 id="chest-section-title" class="section-title">宝箱</h3>
           <div id="chest-list" class="station-list"></div>
         </div>
         <div class="sidebar-section" id="forage-section" data-section="forage">
           <button type="button" id="forage-section-title" class="section-title section-title-toggle" data-section="forage" aria-expanded="true">
-            <span class="section-toggle-caret" aria-hidden="true">?</span>
-            <span class="section-toggle-label">??</span>
+            <span class="section-toggle-caret" aria-hidden="true">▼</span>
+            <span class="section-toggle-label">觅食</span>
           </button>
           <div id="forage-list" class="station-list"></div>
         </div>
         <div class="sidebar-section" id="gather-section" data-section="gather">
           <button type="button" id="gather-section-title" class="section-title section-title-toggle" data-section="gather" aria-expanded="true">
-            <span class="section-toggle-caret" aria-hidden="true">?</span>
-            <span class="section-toggle-label">??</span>
+            <span class="section-toggle-caret" aria-hidden="true">▼</span>
+            <span class="section-toggle-label">采集</span>
           </button>
           <div id="gather-list" class="station-list"></div>
         </div>
         <div class="sidebar-section" id="craft-section" data-section="craft">
           <button type="button" id="craft-section-title" class="section-title section-title-toggle" data-section="craft" aria-expanded="true">
-            <span class="section-toggle-caret" aria-hidden="true">?</span>
-            <span class="section-toggle-label">??</span>
+            <span class="section-toggle-caret" aria-hidden="true">▼</span>
+            <span class="section-toggle-label">生产</span>
           </button>
           <div id="craft-station-list" class="station-list"></div>
         </div>
@@ -246,26 +246,26 @@
           <div class="defense-stage battle-embed" id="battle-embed">
             <div class="battle-embed-meters">
               <div class="battle-force-row">
-                <span class="battle-force ally">?? <span id="battle-ally-count">0</span></span>
-                <span class="battle-force enemy">?? <span id="battle-enemy-count">0</span></span>
+                <span class="battle-force ally">我方 <span id="battle-ally-count">0</span></span>
+                <span class="battle-force enemy">敌方 <span id="battle-enemy-count">0</span></span>
               </div>
-              <div class="progress-container battle-meter" title="????">
+              <div class="progress-container battle-meter" title="城门耐久">
                 <div id="battle-embed-gate-bar" class="progress-bar battle-meter-gate"></div>
-                <span id="battle-embed-gate-text" class="progress-text">?? ?</span>
+                <span id="battle-embed-gate-text" class="progress-text">城门 —</span>
               </div>
-              <div class="progress-container battle-meter" id="battle-embed-enemy-meter" title="??">
+              <div class="progress-container battle-meter" id="battle-embed-enemy-meter" title="残敌">
                 <div id="battle-embed-enemy-bar" class="progress-bar battle-meter-enemy"></div>
-                <span id="battle-embed-enemy-text" class="progress-text">?? ?</span>
+                <span id="battle-embed-enemy-text" class="progress-text">残敌 —</span>
               </div>
             </div>
 
             <div class="battle-embed-field" id="battle-embed-field">
-              <div class="battle-field-label left">??</div>
-              <div class="battle-field-label right">??</div>
+              <div class="battle-field-label left">城内</div>
+              <div class="battle-field-label right">野外</div>
               <div class="battle-embed-wall" id="battle-embed-wall" aria-hidden="true"></div>
               <div class="battle-embed-units" id="battle-embed-units"></div>
             </div>
-            <p class="click-hint" id="battle-embed-hint">????/?? � Ctrl+????? � ???? � ?????????</p>
+            <p class="click-hint" id="battle-embed-hint">左键框选/点选 · Ctrl+左键加减选 · 右键移动 · 中键列阵（鼠标处）</p>
           </div>
           <aside class="defense-side">
             <div id="defense-overview" class="defense-overview"></div>
@@ -276,11 +276,11 @@
       <section class="center-panel">
         <div class="center-point-content" id="center-point-content">
           <div class="point-display">
-            <div id="point-icon" class="point-icon">??</div>
-            <h2 id="point-name">??</h2>
-            <p id="point-desc" class="point-desc">????????</p>
+            <div id="point-icon" class="point-icon">🌲</div>
+            <h2 id="point-name">森林</h2>
+            <p id="point-desc" class="point-desc">砍伐树木获取木头</p>
             <div class="point-stats">
-              <span id="click-power">????: 1/?</span>
+              <span id="click-power">点击效率: 1/次</span>
               <span id="yield-info"></span>
             </div>
           </div>
@@ -305,9 +305,9 @@
                   <div class="chest-sparkles" id="chest-sparkles" aria-hidden="true"></div>
                 </div>
               </div>
-              <p id="chest-open-hint" class="chest-open-hint">???????0/4?</p>
+              <p id="chest-open-hint" class="chest-open-hint">点击开启宝箱（0/4）</p>
             </div>
-            <p class="click-hint">?????????????????????</p>
+            <p class="click-hint">点击或按住采集，分配工人后才会自动累积进度</p>
           </div>
 
           <div id="point-upgrades" class="point-upgrades"></div>
@@ -317,14 +317,14 @@
 
       <aside class="sidebar right">
         <div class="sidebar-right-layout">
-          <nav class="right-nav" aria-label="????">
-            <button type="button" class="tab-btn active" data-tab="warehouse" title="??">??<span>??</span></button>
-            <button type="button" class="tab-btn" data-tab="tech" title="???">??<span>??</span></button>
-            <button type="button" class="tab-btn" data-tab="craft" title="??">??<span>??</span></button>
-            <button type="button" class="tab-btn" data-tab="tools" id="tab-btn-tools" title="??">??<span>??</span></button>
-            <button type="button" class="tab-btn" data-tab="weapons" id="tab-btn-weapons" title="??">??<span>??</span></button>
-            <button type="button" class="tab-btn" data-tab="workers" title="??">??<span>??</span></button>
-            <button type="button" class="tab-btn" data-tab="defense" title="??">???<span>??</span></button>
+          <nav class="right-nav" aria-label="功能菜单">
+            <button type="button" class="tab-btn active" data-tab="warehouse" title="仓库">📦<span>仓库</span></button>
+            <button type="button" class="tab-btn" data-tab="tech" title="科技树">🔬<span>科技</span></button>
+            <button type="button" class="tab-btn" data-tab="craft" title="合成">⚗️<span>合成</span></button>
+            <button type="button" class="tab-btn" data-tab="tools" id="tab-btn-tools" title="工具">🪓<span>工具</span></button>
+            <button type="button" class="tab-btn" data-tab="weapons" id="tab-btn-weapons" title="武器">⚔️<span>武器</span></button>
+            <button type="button" class="tab-btn" data-tab="workers" title="村民">👥<span>村民</span></button>
+            <button type="button" class="tab-btn" data-tab="defense" title="防务">🛡️<span>防务</span></button>
           </nav>
 
           <div class="sidebar-panel-main">
@@ -347,7 +347,7 @@
               <div id="worker-overview" class="worker-overview"></div>
             </div>
             <div id="tab-defense" class="tab-panel">
-              <!-- ????? #defense-overlay??+???? -->
+              <!-- 防务内容在 #defense-overlay（中+右合屏） -->
             </div>
           </div>
         </div>
@@ -360,13 +360,13 @@
     <div id="tutorial-overlay" class="tutorial-overlay hidden" aria-live="polite">
       <div class="tutorial-panel" id="tutorial-panel">
         <div class="tutorial-panel-head">
-          <h3 id="tutorial-title">????</h3>
-          <button type="button" id="tutorial-skip" class="tutorial-skip" title="??????">????</button>
+          <h3 id="tutorial-title">新手指引</h3>
+          <button type="button" id="tutorial-skip" class="tutorial-skip" title="跳过全部教程">跳过教程</button>
         </div>
         <p id="tutorial-text" class="tutorial-text"></p>
         <p id="tutorial-progress" class="tutorial-progress hidden"></p>
         <div class="tutorial-panel-actions">
-          <button type="button" id="tutorial-next" class="btn-craft tutorial-next hidden">???</button>
+          <button type="button" id="tutorial-next" class="btn-craft tutorial-next hidden">下一步</button>
         </div>
       </div>
     </div>
@@ -374,37 +374,37 @@
     <div id="story-dialog" class="story-dialog hidden" role="dialog" aria-modal="true" aria-labelledby="story-dialog-text">
       <div class="story-dialog-panel">
         <p id="story-dialog-text" class="story-dialog-text"></p>
-        <button type="button" id="story-dialog-ok" class="btn-craft">??</button>
+        <button type="button" id="story-dialog-ok" class="btn-craft">确定</button>
       </div>
     </div>
 
     <div id="battle-screen" class="battle-screen hidden">
       <div class="battle-frame">
         <div class="battle-top">
-          <h3 id="battle-title">??</h3>
+          <h3 id="battle-title">战争</h3>
           <div class="battle-top-stats">
-            <span id="battle-timer">?</span>
-            <span id="battle-gate-hp">?? ?</span>
-            <span id="battle-enemy-hp">?? ?</span>
+            <span id="battle-timer">—</span>
+            <span id="battle-gate-hp">大门 —</span>
+            <span id="battle-enemy-hp">残敌 —</span>
           </div>
-          <button type="button" id="battle-close" class="dev-close" title="???????????">�</button>
+          <button type="button" id="battle-close" class="dev-close" title="收起画面（交战仍继续）">×</button>
         </div>
         <div class="battle-field" id="battle-field">
-          <div class="battle-field-label left">??</div>
-          <div class="battle-field-label right">??</div>
+          <div class="battle-field-label left">城内</div>
+          <div class="battle-field-label right">野外</div>
           <div class="battle-wall" id="battle-wall" aria-hidden="true"></div>
           <div class="battle-units" id="battle-units"></div>
         </div>
         <div class="battle-stats-bar" id="battle-stats-bar">
-          <span id="battle-ally-count-popup" class="stat-chip ally">?? 0</span>
-          <span id="battle-enemy-count-popup" class="stat-chip enemy">?? 0</span>
+          <span id="battle-ally-count-popup" class="stat-chip ally">我方 0</span>
+          <span id="battle-enemy-count-popup" class="stat-chip enemy">敌方 0</span>
         </div>
         <div class="battle-bars">
-          <div class="battle-bar-row"><label>??</label><div class="bar-track tall"><div id="battle-gate-bar" class="bar-fill gate"></div></div></div>
-          <div class="battle-bar-row"><label>??</label><div class="bar-track tall"><div id="battle-enemy-bar" class="bar-fill enemy"></div></div></div>
+          <div class="battle-bar-row"><label>大门</label><div class="bar-track tall"><div id="battle-gate-bar" class="bar-fill gate"></div></div></div>
+          <div class="battle-bar-row"><label>残敌</label><div class="bar-track tall"><div id="battle-enemy-bar" class="bar-fill enemy"></div></div></div>
         </div>
         <div class="battle-actions">
-          <button type="button" class="btn-craft" id="battle-open-defense">????</button>
+          <button type="button" class="btn-craft" id="battle-open-defense">调整防务</button>
         </div>
         <ul class="battle-log" id="battle-log"></ul>
       </div>
@@ -412,206 +412,206 @@
 
     <div id="game-over" class="game-over hidden">
       <div class="game-over-dialog">
-        <h3 id="game-over-title">????</h3>
-        <p id="game-over-reason">???????</p>
-        <p id="game-over-pop" class="dim">?????0</p>
-        <p class="hint">???? 0?1 ???????????????????????</p>
-        <button type="button" id="game-over-reset" class="btn-craft">????</button>
+        <h3 id="game-over-title">部落覆灭</h3>
+        <p id="game-over-reason">村落无法再延续</p>
+        <p id="game-over-pop" class="dim">幸存村民：0</p>
+        <p class="hint">人口只剩 0～1 人时，部落无法维系（饥荒饿死或战败皆可导致）。</p>
+        <button type="button" id="game-over-reset" class="btn-craft">重新开始</button>
       </div>
     </div>
 
     <div id="victory-screen" class="game-over hidden">
       <div class="game-over-dialog victory-dialog">
-        <h3>?? ????</h3>
-        <p id="victory-text">????????????????????????????????????????????</p>
+        <h3>🎉 部落胜利</h3>
+        <p id="victory-text">魔王被击败了！无敌之姿已碎，灾祸之源已经消除。在你的带领下，部落走向了真正的自由与繁荣。</p>
         <p id="victory-stats" class="dim"></p>
-        <button type="button" id="victory-reset" class="btn-craft">?????????</button>
+        <button type="button" id="victory-reset" class="btn-craft">重新开始（新游戏）</button>
       </div>
     </div>
 
     <div id="pause-menu" class="pause-menu hidden" role="dialog" aria-modal="true" aria-labelledby="pause-menu-title">
       <div class="pause-menu-panel" id="pause-menu-home">
-        <h2 id="pause-menu-title">????</h2>
-        <button type="button" class="pause-menu-btn" id="pause-resume">????</button>
-        <button type="button" class="pause-menu-btn" id="pause-settings">??</button>
-        <button type="button" class="pause-menu-btn" id="pause-achievements">??</button>
-        <button type="button" class="pause-menu-btn" id="pause-to-main">?????</button>
-        <button type="button" class="pause-menu-btn" id="pause-dev">????</button>
-        <button type="button" class="pause-menu-btn pause-menu-btn-danger" id="pause-quit">????</button>
-        <p class="pause-menu-hint">? Esc ????</p>
+        <h2 id="pause-menu-title">游戏菜单</h2>
+        <button type="button" class="pause-menu-btn" id="pause-resume">返回游戏</button>
+        <button type="button" class="pause-menu-btn" id="pause-settings">设置</button>
+        <button type="button" class="pause-menu-btn" id="pause-achievements">成就</button>
+        <button type="button" class="pause-menu-btn" id="pause-to-main">返回主界面</button>
+        <button type="button" class="pause-menu-btn" id="pause-dev">开发人员</button>
+        <button type="button" class="pause-menu-btn pause-menu-btn-danger" id="pause-quit">退出游戏</button>
+        <p class="pause-menu-hint">按 Esc 关闭菜单</p>
       </div>
 
       <div class="pause-menu-panel pause-menu-wide hidden" id="pause-menu-settings">
         <div class="pause-sub-header">
-          <h2 class="pause-sub-title">??</h2>
-          <div class="pause-settings-tabs" role="tablist" aria-label="????">
-            <button type="button" class="pause-settings-tab active" role="tab" aria-selected="true" data-settings-tab="display" id="pause-tab-display">??</button>
-            <button type="button" class="pause-settings-tab" role="tab" aria-selected="false" data-settings-tab="audio" id="pause-tab-audio">??</button>
-            <button type="button" class="pause-settings-tab" role="tab" aria-selected="false" data-settings-tab="game" id="pause-tab-game">??</button>
+          <h2 class="pause-sub-title">设置</h2>
+          <div class="pause-settings-tabs" role="tablist" aria-label="设置分类">
+            <button type="button" class="pause-settings-tab active" role="tab" aria-selected="true" data-settings-tab="display" id="pause-tab-display">显示</button>
+            <button type="button" class="pause-settings-tab" role="tab" aria-selected="false" data-settings-tab="audio" id="pause-tab-audio">音量</button>
+            <button type="button" class="pause-settings-tab" role="tab" aria-selected="false" data-settings-tab="game" id="pause-tab-game">游戏</button>
           </div>
         </div>
         <div class="pause-settings-body">
           <div class="pause-settings-pane" id="pause-pane-display" data-settings-pane="display" role="tabpanel">
             <div class="pause-setting-block">
-              <label class="pause-setting-label" for="set-display-mode">????</label>
+              <label class="pause-setting-label" for="set-display-mode">显示模式</label>
               <select id="set-display-mode" class="pause-select">
-                <option value="fullscreen">??</option>
-                <option value="windowed">???</option>
+                <option value="fullscreen">全屏</option>
+                <option value="windowed">窗口化</option>
               </select>
             </div>
             <div class="pause-setting-block">
-              <label class="pause-setting-label" for="set-display-res">?????????????</label>
+              <label class="pause-setting-label" for="set-display-res">窗口分辨率（窗口化时生效）</label>
               <select id="set-display-res" class="pause-select"></select>
             </div>
             <p class="pause-menu-hint" id="pause-display-hint"></p>
           </div>
           <div class="pause-settings-pane hidden" id="pause-pane-audio" data-settings-pane="audio" role="tabpanel">
             <div class="pause-setting-block">
-              <label class="pause-check"><input type="checkbox" id="set-bgm-enabled" checked> ?? BGM</label>
+              <label class="pause-check"><input type="checkbox" id="set-bgm-enabled" checked> 播放 BGM</label>
             </div>
             <div class="pause-setting-block">
-              <label class="pause-setting-label" for="set-vol-master">???? <span id="set-vol-master-val">70%</span></label>
+              <label class="pause-setting-label" for="set-vol-master">全局音量 <span id="set-vol-master-val">70%</span></label>
               <input type="range" id="set-vol-master" class="pause-slider" min="0" max="100" value="70" step="1">
             </div>
             <div class="pause-setting-block">
-              <label class="pause-setting-label" for="set-vol-sfx">????? <span id="set-vol-sfx-val">100%</span></label>
+              <label class="pause-setting-label" for="set-vol-sfx">资源区音效 <span id="set-vol-sfx-val">100%</span></label>
               <input type="range" id="set-vol-sfx" class="pause-slider" min="0" max="100" value="100" step="1">
             </div>
           </div>
           <div class="pause-settings-pane hidden" id="pause-pane-game" data-settings-pane="game" role="tabpanel">
             <div class="pause-setting-block">
-              <label class="pause-check"><input type="checkbox" id="set-enable-tutorial" checked> ??????</label>
+              <label class="pause-check"><input type="checkbox" id="set-enable-tutorial" checked> 启动新手教程</label>
             </div>
-            <p class="pause-menu-hint">?????????????????????</p>
+            <p class="pause-menu-hint">新开局时是否自动开始新手教程（默认开启）。</p>
             <div class="pause-setting-block" style="margin-top:16px;">
-              <label class="pause-check"><input type="checkbox" id="set-resource-gain-notify" checked> ??????</label>
+              <label class="pause-check"><input type="checkbox" id="set-resource-gain-notify" checked> 资源获得提示</label>
             </div>
-            <p class="pause-menu-hint">????????????????????????????????</p>
+            <p class="pause-menu-hint">采集、开箱、生产完成时，是否在下方弹出获得资源提示（默认开启）。</p>
             <div class="pause-setting-block" style="margin-top:16px;">
-              <button type="button" class="pause-settings-action pause-settings-action-danger" id="set-reset-save">????</button>
+              <button type="button" class="pause-settings-action pause-settings-action-danger" id="set-reset-save">重置存档</button>
             </div>
-            <p class="pause-menu-hint">??????????????????????</p>
+            <p class="pause-menu-hint">清空当前进度并重新选择难度，此操作不可撤销。</p>
           </div>
         </div>
-        <button type="button" class="pause-menu-back" id="pause-settings-back">??</button>
+        <button type="button" class="pause-menu-back" id="pause-settings-back">返回</button>
       </div>
 
       <div class="pause-menu-panel pause-menu-wide pause-menu-dev-panel hidden" id="pause-menu-dev">
         <div class="pause-sub-header">
-          <h2 class="pause-sub-title">????</h2>
+          <h2 class="pause-sub-title">开发人员</h2>
         </div>
         <div class="pause-settings-body pause-menu-dev-body">
-          <p class="pause-menu-dev-status">???</p>
-          <p class="pause-menu-dev-label">?????</p>
-          <p class="pause-menu-dev-name">??-?</p>
+          <p class="pause-menu-dev-status">开发中</p>
+          <p class="pause-menu-dev-label">开发人员：</p>
+          <p class="pause-menu-dev-name">夕云-朱</p>
         </div>
-        <button type="button" class="pause-menu-back" id="pause-dev-back">??</button>
+        <button type="button" class="pause-menu-back" id="pause-dev-back">返回</button>
       </div>
 
       <div class="pause-menu-panel pause-menu-wide hidden" id="pause-menu-achievements">
         <div class="pause-sub-header">
-          <h2 class="pause-sub-title">??</h2>
+          <h2 class="pause-sub-title">成就</h2>
         </div>
         <div class="pause-settings-body achievements-body">
           <p class="achievements-summary" data-achievements-summary></p>
           <div class="achievements-list" data-achievements-list></div>
         </div>
-        <button type="button" class="pause-menu-back" id="pause-achievements-back">??</button>
+        <button type="button" class="pause-menu-back" id="pause-achievements-back">返回</button>
       </div>
     </div>
 
     <div id="dev-panel" class="dev-panel hidden">
       <div class="dev-panel-header">
-        <h3>??? ?????</h3>
-        <button id="dev-close" class="dev-close" title="??">�</button>
+        <h3>🛠️ 开发者面板</h3>
+        <button id="dev-close" class="dev-close" title="关闭">×</button>
       </div>
-      <p class="dev-hint">????Ctrl + Shift + R</p>
+      <p class="dev-hint">快捷键：Ctrl + Shift + R</p>
 
       <div class="dev-section">
-        <h4>????</h4>
+        <h4>时间加速</h4>
         <div class="dev-time-row">
           <input type="range" id="dev-time-scale" min="1" max="200" value="1" step="1">
-          <span id="dev-time-label">1�</span>
+          <span id="dev-time-label">1×</span>
         </div>
         <div class="dev-btn-row">
-          <button class="dev-btn" data-time-scale="1">1�</button>
-          <button class="dev-btn" data-time-scale="2">2�</button>
-          <button class="dev-btn" data-time-scale="5">5�</button>
-          <button class="dev-btn" data-time-scale="10">10�</button>
-          <button class="dev-btn" data-time-scale="60">60�</button>
-          <button class="dev-btn" data-time-scale="100">100�</button>
-          <button class="dev-btn" data-time-scale="200">200�</button>
+          <button class="dev-btn" data-time-scale="1">1×</button>
+          <button class="dev-btn" data-time-scale="2">2×</button>
+          <button class="dev-btn" data-time-scale="5">5×</button>
+          <button class="dev-btn" data-time-scale="10">10×</button>
+          <button class="dev-btn" data-time-scale="60">60×</button>
+          <button class="dev-btn" data-time-scale="100">100×</button>
+          <button class="dev-btn" data-time-scale="200">200×</button>
         </div>
       </div>
 
       <div class="dev-section">
-        <h4>???</h4>
+        <h4>科技树</h4>
         <div class="dev-btn-row">
-          <button class="dev-btn" id="dev-tech-edit" type="button">?????????</button>
+          <button class="dev-btn" id="dev-tech-edit" type="button">进入科技树调整模式</button>
         </div>
-        <p class="dev-hint" style="margin-top:6px;">???????????/???Esc ?? config/tech-tree-table.js ???</p>
+        <p class="dev-hint" style="margin-top:6px;">拖拽改位置；点选改依赖/费用；Esc 导出 config/tech-tree-table.js 并退出</p>
       </div>
 
       <div class="dev-section">
-        <h4>????</h4>
+        <h4>快速解锁</h4>
         <div class="dev-btn-row">
-          <button class="dev-btn" id="dev-unlock-resources">??????</button>
-          <button class="dev-btn" id="dev-unlock-tech">????</button>
-          <button class="dev-btn" id="dev-unlock-stations">????</button>
+          <button class="dev-btn" id="dev-unlock-resources">解锁资源类型</button>
+          <button class="dev-btn" id="dev-unlock-tech">解锁科技</button>
+          <button class="dev-btn" id="dev-unlock-stations">解锁站点</button>
         </div>
       </div>
 
       <div class="dev-section">
-        <h4>????</h4>
+        <h4>资源数量</h4>
         <div id="dev-resource-list" class="dev-resource-list"></div>
         <div class="dev-btn-row">
-          <button class="dev-btn" id="dev-add-all-100">?? +100</button>
-          <button class="dev-btn" id="dev-add-all-1000">?? +1000</button>
+          <button class="dev-btn" id="dev-add-all-100">全部 +100</button>
+          <button class="dev-btn" id="dev-add-all-1000">全部 +1000</button>
         </div>
       </div>
 
       <div class="dev-section">
-        <h4>?? / ??</h4>
-        <p class="dev-hint" style="margin-top:0;">????????????????</p>
+        <h4>工具 / 武器</h4>
+        <p class="dev-hint" style="margin-top:0;">采集工具与战斗装备均可直接改数量</p>
         <div id="dev-tool-list" class="dev-resource-list dev-tool-list"></div>
         <div class="dev-btn-row">
-          <button class="dev-btn" id="dev-add-tools-1" type="button">????? +1</button>
-          <button class="dev-btn" id="dev-add-weapons-1" type="button">????? +1</button>
-          <button class="dev-btn" id="dev-add-gear-10" type="button">???? +10</button>
+          <button class="dev-btn" id="dev-add-tools-1" type="button">工具各等级 +1</button>
+          <button class="dev-btn" id="dev-add-weapons-1" type="button">武器各等级 +1</button>
+          <button class="dev-btn" id="dev-add-gear-10" type="button">全部装备 +10</button>
         </div>
       </div>
 
       <div class="dev-section">
-        <h4>??????</h4>
-        <p class="dev-hint" style="margin-top:0;">???????????????????</p>
+        <h4>袭击来袭测试</h4>
+        <p class="dev-hint" style="margin-top:0;">自定义敌军数量后立即开战（不混入残敌）</p>
         <div class="dev-raid-grid" id="dev-raid-grid">
-          <label class="dev-raid-row">?? <input type="number" id="dev-raid-bare" min="0" max="500" value="6" step="1"></label>
-          <label class="dev-raid-row">??? <input type="number" id="dev-raid-sling" min="0" max="500" value="0" step="1"></label>
-          <label class="dev-raid-row">???? <input type="number" id="dev-raid-raider" min="0" max="500" value="0" step="1"></label>
-          <label class="dev-raid-row">???? <input type="number" id="dev-raid-ram" min="0" max="500" value="0" step="1"></label>
+          <label class="dev-raid-row">流寇 <input type="number" id="dev-raid-bare" min="0" max="500" value="6" step="1"></label>
+          <label class="dev-raid-row">投石手 <input type="number" id="dev-raid-sling" min="0" max="500" value="0" step="1"></label>
+          <label class="dev-raid-row">持刃爪牙 <input type="number" id="dev-raid-raider" min="0" max="500" value="0" step="1"></label>
+          <label class="dev-raid-row">破门锤手 <input type="number" id="dev-raid-ram" min="0" max="500" value="0" step="1"></label>
         </div>
         <div class="dev-btn-row">
-          <button class="dev-btn" type="button" id="dev-raid-preset-scout">????</button>
-          <button class="dev-btn" type="button" id="dev-raid-preset-raiders">????</button>
-          <button class="dev-btn" type="button" id="dev-raid-preset-warband">????</button>
+          <button class="dev-btn" type="button" id="dev-raid-preset-scout">斥候预设</button>
+          <button class="dev-btn" type="button" id="dev-raid-preset-raiders">匪徒预设</button>
+          <button class="dev-btn" type="button" id="dev-raid-preset-warband">战团预设</button>
         </div>
         <div class="dev-btn-row">
-          <button class="dev-btn dev-btn-warn" type="button" id="dev-raid-start">????</button>
-          <button class="dev-btn" type="button" id="dev-raid-end-win">????</button>
-          <button class="dev-btn" type="button" id="dev-raid-end-lose">????</button>
+          <button class="dev-btn dev-btn-warn" type="button" id="dev-raid-start">立即来袭</button>
+          <button class="dev-btn" type="button" id="dev-raid-end-win">强制胜利</button>
+          <button class="dev-btn" type="button" id="dev-raid-end-lose">强制战败</button>
         </div>
       </div>
 
       <div class="dev-section">
-        <h4>??</h4>
+        <h4>其他</h4>
         <div class="dev-btn-row">
-          <button class="dev-btn" id="dev-workers-10">?? +10</button>
-          <button class="dev-btn" id="dev-chest-1">?? +1</button>
-          <button class="dev-btn" id="dev-chest-10">?? +10</button>
-          <button class="dev-btn" id="dev-simulate-1h">???? 1 ??</button>
+          <button class="dev-btn" id="dev-workers-10">工人 +10</button>
+          <button class="dev-btn" id="dev-chest-1">宝箱 +1</button>
+          <button class="dev-btn" id="dev-chest-10">宝箱 +10</button>
+          <button class="dev-btn" id="dev-simulate-1h">模拟推进 1 小时</button>
         </div>
         <div class="dev-btn-row">
-          <button class="dev-btn dev-btn-warn" id="dev-reset-game">????</button>
+          <button class="dev-btn dev-btn-warn" id="dev-reset-game">存档重置</button>
         </div>
       </div>
     </div>
@@ -619,55 +619,55 @@
     <div id="dev-picker" class="dev-picker hidden">
       <div class="dev-picker-dialog">
         <div class="dev-picker-header">
-          <h4 id="dev-picker-title">??</h4>
-          <button id="dev-picker-close" class="dev-close" type="button">�</button>
+          <h4 id="dev-picker-title">选择</h4>
+          <button id="dev-picker-close" class="dev-close" type="button">×</button>
         </div>
         <p id="dev-picker-hint" class="dev-picker-hint"></p>
         <div id="dev-picker-list" class="dev-picker-list"></div>
         <div class="dev-picker-footer">
-          <button id="dev-picker-all" class="dev-btn dev-btn-warn" type="button">????</button>
+          <button id="dev-picker-all" class="dev-btn dev-btn-warn" type="button">全部解锁</button>
         </div>
       </div>
     </div>
   </div>
 
-  <!-- ?????????????????????? -->
-  <div id="defense-intro" class="defense-intro comic-intro hidden" aria-label="????">
-    <button type="button" class="comic-skip" id="comic-skip" title="????">??</button>
+  <!-- 开局漫画：独立全屏页，结束后才渐显游戏主界面 -->
+  <div id="defense-intro" class="defense-intro comic-intro hidden" aria-label="背景介绍">
+    <button type="button" class="comic-skip" id="comic-skip" title="跳过介绍">跳过</button>
     <div class="comic-pages" id="comic-pages">
       <div class="comic-strip comic-page comic-page-1 is-active" data-page="1">
         <div class="comic-panel comic-panel-p1-1 is-visible" data-panel="1">
-          <div class="comic-panel-face" role="img" aria-label="?? 1"></div>
+          <div class="comic-panel-face" role="img" aria-label="分镜 1"></div>
         </div>
         <div class="comic-panel comic-panel-p1-2" data-panel="2">
-          <div class="comic-panel-face" role="img" aria-label="?? 2"></div>
+          <div class="comic-panel-face" role="img" aria-label="分镜 2"></div>
         </div>
         <div class="comic-panel comic-panel-p1-3" data-panel="3">
-          <div class="comic-panel-face" role="img" aria-label="?? 3"></div>
+          <div class="comic-panel-face" role="img" aria-label="分镜 3"></div>
         </div>
         <div class="comic-panel comic-panel-p1-4" data-panel="4">
-          <div class="comic-panel-face" role="img" aria-label="?? 4"></div>
+          <div class="comic-panel-face" role="img" aria-label="分镜 4"></div>
         </div>
         <div class="comic-panel comic-panel-p1-5" data-panel="5">
-          <div class="comic-panel-face" role="img" aria-label="?? 5"></div>
+          <div class="comic-panel-face" role="img" aria-label="分镜 5"></div>
         </div>
       </div>
       <div class="comic-strip comic-page comic-page-2" data-page="2">
         <div class="comic-panel comic-panel-p2-1" data-panel="6">
-          <div class="comic-panel-face" role="img" aria-label="?? 6"></div>
+          <div class="comic-panel-face" role="img" aria-label="分镜 6"></div>
         </div>
         <div class="comic-panel comic-panel-p2-2" data-panel="7">
-          <div class="comic-panel-face" role="img" aria-label="?? 7"></div>
+          <div class="comic-panel-face" role="img" aria-label="分镜 7"></div>
         </div>
         <div class="comic-panel comic-panel-p2-3" data-panel="8">
-          <div class="comic-panel-face" role="img" aria-label="?? 8"></div>
+          <div class="comic-panel-face" role="img" aria-label="分镜 8"></div>
         </div>
         <div class="comic-panel comic-panel-p2-4" data-panel="9">
-          <div class="comic-panel-face" role="img" aria-label="?? 9"></div>
+          <div class="comic-panel-face" role="img" aria-label="分镜 9"></div>
         </div>
       </div>
     </div>
-    <p class="comic-hint" id="comic-hint">????</p>
+    <p class="comic-hint" id="comic-hint">点击继续</p>
   </div>
 
   <script src="data.js?v=20260724.1c"></script>
