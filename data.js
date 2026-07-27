@@ -1,6 +1,4 @@
 // 游戏数据定义
-const POINT_UPGRADE_CAPS = { count: 10, cooldown: 5, double: 1 };
-
 const POINT_UPGRADE_TYPE_META = {
   count: { label: '采集升级', typeIcon: '⚡' },
   cooldown: { label: '资源恢复', typeIcon: '⏱️' },
@@ -9,7 +7,6 @@ const POINT_UPGRADE_TYPE_META = {
   dropRate: { label: '宝箱爆率', typeIcon: '🎲' },
   rewardTypes: { label: '奖励种类', typeIcon: '🎁' },
   rewardAmount: { label: '奖励数量', typeIcon: '📈' },
-  quality: { label: '宝箱资源品质', typeIcon: '💎' },
 };
 
 function pointUpgradeTechId(pointId, type) {
@@ -133,7 +130,7 @@ function generatePointUpgradeTechEntries(resourcePoints, chestUpgradeCosts) {
     }
 
     if (def.isTreasureChest) {
-      ['dropRate', 'rewardTypes', 'rewardAmount', 'quality'].forEach((type) => {
+      ['dropRate', 'rewardTypes', 'rewardAmount'].forEach((type) => {
         const meta = POINT_UPGRADE_TYPE_META[type];
         const chestCosts = chestUpgradeCosts[type] || [];
         entries.push({
@@ -145,9 +142,7 @@ function generatePointUpgradeTechEntries(resourcePoints, chestUpgradeCosts) {
             ? '提高采集区资源点掉落宝箱的概率（觅食除外）'
             : type === 'rewardTypes'
               ? '提高宝箱奖励资源种类上限'
-              : type === 'quality'
-                ? '提高宝箱开出合成物资的概率'
-                : '提高宝箱每种资源的奖励数量',
+              : '提高宝箱每种资源的奖励数量',
           requires: anchor,
           repeatable: true,
           maxRepeat: def.maxUpgrades[type],
@@ -502,68 +497,6 @@ function generatePointUpgradeTechLayout(resourcePoints, existingNodes) {
   return layout;
 }
 
-/**
- * 资源点升级费用：
- * - 采集 / 恢复 / 精炼：只消耗本资源
- * - 精炼重置：自身加工品 + 同档其他资源
- * @param {{ resource: string, processed: string, others?: string[], scale?: number }} cfg
- */
-function getPointUpgradeBaseScale(pointIndex = 1) {
-  return 1 + Math.max(0, pointIndex - 1) * 0.6;
-}
-
-function makePointUpgradeCosts(cfg) {
-  const { resource, processed, others = [], pointIndex = 1 } = cfg;
-  const scale = getPointUpgradeBaseScale(pointIndex);
-  const amt = (n) => Math.max(1, Math.round(n * scale));
-
-  // 自资源价格基数（count 类型）
-  const countBases = [4, 5, 6, 8, 10, 12, 15, 19, 24, 30];
-  // 资源恢复价格基数（cooldown 类型）
-  const cdBases = [7, 9, 11, 14, 18, 22, 28, 35, 44, 55];
-  // 精炼价格基数
-  const refineBase = amt(85);   // 一级精炼
-  const refineBase2 = amt(107); // 二级精炼
-  const prestigeBase = amt(192);
-
-  // 用公式 *1.08+1.5（向下取整）扩展到 200 级（足够 20 轮重置）
-  const extend = (arr) => {
-    let last = arr[arr.length - 1];
-    const result = [...arr];
-    for (let i = arr.length; i < 200; i++) {
-      const v = Math.floor(last * 1.08 + 1.5);
-      result.push(Math.max(1, v));
-      last = v;
-    }
-    return result;
-  };
-
-  const countRaw = extend(countBases);
-  const cdRaw = extend(cdBases);
-
-  const self = (n) => ({ [resource]: amt(n) });
-  const countArr = countRaw.map(n => self(n));
-  const cdArr = cdRaw.map(n => self(n));
-  const doubleArr = [self(refineBase)];
-  const prestigeCost = self(prestigeBase);
-
-  const a = others[0];
-  const b = others[1] || others[0];
-  const mixed = (p, x, y) => {
-    const cost = { [processed]: amt(p) };
-    if (x > 0 && a) cost[a] = amt(x);
-    if (y > 0 && b) cost[b] = amt(y);
-    return cost;
-  };
-
-  return {
-    count: countArr,
-    cooldown: cdArr,
-    double: doubleArr,
-    prestige: prestigeCost,
-  };
-}
-
 const GAME_DATA = {
   resources: {
     wood: { id: 'wood', name: '木头', icon: '🪵', color: '#8B6914' },
@@ -586,345 +519,15 @@ const GAME_DATA = {
     lime: { id: 'lime', name: '石灰', icon: '⬜', color: '#F5F5DC' },
     coal: { id: 'coal', name: '煤炭', icon: '⚫', color: '#333' },
     coke: { id: 'coke', name: '焦炭', icon: '⬛', color: '#2A2A2A' },
-    iron_ore: { id: 'iron_ore', name: '铁矿', icon: '⬛', color: '#555' },
-    iron_ingot: { id: 'iron_ingot', name: '铁锭', icon: '⬜', color: '#AAA' },
-    steel: { id: 'steel', name: '钢', icon: '🔩', color: '#6B7B8C' },
-    silver_ore: { id: 'silver_ore', name: '银矿', icon: '🔹', color: '#C0C0C0' },
-    silver_ingot: { id: 'silver_ingot', name: '银锭', icon: '⬜', color: '#E8E8E8' },
-    sulfur: { id: 'sulfur', name: '硫磺', icon: '🟡', color: '#E6D600' },
-    gunpowder: { id: 'gunpowder', name: '火药', icon: '💥', color: '#4A4A4A' },
-    obsidian: { id: 'obsidian', name: '黑曜石', icon: '🖤', color: '#1a1a1a' },
-    gold_ore: { id: 'gold_ore', name: '金矿', icon: '🟨', color: '#DAA520' },
-    gold_ingot: { id: 'gold_ingot', name: '金锭', icon: '🥇', color: '#FFD700' },
-    crystal: { id: 'crystal', name: '水晶', icon: '💎', color: '#7FDBFF' },
-    polished_crystal: { id: 'polished_crystal', name: '抛光水晶', icon: '💠', color: '#B0E0FF' },
-    meteorite: { id: 'meteorite', name: '陨石', icon: '☄️', color: '#4B0082' },
-    star_metal: { id: 'star_metal', name: '陨铁', icon: '🌟', color: '#6A5ACD' },
     gear: { id: 'gear', name: '齿轮', icon: '⚙️', color: '#777' },
     food: { id: 'food', name: '食物', icon: '🍖', color: '#C75B39' },
   },
 
   /**
-   * 资源点定义（名称/解锁/升级费用等）
-   * 初始 baseMaxCount / baseCooldown / baseYield 由 config/resource-points.js 覆盖
+   * 资源点定义：正式以 config/resource-points.js 为准（运行时 applyResourcePoints 写入）
+   * 采集/恢复/精炼费用见 config/point-upgrade-costs.js
    */
-  resourcePoints: {
-    berry_bush: {
-      id: 'berry_bush',
-      name: '浆果丛',
-      icon: '🫐',
-      description: '采集浆果作为食物',
-      resource: 'food',
-      baseYield: 1,
-      baseMaxCount: 12,
-      baseCooldown: 250,
-      maxUpgrades: { count: 0, cooldown: 0, double: 0 },
-      upgradeCosts: { count: [], cooldown: [], double: [] },
-      unlockRequires: null,
-      isFoodPoint: true,
-    },
-    forest: {
-      id: 'forest',
-      name: '森林',
-      icon: '🌲',
-      description: '砍伐树木获取木头',
-      resource: 'wood',
-      baseYield: 1,
-      baseMaxCount: 15,
-      baseCooldown: 2000,
-      maxUpgrades: { ...POINT_UPGRADE_CAPS },
-      upgradeCosts: makePointUpgradeCosts({ resource: 'wood', processed: 'plank', others: ['stone_slab', 'resin'], pointIndex: 1 }),
-      unlockRequires: 'unlock_forest',
-    },
-    quarry: {
-      id: 'quarry',
-      name: '采石场',
-      icon: '⛏️',
-      description: '开采石头',
-      resource: 'stone',
-      baseYield: 1,
-      tier: 'low',
-      baseMaxCount: 24,
-      baseCooldown: 2000,
-      maxUpgrades: { ...POINT_UPGRADE_CAPS },
-      upgradeCosts: makePointUpgradeCosts({ resource: 'stone', processed: 'stone_slab', others: ['clay', 'brick'], pointIndex: 2 }),
-      unlockRequires: 'unlock_quarry',
-    },
-    clay_pit: {
-      id: 'clay_pit',
-      name: '黏土坑',
-      icon: '🟠',
-      description: '挖掘黏土',
-      resource: 'clay',
-      baseYield: 1,
-      tier: 'low',
-      baseMaxCount: 24,
-      baseCooldown: 2200,
-      maxUpgrades: { ...POINT_UPGRADE_CAPS },
-      upgradeCosts: makePointUpgradeCosts({ resource: 'clay', processed: 'brick', others: ['stone_slab', 'gravel'], pointIndex: 3 }),
-      unlockRequires: 'unlock_clay_pit',
-    },
-    copper_mine: {
-      id: 'copper_mine',
-      name: '铜矿',
-      icon: '🏔️',
-      description: '开采铜矿石',
-      resource: 'copper_ore',
-      baseYield: 1,
-      tier: 'mid',
-      baseMaxCount: 45,
-      baseCooldown: 3000,
-      maxUpgrades: { ...POINT_UPGRADE_CAPS },
-      upgradeCosts: makePointUpgradeCosts({ resource: 'copper_ore', processed: 'copper_ingot', others: ['coal', 'limestone'], pointIndex: 4 }),
-      unlockRequires: 'unlock_copper_mine',
-    },
-    iron_mine: {
-      id: 'iron_mine',
-      name: '铁矿',
-      icon: '🗻',
-      description: '开采铁矿石',
-      resource: 'iron_ore',
-      baseYield: 1,
-      tier: 'high',
-      baseMaxCount: 75,
-      baseCooldown: 4000,
-      maxUpgrades: { ...POINT_UPGRADE_CAPS },
-      upgradeCosts: makePointUpgradeCosts({ resource: 'iron_ore', processed: 'iron_ingot', others: ['coke', 'limestone'], pointIndex: 5 }),
-      unlockRequires: 'unlock_iron_mine',
-    },
-    coal_mine: {
-      id: 'coal_mine',
-      name: '煤矿',
-      icon: '🕳️',
-      description: '开采煤炭',
-      resource: 'coal',
-      baseYield: 1,
-      tier: 'mid',
-      baseMaxCount: 40,
-      baseCooldown: 2500,
-      maxUpgrades: { ...POINT_UPGRADE_CAPS },
-      upgradeCosts: makePointUpgradeCosts({ resource: 'coal', processed: 'coke', others: ['limestone', 'clay'], pointIndex: 6 }),
-      unlockRequires: 'unlock_coal_mine',
-    },
-    gravel_bed: {
-      id: 'gravel_bed',
-      name: '砂砾滩',
-      icon: '🏜️',
-      description: '采集砂砾',
-      resource: 'gravel',
-      baseYield: 1,
-      tier: 'low',
-      baseMaxCount: 24,
-      baseCooldown: 2000,
-      maxUpgrades: { ...POINT_UPGRADE_CAPS },
-      upgradeCosts: makePointUpgradeCosts({ resource: 'gravel', processed: 'glass', others: ['clay', 'stone'], pointIndex: 7 }),
-      unlockRequires: 'unlock_gravel',
-    },
-    tin_mine: {
-      id: 'tin_mine',
-      name: '锡矿',
-      icon: '🪙',
-      description: '开采锡矿',
-      resource: 'tin_ore',
-      baseYield: 1,
-      tier: 'mid',
-      baseMaxCount: 42,
-      baseCooldown: 2800,
-      maxUpgrades: { ...POINT_UPGRADE_CAPS },
-      upgradeCosts: makePointUpgradeCosts({ resource: 'tin_ore', processed: 'bronze', others: ['copper_ore', 'coal'], pointIndex: 8 }),
-      unlockRequires: 'unlock_tin_mine',
-    },
-    limestone_quarry: {
-      id: 'limestone_quarry',
-      name: '石灰岩场',
-      icon: '▫️',
-      description: '开采石灰石',
-      resource: 'limestone',
-      baseYield: 1,
-      tier: 'mid',
-      baseMaxCount: 40,
-      baseCooldown: 2600,
-      maxUpgrades: { ...POINT_UPGRADE_CAPS },
-      upgradeCosts: makePointUpgradeCosts({ resource: 'limestone', processed: 'lime', others: ['gravel', 'clay'], pointIndex: 9 }),
-      unlockRequires: 'unlock_limestone',
-    },
-    silver_mine: {
-      id: 'silver_mine',
-      name: '银矿',
-      icon: '🔹',
-      description: '开采银矿',
-      resource: 'silver_ore',
-      baseYield: 1,
-      tier: 'high',
-      baseMaxCount: 72,
-      baseCooldown: 3500,
-      maxUpgrades: { ...POINT_UPGRADE_CAPS },
-      upgradeCosts: makePointUpgradeCosts({ resource: 'silver_ore', processed: 'silver_ingot', others: ['coal', 'iron_ore'], pointIndex: 10 }),
-      unlockRequires: 'unlock_silver_mine',
-    },
-    sulfur_vent: {
-      id: 'sulfur_vent',
-      name: '硫气孔',
-      icon: '🟡',
-      description: '采集硫磺',
-      resource: 'sulfur',
-      baseYield: 1,
-      tier: 'high',
-      baseMaxCount: 70,
-      baseCooldown: 3200,
-      maxUpgrades: { ...POINT_UPGRADE_CAPS },
-      upgradeCosts: makePointUpgradeCosts({ resource: 'sulfur', processed: 'gunpowder', others: ['coal', 'limestone'], pointIndex: 11 }),
-      unlockRequires: 'unlock_sulfur',
-    },
-    gold_mine: {
-      id: 'gold_mine',
-      name: '金矿',
-      icon: '🟨',
-      description: '开采金矿',
-      resource: 'gold_ore',
-      baseYield: 1,
-      tier: 'ultimate',
-      baseMaxCount: 130,
-      baseCooldown: 5000,
-      maxUpgrades: { ...POINT_UPGRADE_CAPS },
-      upgradeCosts: makePointUpgradeCosts({ resource: 'gold_ore', processed: 'gold_ingot', others: ['glass', 'polished_crystal'], pointIndex: 12 }),
-      unlockRequires: 'unlock_gold_mine',
-    },
-    crystal_cave: {
-      id: 'crystal_cave',
-      name: '水晶洞',
-      icon: '💎',
-      description: '开采水晶',
-      resource: 'crystal',
-      baseYield: 1,
-      tier: 'ultimate',
-      baseMaxCount: 130,
-      baseCooldown: 5500,
-      maxUpgrades: { ...POINT_UPGRADE_CAPS },
-      upgradeCosts: makePointUpgradeCosts({ resource: 'crystal', processed: 'polished_crystal', others: ['glass', 'gold_ore'], pointIndex: 13 }),
-      unlockRequires: 'unlock_crystal',
-    },
-    resin_grove: {
-      id: 'resin_grove',
-      name: '松脂林',
-      icon: '🍯',
-      description: '采集树脂',
-      resource: 'resin',
-      baseYield: 1,
-      tier: 'low',
-      baseMaxCount: 22,
-      baseCooldown: 2200,
-      maxUpgrades: { ...POINT_UPGRADE_CAPS },
-      upgradeCosts: makePointUpgradeCosts({ resource: 'resin', processed: 'pitch', others: ['wood', 'plank'], pointIndex: 14 }),
-      unlockRequires: 'unlock_resin',
-    },
-    zinc_mine: {
-      id: 'zinc_mine',
-      name: '锌矿',
-      icon: '🔘',
-      description: '开采锌矿',
-      resource: 'zinc_ore',
-      baseYield: 1,
-      tier: 'mid',
-      baseMaxCount: 42,
-      baseCooldown: 2700,
-      maxUpgrades: { ...POINT_UPGRADE_CAPS },
-      upgradeCosts: makePointUpgradeCosts({ resource: 'zinc_ore', processed: 'brass', others: ['copper_ore', 'coal'], pointIndex: 15 }),
-      unlockRequires: 'unlock_zinc_mine',
-    },
-    obsidian_deposit: {
-      id: 'obsidian_deposit',
-      name: '黑曜岩',
-      icon: '⬛',
-      description: '开采黑曜石',
-      resource: 'obsidian',
-      baseYield: 1,
-      tier: 'high',
-      baseMaxCount: 72,
-      baseCooldown: 3600,
-      maxUpgrades: { ...POINT_UPGRADE_CAPS },
-      upgradeCosts: makePointUpgradeCosts({ resource: 'obsidian', processed: 'obsidian', others: ['iron_ingot', 'gunpowder'], pointIndex: 16 }),
-      unlockRequires: 'unlock_obsidian',
-    },
-    meteor_crater: {
-      id: 'meteor_crater',
-      name: '陨石坑',
-      icon: '☄️',
-      description: '采集陨石',
-      resource: 'meteorite',
-      baseYield: 1,
-      tier: 'ultimate',
-      baseMaxCount: 130,
-      baseCooldown: 6000,
-      maxUpgrades: { ...POINT_UPGRADE_CAPS },
-      upgradeCosts: makePointUpgradeCosts({ resource: 'meteorite', processed: 'star_metal', others: ['gold_ingot', 'polished_crystal'], pointIndex: 17 }),
-      unlockRequires: 'unlock_meteor',
-    },
-    farm: {
-      id: 'farm',
-      name: '农场',
-      icon: '🌾',
-      description: '耕作产出食物',
-      resource: 'food',
-      baseYield: 1,
-      baseMaxCount: 5,
-      baseCooldown: 1000,
-      /** 资源恢复满级后冷却倍率（1s → 0.25s） */
-      finalCooldownRatio: 0.25,
-      maxWorkers: 4,
-      canBuildMultiple: true,
-      extraBuildBaseCost: { wood: 25, clay: 18, food: 12 },
-      extraBuildCostBump: { mult: 1.3, add: 8 },
-      maxUpgrades: { count: 0, cooldown: 10, double: 0, efficiency: 2 },
-      upgradeCosts: {
-        count: [],
-        cooldown: makePointUpgradeCosts({ resource: 'food', processed: 'food', pointIndex: 2 }).cooldown.slice(0, 10),
-        double: [],
-      },
-      /** 升到对应等级时的单价：约等于按涨价累加「再建 N 座」的总价 */
-      efficiencyUpgradeBuilds: [2, 5],
-      efficiencySpeedByLevel: { 1: 0.15, 2: 0.3 },
-      unlockRequires: 'unlock_farm',
-      isFoodPoint: true,
-    },
-    pasture: {
-      id: 'pasture',
-      name: '牧场',
-      icon: '🐄',
-      description: '畜牧产出食物',
-      resource: 'food',
-      baseYield: 1,
-      baseMaxCount: 3,
-      baseCooldown: 1000,
-      finalCooldownRatio: 0.25,
-      maxWorkers: 8,
-      canBuildMultiple: true,
-      extraBuildBaseCost: { brick: 15, plank: 20, food: 25 },
-      extraBuildCostBump: { mult: 1.3, add: 10 },
-      maxUpgrades: { count: 0, cooldown: 10, double: 0, efficiency: 2 },
-      upgradeCosts: {
-        count: [],
-        cooldown: makePointUpgradeCosts({ resource: 'food', processed: 'food', pointIndex: 3 }).cooldown.slice(0, 10),
-        double: [],
-      },
-      efficiencyUpgradeBuilds: [2, 5],
-      efficiencySpeedByLevel: { 1: 0.15, 2: 0.3 },
-      unlockRequires: 'unlock_pasture',
-      isFoodPoint: true,
-    },
-    treasure_chest: {
-      id: 'treasure_chest',
-      name: '宝箱',
-      icon: '📦',
-      description: '开启宝箱获得随机资源',
-      isTreasureChest: true,
-      baseMaxCount: 4,
-      baseCooldown: 500,
-      maxUpgrades: { dropRate: 8, rewardTypes: 3, rewardAmount: 3, quality: 5 },
-      unlockRequires: 'unlock_treasure_chest',
-    },
-  },
-
+  resourcePoints: {},
   recipes: [
     {
       id: 'craft_plank',
@@ -972,30 +575,6 @@ const GAME_DATA = {
       baseCooldown: 4000,
     },
     {
-      id: 'smelt_iron',
-      name: '冶炼铁锭',
-      icon: '⬜',
-      description: '2铁矿+1煤炭冶炼1铁锭',
-      inputs: { iron_ore: 2, coal: 1 },
-      outputs: { iron_ingot: 1 },
-      requires: 'unlock_iron_smelt',
-      usesFurnace: true,
-      baseMaxCount: 12,
-      baseCooldown: 4000,
-    },
-    {
-      id: 'smelt_steel',
-      name: '锻造钢材',
-      icon: '🔩',
-      description: '2铁锭+1焦炭锻造1钢（需升级熔炉）',
-      inputs: { iron_ingot: 2, coke: 1 },
-      outputs: { steel: 1 },
-      requires: 'unlock_steel_smelt',
-      usesFurnace: true,
-      baseMaxCount: 14,
-      baseCooldown: 5000,
-    },
-    {
       id: 'craft_lime',
       name: '烧制石灰',
       icon: '⬜',
@@ -1018,52 +597,6 @@ const GAME_DATA = {
       usesFurnace: true,
       baseMaxCount: 10,
       baseCooldown: 3500,
-    },
-    {
-      id: 'smelt_silver',
-      name: '冶炼银锭',
-      icon: '🪞',
-      description: '2银矿+1煤炭冶炼1银锭',
-      inputs: { silver_ore: 2, coal: 1 },
-      outputs: { silver_ingot: 1 },
-      requires: 'unlock_silver_smelt',
-      usesFurnace: true,
-      baseMaxCount: 12,
-      baseCooldown: 4000,
-    },
-    {
-      id: 'craft_gunpowder',
-      name: '配制火药',
-      icon: '💥',
-      description: '2硫磺+1煤炭配制1火药',
-      inputs: { sulfur: 2, coal: 1 },
-      outputs: { gunpowder: 1 },
-      requires: 'unlock_gunpowder',
-      baseMaxCount: 10,
-      baseCooldown: 3500,
-    },
-    {
-      id: 'smelt_gold',
-      name: '冶炼金锭',
-      icon: '🥇',
-      description: '2金矿+1煤炭冶炼1金锭',
-      inputs: { gold_ore: 2, coal: 1 },
-      outputs: { gold_ingot: 1 },
-      requires: 'unlock_gold_smelt',
-      usesFurnace: true,
-      baseMaxCount: 14,
-      baseCooldown: 5000,
-    },
-    {
-      id: 'craft_polished_crystal',
-      name: '抛光水晶',
-      icon: '💠',
-      description: '1水晶+1玻璃抛光为1抛光水晶',
-      inputs: { crystal: 1, glass: 1 },
-      outputs: { polished_crystal: 1 },
-      requires: 'unlock_crystal_polish',
-      baseMaxCount: 12,
-      baseCooldown: 4500,
     },
     {
       id: 'craft_pitch',
@@ -1123,18 +656,7 @@ const GAME_DATA = {
       baseMaxCount: 10,
       baseCooldown: 3200,
     },
-    {
-      id: 'smelt_star_metal',
-      name: '冶炼陨铁',
-      icon: '🌟',
-      description: '2陨石+1煤炭冶炼1陨铁',
-      inputs: { meteorite: 2, coal: 1 },
-      outputs: { star_metal: 1 },
-      requires: 'unlock_star_metal',
-      usesFurnace: true,
-      baseMaxCount: 14,
-      baseCooldown: 5500,
-    },
+
     // 工具/武器/护甲配方见 config/tool-recipes.js（由 applyToolRecipes 合并）
 
   ],
@@ -1152,10 +674,9 @@ const GAME_DATA = {
       name: '镐子',
       icon: '⛏️',
       targets: [
-        'quarry', 'copper_mine', 'iron_mine', 'coal_mine',
+        'quarry', 'copper_mine', 'coal_mine',
         'tin_mine', 'limestone_quarry', 'zinc_mine',
-        'silver_mine', 'sulfur_vent', 'obsidian_deposit',
-        'gold_mine', 'crystal_cave', 'meteor_crater',
+        'gravel_bed', 'clay_pit',
       ],
       maxLevel: 4,
       levelNames: { 1: '木镐', 2: '黄铜镐', 3: '银镐', 4: '晶镐' },
@@ -1247,19 +768,19 @@ const GAME_DATA = {
       2: {
         name: '砖瓦开窗',
         desc: '人口上限翻倍（4→8）：砖墙 + 玻璃窗 + 中级矿料',
-        baseCost: { brick: 5, glass: 3, copper_ore: 4, coal: 3 },
+        baseCost: { brick: 5, glass: 3, stone: 4, clay: 3 },
         costBump: null,
       },
       3: {
         name: '灰浆厅堂',
         desc: '人口上限翻倍（8→16）：石灰砂浆 + 青铜构件 + 铁矿骨架',
-        baseCost: { lime: 5, bronze: 3, glass: 3, iron_ore: 5 },
+        baseCost: { pitch: 5, brick: 3, glass: 3, copper_ore: 5 },
         costBump: null,
       },
       4: {
         name: '精钢堡垒',
         desc: '人口上限翻倍（16→32）：钢梁 + 银饰 + 黑曜加固',
-        baseCost: { steel: 3, iron_ingot: 5, silver_ingot: 3, obsidian: 3 },
+        baseCost: { lime: 3, brass: 5, coke: 3, limestone: 3 },
         costBump: null,
       },
     },
@@ -1319,10 +840,7 @@ const GAME_DATA = {
   },
 
   /** 新开档初始库存（难度选择后会再按难度覆盖食物与工具） */
-  startingResources: {
-    food: 30,
-    wood: 3,
-  },
+  startingResources: { food: 30, wood: 3 },
 
   /** 难度配置 */
   difficulty: {
@@ -1403,11 +921,14 @@ const GAME_DATA = {
     ],
   },
 
-  /** 生产订单完成后固定冷却（毫秒） */
+  /** 生产订单完成后固定冷却（毫秒）；正式以 config/gameplay.js 为准 */
   craftOrderCooldownMs: 250,
 
-  toolUnlockMap: {},
-
+  /**
+   * 科技定义主数据：名称 / 图标 / 说明 / 可重复次数等。
+   * 依赖与费用会被 config/tech-tree-table.js 覆盖；资源点升级科技由 injectPointUpgradeTechs 追加。
+   * 不可删：外置表只覆盖已有 id，不负责生成整棵树。
+   */
   techTree: [
     {
       id: 'unlock_workbench',
@@ -1446,7 +967,7 @@ const GAME_DATA = {
       costs: [
         { plank: 12, stone: 10 },
         { brick: 15, stone_slab: 8 },
-        { brick: 25, iron_ingot: 5, lime: 8 },
+        { brick: 25, brass: 5, pitch: 8 },
       ],
     }),
     ...expandTechSeries({
@@ -1461,7 +982,7 @@ const GAME_DATA = {
         { wood: 30, plank: 15, stone: 10 },
         { plank: 25, stone_slab: 12 },
         { brick: 20, pitch: 8 },
-        { iron_ingot: 8, gear: 3 },
+        { brass: 8, gear: 3 },
       ],
     }),
     {
@@ -1506,8 +1027,8 @@ const GAME_DATA = {
         { food: 25, wood: 10 },
         { food: 40, plank: 15 },
         { food: 60, brick: 12 },
-        { food: 90, glass: 10, copper_ingot: 5 },
-        { food: 120, iron_ingot: 4, glass: 12 },
+        { food: 90, glass: 10, stone_slab: 5 },
+        { food: 120, brass: 4, glass: 12 },
       ],
     }),
     {
@@ -1536,10 +1057,10 @@ const GAME_DATA = {
         { brick: 4, gravel: 14 },
         { glass: 5, resin: 17 },
         { pitch: 6 },
-        { copper_ore: 25, coal: 25 },
-        { copper_ingot: 15, iron_ore: 25 },
-        { iron_ingot: 15, coke: 10 },
-        { steel: 15 },
+        { stone: 25, clay: 25 },
+        { stone_slab: 15, copper_ore: 25 },
+        { brass: 15, gear: 10 },
+        { lime: 15 },
       ],
     },
     {
@@ -1590,8 +1111,8 @@ const GAME_DATA = {
         { plank: 14, stone_slab: 10, clay: 8 },
         { plank: 18, brick: 8, gravel: 12 },
         { stone_slab: 12, brick: 10, pitch: 4 },
-        { brick: 14, copper_ingot: 4, glass: 8 },
-        { iron_ingot: 4, gear: 2, pitch: 6 },
+        { brick: 14, stone_slab: 4, glass: 8 },
+        { brass: 4, gear: 2, pitch: 6 },
       ],
     }),
     {
@@ -1662,7 +1183,7 @@ const GAME_DATA = {
       name: '高级工作台',
       icon: '🏗️',
       description: '解锁更高级的合成配方与熔炉前置（需砖块与石灰岩等中级材料）',
-      cost: { brick: 12, limestone: 10, plank: 15, stone_slab: 10, gravel: 8 },
+      cost: { brick: 12, resin: 10, plank: 15, stone_slab: 10, gravel: 8 },
       requires: 'unlock_brick_craft',
       branch: 'craft',
     },
@@ -1680,7 +1201,7 @@ const GAME_DATA = {
       name: '铜矿',
       icon: '🏔️',
       description: '解锁铜矿资源点（中级采矿，需先打通石灰岩产线）',
-      cost: { plank: 12, stone_slab: 12, limestone: 8 },
+      cost: { plank: 12, stone_slab: 12, resin: 8 },
       requires: ['unlock_limestone', 'unlock_lime_craft'],
       branch: 'mining',
     },
@@ -1689,7 +1210,7 @@ const GAME_DATA = {
       name: '铜锭冶炼',
       icon: '🔶',
       description: '解锁铜锭配方，在合成页安排生产',
-      cost: { copper_ore: 5 },
+      cost: { stone: 5 },
       requires: 'unlock_furnace',
       branch: 'smelting',
     },
@@ -1698,7 +1219,7 @@ const GAME_DATA = {
       name: '煤矿',
       icon: '🕳️',
       description: '解锁煤矿资源点',
-      cost: { stone_slab: 14, plank: 10, coal: 5 },
+      cost: { stone_slab: 14, plank: 10, clay: 5 },
       requires: ['unlock_copper_mine', 'unlock_furnace'],
       branch: 'mining',
     },
@@ -1707,7 +1228,7 @@ const GAME_DATA = {
       name: '锡矿',
       icon: '🪙',
       description: '解锁锡矿（中级），可铸造青铜',
-      cost: { plank: 18, stone: 14, copper_ore: 8 },
+      cost: { plank: 18, stone: 22 },
       requires: 'unlock_copper_mine',
       branch: 'mining',
     },
@@ -1716,7 +1237,7 @@ const GAME_DATA = {
       name: '锌矿',
       icon: '🔘',
       description: '解锁锌矿（中级），可铸造黄铜',
-      cost: { plank: 16, stone: 12, copper_ore: 10 },
+      cost: { plank: 16, stone: 22 },
       requires: 'unlock_copper_mine',
       branch: 'mining',
     },
@@ -1725,7 +1246,7 @@ const GAME_DATA = {
       name: '黄铜铸造',
       icon: '🟡',
       description: '解锁黄铜：1铜锭+1锌矿→1黄铜',
-      cost: { copper_ingot: 5, zinc_ore: 8 },
+      cost: { stone_slab: 5, plank: 8 },
       requires: 'unlock_copper_smelt',
       branch: 'smelting',
     },
@@ -1743,7 +1264,7 @@ const GAME_DATA = {
       name: '石灰烧制',
       icon: '⬜',
       description: '解锁石灰配方（4石灰石→1石灰，需已有熔炉）',
-      cost: { limestone: 12, coal: 5, brick: 6 },
+      cost: { resin: 12, clay: 5, brick: 6 },
       requires: 'unlock_furnace',
       branch: 'smelting',
     },
@@ -1752,7 +1273,7 @@ const GAME_DATA = {
       name: '青铜铸造',
       icon: '🥉',
       description: '解锁青铜：2铜锭+1锡矿→1青铜',
-      cost: { copper_ingot: 6, tin_ore: 5 },
+      cost: { stone_slab: 6, gravel: 5 },
       requires: 'unlock_copper_smelt',
       branch: 'smelting',
     },
@@ -1761,7 +1282,7 @@ const GAME_DATA = {
       name: '齿轮制造',
       icon: '⚙️',
       description: '解锁齿轮配方，在合成页安排生产',
-      cost: { copper_ingot: 8, pitch: 6 },
+      cost: { stone_slab: 8, pitch: 6 },
       requires: 'unlock_furnace',
       branch: 'craft',
     },
@@ -1770,7 +1291,7 @@ const GAME_DATA = {
       name: '村民训战',
       icon: '⚔️',
       description: '开启防务强化科技线（生命/攻击/攻速/坚韧皮肤）',
-      cost: { gear: 4, plank: 20, copper_ingot: 5 },
+      cost: { gear: 4, plank: 20, stone_slab: 5 },
       requires: ['unlock_tool_durability_v5', 'unlock_gear_craft'],
       branch: 'defense',
     },
@@ -1784,9 +1305,9 @@ const GAME_DATA = {
       costs: [
         { food: 30, plank: 15 },
         { food: 45, brick: 12, stone_slab: 10 },
-        { food: 60, iron_ingot: 6, bronze: 8 },
-        { food: 80, steel: 4, lime: 12 },
-        { food: 100, steel: 8, silver_ingot: 4 },
+        { food: 60, brass: 6, brick: 8 },
+        { food: 80, lime: 4, pitch: 12 },
+        { food: 100, lime: 8, coke: 4 },
       ],
     }),
     ...expandTechSeries({
@@ -1797,11 +1318,11 @@ const GAME_DATA = {
       requires: 'unlock_defense_training',
       branch: 'defense',
       costs: [
-        { copper_ingot: 6, stone_slab: 10 },
-        { iron_ingot: 5, bronze: 8 },
-        { iron_ingot: 10, gear: 4 },
-        { steel: 6, pitch: 10 },
-        { steel: 10, gold_ingot: 3 },
+        { stone_slab: 16 },
+        { brass: 5, brick: 8 },
+        { brass: 10, gear: 4 },
+        { lime: 6, pitch: 10 },
+        { lime: 10, coal: 3 },
       ],
     }),
     ...expandTechSeries({
@@ -1815,8 +1336,8 @@ const GAME_DATA = {
         { resin: 10, plank: 12 },
         { pitch: 8, plank: 18 },
         { pitch: 12, gear: 3 },
-        { gear: 6, iron_ingot: 4 },
-        { gear: 10, steel: 4 },
+        { gear: 6, brass: 4 },
+        { gear: 10, lime: 4 },
       ],
     }),
     {
@@ -1824,7 +1345,7 @@ const GAME_DATA = {
       name: '坚韧皮肤',
       icon: '🪵',
       description: '所有己方单位固定减伤 +1（仅一级）',
-      cost: { food: 40, resin: 12, copper_ingot: 6 },
+      cost: { food: 40, resin: 12, stone_slab: 6 },
       requires: 'unlock_defense_training',
       branch: 'defense',
     },
@@ -1856,7 +1377,7 @@ const GAME_DATA = {
       icon: '🚪',
       compositeIcon: { resource: '🚪', type: '🔩' },
       description: '城门升级为精钢门（耐久840，减伤70%）',
-      cost: { brick: 25, iron_ingot: 12, lime: 10 },
+      cost: { brick: 25, brass: 12, pitch: 10 },
       requires: 'unlock_gate_lv3',
       branch: 'defense',
       gateLevel: 4,
@@ -1870,146 +1391,22 @@ const GAME_DATA = {
       branch: 'defense',
       costs: [
         { brick: 12, plank: 16, stone: 10 },
-        { brick: 18, iron_ingot: 4, pitch: 6 },
-        { iron_ingot: 8, lime: 8, gear: 2 },
-        { steel: 4, brick: 20, gear: 4 },
+        { brick: 18, brass: 4, pitch: 6 },
+        { brass: 8, pitch: 8, gear: 2 },
+        { lime: 4, brick: 20, gear: 4 },
       ],
     }),
-    {
-      id: 'unlock_iron_mine',
-      name: '铁矿',
-      icon: '🗻',
-      description: '解锁铁矿资源点',
-      cost: { copper_ingot: 10, gear: 3, plank: 20 },
-      requires: ['unlock_coal_mine', 'unlock_gear_craft'],
-      branch: 'mining',
-    },
-    {
-      id: 'unlock_iron_smelt',
-      name: '铁锭冶炼',
-      icon: '⬜',
-      description: '解锁铁锭配方，在合成页安排生产',
-      cost: { iron_ore: 5, coal: 3 },
-      requires: 'unlock_gear_craft',
-      branch: 'smelting',
-    },
-    {
-      id: 'unlock_silver_mine',
-      name: '银矿',
-      icon: '🔹',
-      description: '解锁银矿（高级）',
-      cost: { iron_ingot: 8, bronze: 6, gear: 4 },
-      requires: ['unlock_tin_mine', 'unlock_bronze_craft', 'unlock_iron_smelt'],
-      branch: 'mining',
-    },
-    {
-      id: 'unlock_sulfur',
-      name: '硫气孔',
-      icon: '🟡',
-      description: '解锁硫磺采集（高级）',
-      cost: { iron_ore: 12, coal: 10, brick: 15 },
-      requires: 'unlock_iron_mine',
-      branch: 'mining',
-    },
-    {
-      id: 'unlock_obsidian',
-      name: '黑曜岩',
-      icon: '🖤',
-      description: '解锁黑曜石采集（高级）',
-      cost: { iron_ingot: 6, sulfur: 8, lime: 8 },
-      requires: 'unlock_sulfur',
-      branch: 'mining',
-    },
-    {
-      id: 'unlock_silver_smelt',
-      name: '银锭冶炼',
-      icon: '🪞',
-      description: '解锁银锭：2银矿+1煤炭→1银锭',
-      cost: { silver_ore: 8, coal: 5 },
-      requires: 'unlock_iron_smelt',
-      branch: 'smelting',
-    },
-    {
-      id: 'unlock_gunpowder',
-      name: '火药配制',
-      icon: '💥',
-      description: '解锁火药：2硫磺+1煤炭→1火药',
-      cost: { sulfur: 10, coal: 8 },
-      requires: 'unlock_furnace_upgrade',
-      branch: 'craft',
-    },
+
     {
       id: 'unlock_furnace_upgrade',
       name: '熔炉升级',
       icon: '🔥',
-      description: '升级熔炉：所有熔炉配方所需计数值减半，并可锻造钢材',
-      cost: { iron_ingot: 10, coke: 12, brick: 15 },
-      requires: 'unlock_iron_smelt',
+      description: '升级熔炉：所有熔炉配方所需计数值减半',
+      cost: { brass: 10, gear: 12, brick: 15 },
+      requires: 'unlock_gear_craft',
       branch: 'smelting',
     },
-    {
-      id: 'unlock_steel_smelt',
-      name: '钢材锻造',
-      icon: '🔩',
-      description: '解锁钢配方：2铁锭+1焦炭→1钢（需已升级熔炉）',
-      cost: { iron_ingot: 8, coke: 6, brick: 8 },
-      requires: 'unlock_furnace_upgrade',
-      branch: 'smelting',
-    },
-    {
-      id: 'unlock_gold_mine',
-      name: '金矿',
-      icon: '🟨',
-      description: '解锁金矿（终极资源点，计数 130）',
-      cost: { steel: 12, silver_ingot: 8, gunpowder: 6 },
-      requires: ['unlock_silver_mine', 'unlock_steel_smelt'],
-      branch: 'mining',
-    },
-    {
-      id: 'unlock_crystal',
-      name: '水晶洞',
-      icon: '💎',
-      description: '解锁水晶洞（终极资源点，计数 130）',
-      cost: { steel: 10, glass: 12, silver_ingot: 6 },
-      requires: ['unlock_silver_mine', 'unlock_steel_smelt'],
-      branch: 'mining',
-    },
-    {
-      id: 'unlock_meteor',
-      name: '陨石坑',
-      icon: '☄️',
-      description: '解锁陨石坑（终极资源点，计数 130）',
-      cost: { steel: 12, gunpowder: 8, obsidian: 10 },
-      requires: ['unlock_obsidian', 'unlock_steel_smelt'],
-      branch: 'mining',
-    },
-    {
-      id: 'unlock_star_metal',
-      name: '陨铁冶炼',
-      icon: '🌟',
-      description: '解锁陨铁：2陨石+1煤炭→1陨铁',
-      cost: { meteorite: 8, coal: 8 },
-      requires: 'unlock_steel_smelt',
-      branch: 'smelting',
-    },
-    {
-      id: 'unlock_gold_smelt',
-      name: '金锭冶炼',
-      icon: '🥇',
-      description: '解锁金锭：2金矿+1煤炭→1金锭',
-      cost: { gold_ore: 8, coal: 6 },
-      requires: 'unlock_silver_smelt',
-      branch: 'smelting',
-    },
-    {
-      id: 'unlock_crystal_polish',
-      name: '水晶抛光',
-      icon: '💠',
-      description: '解锁抛光水晶：1水晶+1玻璃→1抛光水晶',
-      cost: { crystal: 6, glass: 12 },
-      requires: 'unlock_silver_smelt',
-      branch: 'craft',
-    },
+
     ...expandTechSeries({
       id: 'unlock_worker_efficiency',
       name: '村民训练',
@@ -2021,8 +1418,8 @@ const GAME_DATA = {
         { wood: 16, stone: 12, plank: 6 },
         { plank: 12, stone: 16, food: 20 },
         { brick: 10, plank: 15, food: 30 },
-        { glass: 8, copper_ingot: 4, food: 40 },
-        { iron_ingot: 4, gear: 2, food: 50 },
+        { glass: 8, stone_slab: 4, food: 40 },
+        { brass: 4, gear: 2, food: 50 },
       ],
     }),
     {
@@ -2030,23 +1427,16 @@ const GAME_DATA = {
       name: '快速恢复',
       icon: '💨',
       description: '所有资源点恢复时间 −10%',
-      cost: { stone: 16, gravel: 12, plank: 10, coal: 8 },
+      cost: { stone: 16, gravel: 12, plank: 10, clay: 8 },
       requires: 'unlock_furnace_upgrade',
       branch: 'craft',
     },
-    {
-      id: 'unlock_harvest_bounty',
-      name: '丰饶祝福',
-      icon: '🌟',
-      description: '采集区每次基础产量 +1（浆果丛/农场/牧场等食物点除外）',
-      cost: { steel: 10, gold_ingot: 5, polished_crystal: 4, star_metal: 3 },
-      requires: 'unlock_worker_efficiency_v5',
-      branch: 'workers',
-    },
+
   ],
 
   /**
-   * 科技树 UI 布局表（固定坐标 + 展示连线父节点）
+   * 科技树 UI 布局表（默认坐标 + 连线父节点；运行时由 config/tech-tree-table.js 覆盖）。
+   * 仍必需：外置表依赖已有 nodes；资源点升级簇布局也以这里的锚点为基准。
    * - x/y：节点中心坐标（像素）
    * - parent：与 techTree.requires 首项一致（根为 null）
    *
@@ -2121,7 +1511,7 @@ const GAME_DATA = {
       unlock_worker_efficiency_v3: { x: 180, y: 1100, parent: 'unlock_worker_efficiency_v2' },
       unlock_worker_efficiency_v4: { x: 40, y: 980, parent: 'unlock_worker_efficiency_v3' },
       unlock_worker_efficiency_v5: { x: 40, y: 820, parent: 'unlock_worker_efficiency_v4' },
-      unlock_harvest_bounty: { x: 40, y: 660, parent: 'unlock_worker_efficiency_v5' },
+
       point_up_farm_efficiency: { x: 1400, y: 1340, parent: 'unlock_farm' },
       point_up_farm_cooldown: { x: 1400, y: 1120, parent: 'unlock_farm' },
       point_up_pasture_efficiency: { x: 720, y: 1320, parent: 'unlock_pasture' },
@@ -2135,26 +1525,26 @@ const GAME_DATA = {
       unlock_limestone: { x: 3040, y: 2000, parent: 'unlock_gravel' },
       unlock_copper_mine: { x: 3300, y: 2000, parent: 'unlock_limestone' },
       unlock_tin_mine: { x: 3560, y: 2000, parent: 'unlock_copper_mine' },
-      unlock_silver_mine: { x: 3820, y: 2000, parent: 'unlock_tin_mine' },
-      unlock_gold_mine: { x: 4080, y: 2000, parent: 'unlock_silver_mine' },
-      unlock_crystal: { x: 3820, y: 1740, parent: 'unlock_silver_mine' },
+
+
+
       unlock_clay_pit: { x: 2520, y: 2260, parent: 'unlock_forest' },
       unlock_zinc_mine: { x: 3300, y: 2260, parent: 'unlock_copper_mine' },
       unlock_coal_mine: { x: 3560, y: 2260, parent: 'unlock_copper_mine' },
-      unlock_iron_mine: { x: 3820, y: 2260, parent: 'unlock_coal_mine' },
-      unlock_sulfur: { x: 4080, y: 2260, parent: 'unlock_iron_mine' },
-      unlock_obsidian: { x: 4340, y: 2260, parent: 'unlock_sulfur' },
-      unlock_meteor: { x: 4600, y: 2260, parent: 'unlock_obsidian' },
+
+
+
+
 
       // ========== 下：合成 / 冶炼主干（x=2000）==========
       unlock_brick_craft: { x: 2000, y: 2260, parent: 'unlock_workbench' },
       unlock_advanced_workbench: { x: 2000, y: 2520, parent: 'unlock_brick_craft' },
       unlock_furnace: { x: 2000, y: 2780, parent: 'unlock_advanced_workbench' },
       unlock_gear_craft: { x: 2000, y: 3040, parent: 'unlock_furnace' },
-      unlock_iron_smelt: { x: 2000, y: 3300, parent: 'unlock_gear_craft' },
-      unlock_furnace_upgrade: { x: 2000, y: 3560, parent: 'unlock_iron_smelt' },
-      unlock_steel_smelt: { x: 2000, y: 3820, parent: 'unlock_furnace_upgrade' },
-      unlock_star_metal: { x: 2000, y: 4080, parent: 'unlock_steel_smelt' },
+
+      unlock_furnace_upgrade: { x: 2000, y: 3560, parent: 'unlock_gear_craft' },
+
+
 
       // 下左：城门横轴 + 抢修再下一层（与左侧房屋速建分离）
       unlock_gate_lv2: { x: 1740, y: 2260, parent: 'unlock_brick_craft' },
@@ -2165,16 +1555,16 @@ const GAME_DATA = {
       unlock_gate_repair_speed_v3: { x: 1220, y: 2520, parent: 'unlock_gate_repair_speed_v2' },
       unlock_gate_repair_speed_v4: { x: 960, y: 2520, parent: 'unlock_gate_repair_speed_v3' },
 
-      // 下右：松香 / 石灰 / 铜锭与合金 / 银金抛光 / 火药 / 快速恢复
+      // 下右：松香 / 石灰 / 铜锭与合金 / 快速恢复
       unlock_pitch: { x: 2260, y: 2520, parent: 'unlock_brick_craft' },
       unlock_lime_craft: { x: 2260, y: 2780, parent: 'unlock_furnace' },
       unlock_copper_smelt: { x: 2260, y: 3040, parent: 'unlock_furnace' },
       unlock_bronze_craft: { x: 2520, y: 3040, parent: 'unlock_copper_smelt' },
       unlock_brass_craft: { x: 2780, y: 3040, parent: 'unlock_copper_smelt' },
-      unlock_silver_smelt: { x: 2260, y: 3300, parent: 'unlock_iron_smelt' },
-      unlock_gold_smelt: { x: 2520, y: 3300, parent: 'unlock_silver_smelt' },
-      unlock_crystal_polish: { x: 2780, y: 3300, parent: 'unlock_silver_smelt' },
-      unlock_gunpowder: { x: 2260, y: 3560, parent: 'unlock_furnace_upgrade' },
+
+
+
+
       unlock_point_recovery: { x: 2260, y: 3820, parent: 'unlock_furnace_upgrade' },
     },
   },
@@ -2184,28 +1574,21 @@ const GAME_DATA = {
       { wood: 20, stone: 10 },
       { wood: 30, stone: 15, plank: 5 },
       { wood: 45, stone: 25, plank: 10 },
-      { wood: 60, stone: 35, plank: 15, copper_ore: 5 },
-      { wood: 80, stone: 50, plank: 25, copper_ingot: 3 },
-      { wood: 100, stone: 70, plank: 35, copper_ingot: 8 },
+      { wood: 60, stone: 40, plank: 15 },
+      { wood: 80, stone: 50, plank: 25, stone_slab: 3 },
+      { wood: 100, stone: 70, plank: 35, stone_slab: 8 },
       { wood: 130, stone: 90, plank: 50, gear: 2 },
-      { wood: 160, stone: 120, plank: 70, gear: 5, iron_ingot: 3 },
+      { wood: 160, stone: 120, plank: 70, gear: 5, brass: 3 },
     ],
     rewardTypes: [
       { wood: 25, plank: 10 },
       { wood: 40, stone: 20, plank: 15 },
-      { wood: 60, stone: 30, plank: 25, copper_ingot: 5 },
+      { wood: 60, stone: 30, plank: 25, stone_slab: 5 },
     ],
     rewardAmount: [
       { wood: 25, stone: 15 },
       { wood: 40, plank: 20, stone: 10 },
-      { wood: 60, plank: 30, copper_ingot: 5 },
-    ],
-    quality: [
-      { wood: 30, stone: 20, plank: 10 },
-      { wood: 50, stone: 30, plank: 20, copper_ore: 5 },
-      { wood: 80, stone: 50, plank: 30, copper_ingot: 5 },
-      { wood: 110, stone: 70, plank: 45, iron_ore: 8 },
-      { wood: 150, stone: 100, plank: 60, iron_ingot: 5 },
+      { wood: 60, plank: 30, stone_slab: 5 },
     ],
   },
 
@@ -2213,16 +1596,10 @@ const GAME_DATA = {
     baseDropRate: 0.01,
     dropRatePerLevel: 0.005,
     maxDropRate: 0.05,
-    baseRewardTypesMin: 2,
-    baseRewardTypesMax: 3,
-    baseRewardAmountMin: 3,
-    baseRewardAmountMax: 4,
-    qualityWeights: {
-      // [food, resource, composite] 按等级 0~5 线性插值
-      0: [6, 6, 3],
-      5: [1, 6, 8],
-    },
-    maxQualityLevel: 5,
+    baseRewardTypesMin: 1,
+    baseRewardTypesMax: 2,
+    baseRewardAmountMin: 1,
+    baseRewardAmountMax: 2,
   },
 
   /**
@@ -2279,7 +1656,7 @@ const GAME_DATA = {
           name: '砖铁门',
           maxHp: 560,
           damageReduction: 0.6,
-          upgradeCost: { brick: 25, iron_ingot: 12, lime: 10 },
+          upgradeCost: { brick: 25, brass: 12, pitch: 10 },
         },
         4: {
           name: '精钢门',
@@ -2305,33 +1682,9 @@ const GAME_DATA = {
   },
 
   pointUpgradeMeta: {
-    count: { label: '采集升级', finalMaxCountRatio: 0.5 },
-    cooldown: { label: '资源恢复', finalCooldownRatio: 1 / 16 },
-    double: { label: '资源精炼', bonusPerLevel: 1 },
-    // 采集/恢复/精炼只花本资源
+    count: { finalMaxCountRatio: 0.5 },
+    cooldown: { finalCooldownRatio: 1 / 16 },
   },
-
-  autoSpeed: {
-    base: 0.1,
-    perLevel: 0.1,
-    maxLevel: 9,
-    max: 1.0,
-  },
-
-  workerSpeedUpgrade: {
-    costs: [
-      { wood: 20 },
-      { wood: 30, plank: 10 },
-      { wood: 45, plank: 15 },
-      { wood: 60, plank: 20, stone: 10 },
-      { wood: 80, plank: 30, stone: 15 },
-      { wood: 100, plank: 40, stone: 20, copper_ingot: 5 },
-      { wood: 130, plank: 55, stone: 30, copper_ingot: 10 },
-      { wood: 160, plank: 70, stone: 40, copper_ingot: 15, gear: 3 },
-      { wood: 200, plank: 90, stone: 50, copper_ingot: 20, gear: 5 },
-    ],
-  },
-
 
   holdClick: {
     baseCooldown: 1000,
@@ -2439,7 +1792,7 @@ const GAME_DATA = {
       {
         id: 'craft_weapon',
         title: '制作第一件武器',
-        text: '自己打开「武器」页下单制作任意一件武器（如木弓、木剑）。下单后点左侧「生产」进入并点击做出一件。',
+        text: '自己打开「武器」页下单制作任意一件武器（剑/矛/弓/弩均可）。下单后点左侧「生产」进入并点击做出一件。',
         highlight: ['.tab-btn[data-tab="weapons"]', '#weapon-list .craft-overview-item'],
         progress: 'weapon',
         target: 1,
@@ -2533,7 +1886,11 @@ GAME_DATA.achievements = (() => {
   Object.keys(layout.nodes).forEach((id) => {
     if (id.startsWith('point_up_')) return;
     const tech = byId[id];
-    if (!tech) return;
+    // 已删科技的布局残留直接去掉，避免幽灵连线
+    if (!tech) {
+      delete layout.nodes[id];
+      return;
+    }
     if (tech.requires == null) {
       layout.nodes[id].parent = null;
       return;
@@ -2543,19 +1900,29 @@ GAME_DATA.achievements = (() => {
   });
 })();
 
-/** 注入资源点升级科技与布局 */
-(function injectPointUpgradeTechs() {
+/**
+ * 注入资源点升级科技与布局（可在外置 resource-points 加载后再次调用）
+ */
+function injectPointUpgradeTechs() {
+  if (!GAME_DATA?.techTree || !GAME_DATA.techTreeLayout?.nodes) return;
+  GAME_DATA.techTree = GAME_DATA.techTree.filter((t) => !String(t.id || '').startsWith('point_up_'));
+  Object.keys(GAME_DATA.techTreeLayout.nodes).forEach((id) => {
+    if (id.startsWith('point_up_')) delete GAME_DATA.techTreeLayout.nodes[id];
+  });
   const entries = generatePointUpgradeTechEntries(
-    GAME_DATA.resourcePoints,
+    GAME_DATA.resourcePoints || {},
     GAME_DATA.chestUpgradeCosts
   );
   GAME_DATA.techTree.push(...entries);
   const pointLayout = generatePointUpgradeTechLayout(
-    GAME_DATA.resourcePoints,
+    GAME_DATA.resourcePoints || {},
     GAME_DATA.techTreeLayout.nodes
   );
   Object.assign(GAME_DATA.techTreeLayout.nodes, pointLayout);
-})();
+  if (typeof rebalancePointUpgradeClusters === 'function') {
+    rebalancePointUpgradeClusters();
+  }
+}
 
 /**
  * 资源点升级簇：一律向右侧展开（采集区在右），解锁点分出采集/恢复两叉，精炼更外侧汇合
@@ -2633,16 +2000,8 @@ function rebalancePointUpgradeClusters() {
   placeStd('copper_mine', A('unlock_copper_mine').x, A('unlock_copper_mine').y, 'up-right', 1, 'unlock_copper_mine');
   placeStd('tin_mine', A('unlock_tin_mine').x, A('unlock_tin_mine').y, 'up-right', 1, 'unlock_tin_mine');
   placeStd('zinc_mine', A('unlock_zinc_mine').x, A('unlock_zinc_mine').y, 'down-right', 1, 'unlock_zinc_mine');
-  placeStd('silver_mine', A('unlock_silver_mine').x, A('unlock_silver_mine').y, 'up-right', 1, 'unlock_silver_mine');
-  placeStd('gold_mine', A('unlock_gold_mine').x, A('unlock_gold_mine').y, 'up-right', 1, 'unlock_gold_mine');
-  placeStd('crystal_cave', A('unlock_crystal').x, A('unlock_crystal').y, 'up-right', 1, 'unlock_crystal');
-
   placeStd('clay_pit', A('unlock_clay_pit').x, A('unlock_clay_pit').y, 'down-right', 1, 'unlock_clay_pit');
   placeStd('coal_mine', A('unlock_coal_mine').x, A('unlock_coal_mine').y, 'down-right', 1, 'unlock_coal_mine');
-  placeStd('iron_mine', A('unlock_iron_mine').x, A('unlock_iron_mine').y, 'down-right', 1, 'unlock_iron_mine');
-  placeStd('sulfur_vent', A('unlock_sulfur').x, A('unlock_sulfur').y, 'down-right', 1, 'unlock_sulfur');
-  placeStd('obsidian_deposit', A('unlock_obsidian').x, A('unlock_obsidian').y, 'down-right', 1, 'unlock_obsidian');
-  placeStd('meteor_crater', A('unlock_meteor').x, A('unlock_meteor').y, 'down-right', 1, 'unlock_meteor');
 
   // 农场/牧场：升级簇错位，牧场向右上（躲开繁殖链），农场向左上（躲开工具）
   const placeFoodUp = (pointId, unlockId) => {
@@ -2693,18 +2052,80 @@ function applyToolDurability(data) {
 }
 
 /**
- * 合并资源点初始计数/冷却等（config/resource-points.js）
- * 只覆盖表内出现的字段，不影响解锁、升级费用等其它定义
+ * 合并资源点升级费用（config/point-upgrade-costs.js）
+ * count=采集 / cooldown=资源恢复 / double=资源精炼
  */
-function applyResourcePointStats(table) {
+function applyPointUpgradeCosts(table) {
   if (!table || !GAME_DATA?.resourcePoints) return;
-  Object.entries(table).forEach(([id, stats]) => {
-    if (!stats || typeof stats !== 'object') return;
+  Object.entries(table).forEach(([id, costs]) => {
+    if (!costs || typeof costs !== 'object') return;
     const pt = GAME_DATA.resourcePoints[id];
     if (!pt) {
-      console.warn('[config] resource-points 未知资源点 id:', id);
+      console.warn('[config] point-upgrade-costs 未知资源点 id:', id);
       return;
     }
+    const copyList = (arr) => (Array.isArray(arr) ? arr.map((c) => (c && typeof c === 'object' ? { ...c } : {})) : []);
+    pt.upgradeCosts = {
+      count: copyList(costs.count),
+      cooldown: copyList(costs.cooldown),
+      double: copyList(costs.double),
+    };
+  });
+
+  // 同步已注入科技条目上的展示费用（运行时 getTechCost 仍读 upgradeCosts）
+  if (!Array.isArray(GAME_DATA.techTree)) return;
+  GAME_DATA.techTree.forEach((tech) => {
+    if (!tech?.pointId || !tech.upgradeType) return;
+    const costs = GAME_DATA.resourcePoints[tech.pointId]?.upgradeCosts;
+    if (!costs) return;
+    if (tech.upgradeType === 'refine') {
+      tech.cost = { ...(costs.double?.[0] || {}) };
+      return;
+    }
+    if (tech.upgradeType === 'count' || tech.upgradeType === 'cooldown') {
+      const arr = costs[tech.upgradeType] || [];
+      const max = tech.maxRepeat || arr.length;
+      tech.repeatCosts = arr.slice(0, max).map((c) => ({ ...c }));
+      tech.cost = { ...(tech.repeatCosts[0] || {}) };
+    }
+  });
+}
+
+/**
+ * 合并通用玩法数值（config/gameplay.js）
+ */
+function applyGameplayConfig(cfg) {
+  if (!cfg || typeof cfg !== 'object' || !GAME_DATA) return;
+  if (cfg.craftOrderCooldownMs != null) {
+    const n = Number(cfg.craftOrderCooldownMs);
+    if (Number.isFinite(n) && n >= 0) GAME_DATA.craftOrderCooldownMs = n;
+  }
+}
+
+/**
+ * 应用完整资源点定义表（config/resource-points.js）
+ * 会重建 point_up_* 科技节点；随后仍可由 point-upgrade-costs / tech-tree-table 覆盖费用与布局
+ */
+function applyResourcePoints(table) {
+  if (!table || typeof table !== 'object' || !GAME_DATA) return;
+  const next = {};
+  Object.entries(table).forEach(([id, def]) => {
+    if (!def || typeof def !== 'object') return;
+    next[id] = JSON.parse(JSON.stringify(def));
+    if (!next[id].id) next[id].id = id;
+  });
+  GAME_DATA.resourcePoints = next;
+  if (typeof injectPointUpgradeTechs === 'function') injectPointUpgradeTechs();
+}
+
+/** @deprecated 旧版仅覆盖数值；现已改为完整表 applyResourcePoints */
+function applyResourcePointStats(table) {
+  if (!table || !GAME_DATA) return;
+  if (!GAME_DATA.resourcePoints) GAME_DATA.resourcePoints = {};
+  Object.entries(table).forEach(([id, stats]) => {
+    if (!stats || typeof stats !== 'object') return;
+    if (!GAME_DATA.resourcePoints[id]) GAME_DATA.resourcePoints[id] = { id };
+    const pt = GAME_DATA.resourcePoints[id];
     ['baseMaxCount', 'baseCooldown', 'baseYield', 'finalCooldownRatio'].forEach((k) => {
       if (stats[k] != null) pt[k] = Number(stats[k]);
     });
@@ -2763,31 +2184,36 @@ function applyTechTreeTable(table) {
 
   Object.entries(table.techs).forEach(([id, row]) => {
     if (!row) return;
-    // point_up：只覆盖布局（含多父连线），费用/依赖由生成逻辑管
+    // point_up：仅覆盖仍存在的升级科技布局；已删高级矿点的 point_up 丢弃
     if (id.startsWith('point_up_')) {
-      applyLayoutRow(id, row);
+      if (byId[id]) applyLayoutRow(id, row);
       return;
     }
     const tech = byId[id];
-    if (tech) {
-      if (Object.prototype.hasOwnProperty.call(row, 'requires')) {
-        tech.requires = row.requires == null
-          ? null
-          : (Array.isArray(row.requires) ? [...row.requires] : row.requires);
-      }
-      if (row.cost && typeof row.cost === 'object') {
-        tech.cost = { ...row.cost };
-      }
+    // 表里残留的已删科技：不写入布局，避免「幽灵连线」
+    if (!tech) return;
+    if (Object.prototype.hasOwnProperty.call(row, 'requires')) {
+      tech.requires = row.requires == null
+        ? null
+        : (Array.isArray(row.requires) ? [...row.requires] : row.requires);
+    }
+    if (row.cost && typeof row.cost === 'object') {
+      tech.cost = { ...row.cost };
     }
     applyLayoutRow(id, row);
+  });
+
+  // 清掉布局里已无对应 techTree 条目的节点（含已删高级矿的 point_up / unlock_*）
+  Object.keys(GAME_DATA.techTreeLayout.nodes).forEach((id) => {
+    if (!byId[id]) delete GAME_DATA.techTreeLayout.nodes[id];
   });
 
   if (typeof rebalancePointUpgradeClusters === 'function') {
     rebalancePointUpgradeClusters();
   }
-  // rebalance 可能改写 point_up 布局：再覆盖一次表内坐标/多父节点
+  // rebalance 可能改写 point_up 布局：再覆盖一次表内仍有效的坐标/多父节点
   Object.entries(table.techs).forEach(([id, row]) => {
-    if (!row) return;
+    if (!row || !byId[id]) return;
     applyLayoutRow(id, row);
   });
 }

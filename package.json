@@ -1,7 +1,7 @@
 {
   "name": "click-tribe",
   "productName": "点击部落",
-  "version": "20260724.1",
+  "version": "20260727.2",
   "description": "点击部落 - 村落点击增量游戏",
   "main": "electron-main.js",
   "author": "ClickTribe",

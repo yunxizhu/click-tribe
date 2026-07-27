@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>点击部落</title>
-  <link rel="stylesheet" href="style.css?v=20260724.1">
+  <link rel="stylesheet" href="style.css?v=20260727.2">
 </head>
 <body>
   <!-- 启动壳：加载 → 主菜单（盖住游戏） -->
@@ -29,15 +29,15 @@
           <div class="main-menu-title-line mm-reveal" aria-hidden="true"></div>
         </div>
         <div class="main-menu-home" id="main-menu-home">
-          <div class="main-menu-actions">
-          <button type="button" class="main-menu-btn mm-reveal" id="mm-start">新游戏</button>
-          <button type="button" class="main-menu-btn mm-reveal" id="mm-load">加载存档</button>
-          <button type="button" class="main-menu-btn mm-reveal" id="mm-settings">设置</button>
-          <button type="button" class="main-menu-btn mm-reveal" id="mm-achievements">成就</button>
-          <button type="button" class="main-menu-btn mm-reveal" id="mm-dev">开发人员</button>
-          <button type="button" class="main-menu-btn mm-reveal" id="mm-quit">退出游戏</button>
+          <div class="main-menu-actions mm-reveal">
+            <button type="button" class="main-menu-btn" id="mm-start">新游戏</button>
+            <button type="button" class="main-menu-btn" id="mm-load">加载存档</button>
+            <button type="button" class="main-menu-btn" id="mm-settings">设置</button>
+            <button type="button" class="main-menu-btn" id="mm-achievements">成就</button>
+            <button type="button" class="main-menu-btn" id="mm-dev">开发人员</button>
+            <button type="button" class="main-menu-btn" id="mm-quit">退出游戏</button>
+          </div>
         </div>
-      </div>
 
       <div class="main-menu-panel pause-menu-wide hidden" id="main-menu-settings">
         <div class="pause-sub-header">
@@ -117,8 +117,8 @@
         <button type="button" class="pause-menu-back" id="mm-achievements-back">返回</button>
       </div>
 
-      <p class="main-menu-version mm-reveal" id="main-menu-version">v20260724.1</p>
-      <button type="button" class="bgm-now-btn main-menu-bgm-now" id="mm-bgm-now" title="点击切换 BGM" aria-label="当前音乐，点击切换">
+      <p class="main-menu-version mm-reveal" id="main-menu-version">v20260727.2</p>
+      <button type="button" class="bgm-now-btn main-menu-bgm-now mm-reveal" id="mm-bgm-now" title="点击切换 BGM" aria-label="当前音乐，点击切换">
         <span class="bgm-now-icon" aria-hidden="true"><span class="bgm-disc"></span></span>
         <span class="bgm-now-marquee"><span class="bgm-now-text">—</span></span>
       </button>
@@ -126,15 +126,17 @@
   </div>
 
   <!-- 难度选择：在主菜单确认后、进游戏前（也可用于重置） -->
+
+  <div id="scene-blackout" class="scene-blackout hidden" aria-hidden="true"></div>
   <div id="difficulty-select" class="defense-intro boot-overlay hidden">
     <div class="defense-intro-dialog">
       <h3>选择难度</h3>
       <p>选择适合你的游戏难度</p>
       <div class="difficulty-options" id="difficulty-options">
-        <button type="button" class="diff-btn" data-difficulty="peaceful"><img class="emoji-icon-img" src="image/icon/262e.png" alt=""> 和平</button>
-        <button type="button" class="diff-btn" data-difficulty="normal"><img class="emoji-icon-img" src="image/icon/2696.png" alt=""> 正常</button>
-        <button type="button" class="diff-btn" data-difficulty="hard"><img class="emoji-icon-img" src="image/icon/1f480.png" alt=""> 困难</button>
-        <button type="button" class="diff-btn" data-difficulty="hell"><img class="emoji-icon-img" src="image/icon/1f525.png" alt=""> 地狱</button>
+        <button type="button" class="diff-btn" data-difficulty="peaceful">☮️ 和平</button>
+        <button type="button" class="diff-btn" data-difficulty="normal">⚖️ 正常</button>
+        <button type="button" class="diff-btn" data-difficulty="hard">💀 困难</button>
+        <button type="button" class="diff-btn" data-difficulty="hell">🔥 地狱</button>
       </div>
       <p id="diff-desc" class="diff-desc"></p>
       <button type="button" class="diff-back-btn" id="diff-back">返回</button>
@@ -157,7 +159,7 @@
 
   <div id="app" class="app-beneath-shell">
     <header class="game-header">
-      <h1><img class="emoji-icon-img" src="image/icon/1f3d5.png" alt=""> 点击部落 <span id="diff-label" class="diff-badge"></span></h1>
+      <h1>🏕️ 点击部落 <span id="diff-label" class="diff-badge"></span></h1>
       <div class="header-calendar-wrap" id="calendar-wrap">
         <button type="button" class="bgm-now-btn" id="game-bgm-now" title="点击切换 BGM" aria-label="当前音乐，点击切换">
           <span class="bgm-now-icon" aria-hidden="true"><span class="bgm-disc"></span></span>
@@ -181,17 +183,17 @@
             <span class="speed-tag">1×</span>
           </button>
           <button type="button" class="speed-btn" data-speed="2" aria-label="2倍速" title="2倍速">
-            <span class="speed-icon" aria-hidden="true"><img class="emoji-icon-img" src="image/icon/25b6.png" alt=""></span><span class="speed-tag">2×</span>
+            <span class="speed-icon" aria-hidden="true">▶️</span><span class="speed-tag">2×</span>
           </button>
           <button type="button" class="speed-btn" data-speed="4" aria-label="4倍速" title="4倍速">
-            <span class="speed-icon" aria-hidden="true"><img class="emoji-icon-img" src="image/icon/23e9.png" alt=""></span><span class="speed-tag">4×</span>
+            <span class="speed-icon" aria-hidden="true">⏩</span><span class="speed-tag">4×</span>
           </button>
         </div>
         <button type="button" id="tech-edit-exit-btn" class="tech-edit-exit-btn hidden" title="退出科技树编辑并保存">退出编辑模式并保存</button>
       </div>
       <div class="header-right">
         <span id="raid-status" class="raid-status" title="来袭状态">和平</span>
-        <span id="header-food" class="header-food" title="今日食物库存与预计消耗"><img class="emoji-icon-img" src="image/icon/1f34e.png" alt=""> 食物 0 / 需 0</span>
+        <span id="header-food" class="header-food" title="今日食物库存与预计消耗">🍎 食物 0 / 需 0</span>
       </div>
     </header>
 
@@ -203,23 +205,22 @@
         </div>
         <div class="sidebar-section" id="forage-section" data-section="forage">
           <button type="button" id="forage-section-title" class="section-title section-title-toggle" data-section="forage" aria-expanded="true">
-            <span class="section-toggle-caret" aria-hidden="true"><span class="icon-▼"></span></span>
+            <span class="section-toggle-caret" aria-hidden="true">▼</span>
             <span class="section-toggle-label">觅食</span>
           </button>
           <div id="forage-list" class="station-list"></div>
         </div>
         <div class="sidebar-section" id="gather-section" data-section="gather">
           <button type="button" id="gather-section-title" class="section-title section-title-toggle" data-section="gather" aria-expanded="true">
-            <span class="section-toggle-caret" aria-hidden="true"><span class="icon-▼"></span></span>
+            <span class="section-toggle-caret" aria-hidden="true">▼</span>
             <span class="section-toggle-label">采集</span>
           </button>
           <div id="gather-list" class="station-list"></div>
         </div>
         <div class="sidebar-section" id="craft-section" data-section="craft">
           <button type="button" id="craft-section-title" class="section-title section-title-toggle" data-section="craft" aria-expanded="true">
-            <span class="section-toggle-caret" aria-hidden="true"><span class="icon-▼"></span></span>
+            <span class="section-toggle-caret" aria-hidden="true">▼</span>
             <span class="section-toggle-label">生产</span>
-            <span class="section-worker-count" id="craft-worker-count"></span>
           </button>
           <div id="craft-station-list" class="station-list"></div>
         </div>
@@ -275,7 +276,7 @@
       <section class="center-panel">
         <div class="center-point-content" id="center-point-content">
           <div class="point-display">
-            <div id="point-icon" class="point-icon"><img class="emoji-icon-img" src="image/icon/1f332.png" alt=""></div>
+            <div id="point-icon" class="point-icon">🌲</div>
             <h2 id="point-name">森林</h2>
             <p id="point-desc" class="point-desc">砍伐树木获取木头</p>
             <div class="point-stats">
@@ -317,13 +318,13 @@
       <aside class="sidebar right">
         <div class="sidebar-right-layout">
           <nav class="right-nav" aria-label="功能菜单">
-            <button type="button" class="tab-btn active" data-tab="warehouse" title="仓库"><img class="emoji-icon-img" src="image/icon/1f4e6.png" alt=""><span>仓库</span></button>
-            <button type="button" class="tab-btn" data-tab="tech" title="科技树"><img class="emoji-icon-img" src="image/icon/1f52c.png" alt=""><span>科技</span></button>
-            <button type="button" class="tab-btn" data-tab="craft" title="合成"><img class="emoji-icon-img" src="image/icon/2697.png" alt=""><span>合成</span></button>
-            <button type="button" class="tab-btn" data-tab="tools" id="tab-btn-tools" title="工具"><img class="emoji-icon-img" src="image/icon/1fa93.png" alt=""><span>工具</span></button>
-            <button type="button" class="tab-btn" data-tab="weapons" id="tab-btn-weapons" title="武器"><img class="emoji-icon-img" src="image/icon/2694.png" alt=""><span>武器</span></button>
-            <button type="button" class="tab-btn" data-tab="workers" title="村民"><img class="emoji-icon-img" src="image/icon/1f465.png" alt=""><span>村民</span></button>
-            <button type="button" class="tab-btn" data-tab="defense" title="防务"><img class="emoji-icon-img" src="image/icon/1f6e1.png" alt=""><span>防务</span></button>
+            <button type="button" class="tab-btn active" data-tab="warehouse" title="仓库">📦<span>仓库</span></button>
+            <button type="button" class="tab-btn" data-tab="tech" title="科技树">🔬<span>科技</span></button>
+            <button type="button" class="tab-btn" data-tab="craft" title="合成">⚗️<span>合成</span></button>
+            <button type="button" class="tab-btn" data-tab="tools" id="tab-btn-tools" title="工具">🪓<span>工具</span></button>
+            <button type="button" class="tab-btn" data-tab="weapons" id="tab-btn-weapons" title="武器">⚔️<span>武器</span></button>
+            <button type="button" class="tab-btn" data-tab="workers" title="村民">👥<span>村民</span></button>
+            <button type="button" class="tab-btn" data-tab="defense" title="防务">🛡️<span>防务</span></button>
           </nav>
 
           <div class="sidebar-panel-main">
@@ -421,7 +422,7 @@
 
     <div id="victory-screen" class="game-over hidden">
       <div class="game-over-dialog victory-dialog">
-        <h3><img class="emoji-icon-img" src="image/icon/1f389.png" alt=""> 部落胜利</h3>
+        <h3>🎉 部落胜利</h3>
         <p id="victory-text">魔王被击败了！无敌之姿已碎，灾祸之源已经消除。在你的带领下，部落走向了真正的自由与繁荣。</p>
         <p id="victory-stats" class="dim"></p>
         <button type="button" id="victory-reset" class="btn-craft">重新开始（新游戏）</button>
@@ -521,7 +522,7 @@
 
     <div id="dev-panel" class="dev-panel hidden">
       <div class="dev-panel-header">
-        <h3><img class="emoji-icon-img" src="image/icon/1f6e0.png" alt=""> 开发者面板</h3>
+        <h3>🛠️ 开发者面板</h3>
         <button id="dev-close" class="dev-close" title="关闭">×</button>
       </div>
       <p class="dev-hint">快捷键：Ctrl + Shift + R</p>
@@ -669,7 +670,7 @@
     <p class="comic-hint" id="comic-hint">点击继续</p>
   </div>
 
-  <script src="data.js?v=20260724.1"></script>
-  <script src="boot.js?v=20260724.1"></script>
+  <script src="data.js?v=20260724.1c"></script>
+  <script src="boot.js?v=20260724.1c"></script>
 </body>
 </html>

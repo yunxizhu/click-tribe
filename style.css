@@ -63,61 +63,6 @@ body {
   overflow-x: hidden;
 }
 
-/* —— 图标系统：本地 emoji 图片 + CSS 图形回退 —— */
-.emoji-icon {
-  display: inline-block;
-  width: 1em;
-  height: 1em;
-  vertical-align: -0.125em;
-  background-size: contain;
-  background-repeat: no-repeat;
-  background-position: center;
-  flex-shrink: 0;
-}
-.emoji-icon-img {
-  display: inline-block;
-  width: 1em;
-  height: 1em;
-  vertical-align: -0.125em;
-}
-/* CSS 图形回退 */
-.icon-▲, .icon-▼ {
-  display: inline-block;
-  width: 0;
-  height: 0;
-  vertical-align: middle;
-  border-left: 0.45em solid transparent;
-  border-right: 0.45em solid transparent;
-}
-.icon-▲ { border-bottom: 0.55em solid currentColor; }
-.icon-▼ { border-top: 0.55em solid currentColor; }
-.icon-✓ {
-  display: inline-block;
-  width: 0.7em;
-  height: 0.6em;
-  vertical-align: middle;
-  border-bottom: 0.15em solid currentColor;
-  border-right: 0.15em solid currentColor;
-  transform: rotate(45deg) scale(0.85);
-  margin-bottom: 0.1em;
-}
-.icon-✦ {
-  display: inline-block;
-  width: 0.55em;
-  height: 0.55em;
-  vertical-align: middle;
-  background: currentColor;
-  clip-path: polygon(50% 0%, 61% 35%, 98% 35%, 68% 57%, 79% 91%, 50% 70%, 21% 91%, 32% 57%, 2% 35%, 39% 35%);
-}
-.icon-▦ {
-  display: inline-block;
-  width: 0.65em;
-  height: 0.65em;
-  vertical-align: middle;
-  border: 0.15em solid currentColor;
-  background: linear-gradient(135deg, currentColor 50%, transparent 50%);
-}
-
 /* Electron 壳：铺满工作区，去掉顶/侧空白条 */
 html.electron-shell,
 html.electron-shell body {
@@ -708,10 +653,6 @@ html.app-quitting body {
   display: block;
 }
 
-.right-nav .tab-btn .emoji-icon-img {
-  font-size: 1.2rem;
-}
-
 .right-nav .tab-btn:hover {
   color: var(--text);
   border-color: var(--text-dim);
@@ -927,12 +868,6 @@ html.app-quitting body {
 
 .sidebar.left .section-title-toggle .section-toggle-label {
   flex: 1;
-}
-
-.sidebar.left .section-worker-count {
-  font-size: 0.72rem;
-  color: var(--text-dim);
-  white-space: nowrap;
 }
 
 .station-btn {
@@ -1504,13 +1439,18 @@ html.app-quitting body {
 }
 
 .chest-sparkles .spark::before {
-  content: '';
+  content: '✦';
   position: absolute;
   inset: 0;
-  background: currentColor;
-  clip-path: polygon(50% 0%, 61% 35%, 98% 35%, 68% 57%, 79% 91%, 50% 70%, 21% 91%, 32% 57%, 2% 35%, 39% 35%);
-  -webkit-clip-path: polygon(50% 0%, 61% 35%, 98% 35%, 68% 57%, 79% 91%, 50% 70%, 21% 91%, 32% 57%, 2% 35%, 39% 35%);
-  filter: drop-shadow(0 0 4px #fff) drop-shadow(0 0 10px #ffd700) drop-shadow(0 0 18px rgba(255, 180, 0, 0.9));
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: inherit;
+  line-height: 1;
+  text-shadow:
+    0 0 4px #fff,
+    0 0 10px #ffd700,
+    0 0 18px rgba(255, 180, 0, 0.9);
 }
 
 .chest-sparkles .spark.bling {
@@ -2144,69 +2084,6 @@ html.app-quitting body {
   background: var(--accent);
 }
 
-.repair-all-wrap {
-  position: relative;
-  display: inline-block;
-}
-
-.repair-all-tooltip {
-  position: absolute;
-  z-index: 100;
-  top: 100%;
-  right: 0;
-  margin-top: 4px;
-  min-width: 180px;
-  padding: 8px 10px;
-  border: 1px solid var(--border);
-  border-radius: 6px;
-  background: #1a1a2e;
-  box-shadow: 0 4px 16px rgba(0,0,0,0.5);
-  font-size: 0.75rem;
-  white-space: nowrap;
-  line-height: 1.5;
-}
-
-.repair-all-tooltip.hidden {
-  display: none;
-}
-
-.repair-all-tooltip-cost {
-  color: var(--text);
-}
-
-.repair-tooltip-summary {
-  color: var(--text-dim);
-  font-size: 0.72rem;
-  margin-bottom: 4px;
-}
-
-.repair-tooltip-total {
-  color: var(--text);
-  font-weight: bold;
-}
-
-.btn-repair-partial {
-  display: block;
-  margin-top: 6px;
-  padding: 3px 10px;
-  font-size: 0.72rem;
-  border-radius: 4px;
-  border: 1px solid var(--accent);
-  background: rgba(233, 69, 96, 0.15);
-  color: var(--accent-hover);
-  cursor: pointer;
-  width: 100%;
-  text-align: center;
-}
-
-.btn-repair-partial:hover {
-  background: rgba(233, 69, 96, 0.35);
-}
-
-.btn-repair-partial.hidden {
-  display: none;
-}
-
 .craft-auto-repair-controls {
   flex-wrap: wrap;
   gap: 6px;
@@ -2350,15 +2227,8 @@ html.app-quitting body {
 }
 
 .btn-craft.stance-active::after {
-  content: '';
-  display: inline-block;
-  width: 0.7em;
-  height: 0.55em;
-  margin-left: 0.2em;
-  vertical-align: middle;
-  background: currentColor;
-  clip-path: polygon(13% 52%, 38% 77%, 87% 18%, 77% 8%, 38% 57%, 23% 42%);
-  -webkit-clip-path: polygon(13% 52%, 38% 77%, 87% 18%, 77% 8%, 38% 57%, 23% 42%);
+  content: ' ✓';
+  font-weight: bold;
 }
 
 .btn-craft.stance-active:hover {
@@ -2535,15 +2405,15 @@ html.app-quitting body {
 .comic-strip {
   display: grid;
   gap: 14px 16px;
-  width: min(calc(1280px * var(--ui-scale)), 98vw);
-  height: min(calc(860px * var(--ui-scale)), 90vh);
+  width: min(1280px, 98vw);
+  height: min(860px, 90vh);
   filter: drop-shadow(0 10px 28px rgba(0, 0, 0, 0.55));
 }
 
 .comic-pages {
   position: relative;
-  width: min(calc(1280px * var(--ui-scale)), 98vw);
-  height: min(calc(860px * var(--ui-scale)), 90vh);
+  width: min(1280px, 98vw);
+  height: min(860px, 90vh);
 }
 
 .comic-page {
@@ -2804,15 +2674,15 @@ html.app-quitting body {
 .difficulty-options {
   display: flex;
   flex-direction: column;
-  gap: 10px;
-  margin: 18px 0 12px;
+  gap: 8px;
+  margin: 14px 0 10px;
 }
 .diff-btn {
   display: flex;
   align-items: center;
   justify-content: center;
-  padding: 12px;
-  font-size: 1.15rem;
+  padding: 10px;
+  font-size: 1rem;
   border: 2px solid var(--border);
   border-radius: 8px;
   background: var(--bg);
@@ -3840,13 +3710,6 @@ body.tut-interaction-lock .tech-tree-canvas:active {
   border-color: var(--accent);
 }
 
-.craft-count-hint {
-  font-size: 0.72rem;
-  color: var(--text-dim);
-  margin-left: 4px;
-  white-space: nowrap;
-}
-
 .craft-queue-count,
 .craft-queue-inline {
   color: var(--warning);
@@ -4617,21 +4480,10 @@ body.tut-interaction-lock .tech-tree-canvas:active {
   justify-content: center;
   background: rgba(8, 10, 22, 0.72);
   backdrop-filter: blur(2px);
-  opacity: 0;
-  visibility: hidden;
-  transition: opacity 0.4s ease, visibility 0.4s ease;
 }
 
 .pause-menu.hidden {
-  display: flex;
-  opacity: 0;
-  visibility: hidden;
-  pointer-events: none;
-}
-
-.pause-menu.visible {
-  opacity: 1;
-  visibility: visible;
+  display: none;
 }
 
 .pause-menu-panel {
@@ -5522,6 +5374,9 @@ body.tut-interaction-lock .tutorial-panel {
   word-break: break-all;
   min-height: 2.4em;
 }
+.tech-edit-desc {
+  white-space: pre-line;
+}
 .tech-edit-xy-row {
   display: grid;
   grid-template-columns: 1fr 1fr;
@@ -5567,7 +5422,22 @@ body.tech-edit-mode .tech-node.tech-edit-selected {
   box-shadow: 0 0 16px rgba(78, 205, 196, 0.55);
   z-index: 5;
 }
+body.tech-edit-mode .tech-node.tech-edit-selected-primary {
+  outline-color: #ffd166;
+  box-shadow: 0 0 18px rgba(255, 209, 102, 0.65);
+}
 body.tech-edit-mode .tech-tooltip {
+  display: none !important;
+}
+.tech-edit-marquee {
+  position: absolute;
+  border: 1px dashed rgba(78, 205, 196, 0.95);
+  background: rgba(78, 205, 196, 0.14);
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.08);
+  pointer-events: none;
+  z-index: 12;
+}
+.tech-edit-marquee.hidden {
   display: none !important;
 }
 
@@ -5609,8 +5479,8 @@ body.tech-edit-mode .tech-tooltip {
 
 .boot-logo {
   position: relative;
-  width: 27rem;
-  height: 27rem;
+  width: 18rem;
+  height: 18rem;
   aspect-ratio: 1 / 1;
   flex-shrink: 0;
   background: var(--tribe-boot-logo, none) center / contain no-repeat;
@@ -5662,8 +5532,8 @@ body.tech-edit-mode .tech-tooltip {
     opacity: 1;
     background-position: 10% center;
   }
-  /* 后半约 3 倍速掠过并淡出（原 2 倍速 *1.5） */
-  83% {
+  /* 后半约 2 倍速掠过并淡出 */
+  100% {
     background-position: 180% center;
     opacity: 0;
   }
@@ -5862,8 +5732,8 @@ body.tech-edit-mode .tech-tooltip {
 
 .main-menu-home {
   /* 按钮列/遮罩尺寸用 rem，跟随 --ui-scale（html font-size）缩放 */
-  --mm-col-w: min(28.5rem, 86vw);
-  --mm-veil-w: calc(var(--mm-col-w));
+  --mm-col-w: min(23.75rem, 86vw);
+  --mm-veil-w: calc(var(--mm-col-w) * 2 / 3);
   --mm-mask-w: 66.666vw;
   --mm-veil: rgba(0, 0, 0, 0.72);
   position: absolute;
@@ -5874,7 +5744,7 @@ body.tech-edit-mode .tech-tooltip {
   display: flex;
   flex-direction: column;
   align-items: stretch;
-  gap: 0.75rem;
+  gap: 0.625rem;
   width: var(--mm-col-w);
   text-align: center;
 }
@@ -5882,11 +5752,11 @@ body.tech-edit-mode .tech-tooltip {
 /* 标题固定在屏幕上方 1/5，不随按钮列移动 */
 .main-menu-brand {
   position: absolute;
-  top: 12%;
+  top: 20%;
   left: 50%;
   transform: translate(-50%, -50%);
   z-index: 2;
-  width: min(28.5rem, 86vw);
+  width: min(23.75rem, 86vw);
   text-align: center;
   pointer-events: none;
 }
@@ -5927,7 +5797,7 @@ body.tech-edit-mode .tech-tooltip {
   box-sizing: border-box;
   text-align: center;
   /* 纯 rem，避免 vw 中间值盖掉 --ui-scale */
-  font-size: clamp(3.6rem, 5.2rem, 5.6rem);
+  font-size: clamp(2rem, 3rem, 3.2rem);
   font-weight: 800;
   letter-spacing: 0.18em;
   color: #fff;
@@ -5957,23 +5827,23 @@ body.tech-edit-mode .tech-tooltip {
 }
 
 .main-menu-tagline {
-  margin: 10px 0 0;
+  margin: 8px 0 0;
   color: var(--text-dim);
-  font-size: 1.1rem;
+  font-size: 0.9rem;
   letter-spacing: 0.08em;
 }
 
 .main-menu-actions {
   display: flex;
   flex-direction: column;
-  gap: 0.75rem;
+  gap: 0.625rem;
   width: 100%;
   margin-top: 0;
   position: relative;
   left: 0;
 }
 
-/* 主菜单入场：先遮盖 1s 渐显，再标题/按钮在 3s 内自上而下渐显 */
+/* 主菜单入场：遮盖 1s → 标题 2.5s → 停顿 0.5s → 整块按钮区 1.5s */
 .mm-reveal {
   opacity: 0;
   transform: none;
@@ -6004,29 +5874,21 @@ body.tech-edit-mode .tech-tooltip {
   animation: mm-veil-fade-in 1s ease both;
 }
 
-/* 标题/按钮：遮盖完成后（1s）起，在 3s 内自上而下全部显完 */
-.main-menu.mm-enter-play .mm-reveal {
-  animation: mm-fade-in 1.2s ease both;
-}
-
-/* 按钮：各自显完即可点，不必等后面的按钮 */
-.main-menu.mm-enter-play .main-menu-actions .main-menu-btn.mm-reveal {
-  pointer-events: none;
-  animation: mm-btn-enter 1.2s ease both;
-}
-
-.main-menu.mm-enter-play .main-menu-title.mm-reveal { animation-delay: 1s; }
+/* 标题区：遮盖完成后开始，2.5s 渐显（ease-in：后半段才明显显完，避免早早就“显完”却还空等） */
+.main-menu.mm-enter-play .main-menu-title.mm-reveal,
 .main-menu.mm-enter-play .main-menu-title-line.mm-reveal {
-  animation: mm-fade-in 1.2s ease both;
-  animation-delay: 1.2s;
+  animation: mm-fade-in 2.5s ease-in both;
+  animation-delay: 1s;
 }
-.main-menu.mm-enter-play .main-menu-actions .mm-reveal:nth-child(1) { animation-delay: 1.4s; }
-.main-menu.mm-enter-play .main-menu-actions .mm-reveal:nth-child(2) { animation-delay: 1.65s; }
-.main-menu.mm-enter-play .main-menu-actions .mm-reveal:nth-child(3) { animation-delay: 1.9s; }
-.main-menu.mm-enter-play .main-menu-actions .mm-reveal:nth-child(4) { animation-delay: 2.15s; }
-.main-menu.mm-enter-play .main-menu-actions .mm-reveal:nth-child(5) { animation-delay: 2.4s; }
-.main-menu.mm-enter-play .main-menu-actions .mm-reveal:nth-child(6) { animation-delay: 2.65s; }
-.main-menu.mm-enter-play .main-menu-version.mm-reveal { animation-delay: 2.8s; }
+
+/* 按钮区整体：标题动画结束（3.5s）后再隔 0.5s，即 delay 4s */
+.main-menu.mm-enter-play .main-menu-actions.mm-reveal,
+.main-menu.mm-enter-play .main-menu-version.mm-reveal,
+.main-menu.mm-enter-play .main-menu-bgm-now.mm-reveal {
+  pointer-events: none;
+  animation: mm-fade-in 1.5s ease-out both;
+  animation-delay: 4s;
+}
 
 .main-menu.mm-enter-done .main-menu-home::before {
   opacity: 1;
@@ -6044,13 +5906,14 @@ body.tech-edit-mode .tech-tooltip {
   transform: none;
 }
 
-/* 未完成入场的准备态：按钮不可点；入场中由各按钮自身动画控制 */
-.main-menu.mm-enter-prep .main-menu-actions .main-menu-btn,
-.main-menu:not(.mm-enter-play):not(.mm-enter-done) .main-menu-actions .main-menu-btn {
+/* 准备态 / 入场未完成：按钮不可点 */
+.main-menu.mm-enter-prep .main-menu-actions,
+.main-menu.mm-enter-play .main-menu-actions,
+.main-menu:not(.mm-enter-play):not(.mm-enter-done) .main-menu-actions {
   pointer-events: none;
 }
 
-.main-menu.mm-enter-done .main-menu-actions .main-menu-btn {
+.main-menu.mm-enter-done .main-menu-actions {
   pointer-events: auto;
 }
 
@@ -6068,37 +5931,22 @@ body.tech-edit-mode .tech-tooltip {
   }
 }
 
-@keyframes mm-btn-enter {
-  0% {
-    opacity: 0;
-    pointer-events: none;
-  }
-  99.9% {
-    opacity: var(--mm-end-o, 1);
-    pointer-events: none;
-  }
-  100% {
-    opacity: var(--mm-end-o, 1);
-    pointer-events: auto;
-  }
-}
-
 .main-menu-btn {
   appearance: none;
-  border: 1px solid rgba(255, 255, 255, 0.15);
-  border-radius: 0.75rem;
-  padding: 1rem 1.2rem;
-  font-size: 1.15rem;
+  border: 1px solid var(--border);
+  border-radius: 0.625rem;
+  padding: 0.8125rem 1rem;
+  font-size: 1rem;
   font-weight: 600;
   color: var(--text);
-  background: rgba(22, 33, 62, 0.85);
+  background: rgba(15, 52, 96, 0.72);
   cursor: pointer;
   transition: background 0.15s, border-color 0.15s, transform 0.15s, opacity 0.15s;
 }
 
 .main-menu-btn:hover:not(:disabled) {
-  background: rgba(22, 33, 62, 0.95);
-  border-color: rgba(233, 69, 96, 0.5);
+  background: rgba(233, 69, 96, 0.22);
+  border-color: rgba(233, 69, 96, 0.55);
   transform: translateY(-1px);
 }
 
@@ -6119,15 +5967,15 @@ body.tech-edit-mode .tech-tooltip {
   /* 不用整钮 opacity，避免蓝底被遮罩吞掉；只压低字色 */
   opacity: 1;
   color: rgba(200, 210, 230, 0.62);
-  background: rgba(0, 0, 0, 0.2);
-  border-color: rgba(255, 255, 255, 0.06);
+  background: rgba(15, 52, 96, 0.5);
+  border-color: rgba(90, 120, 170, 0.55);
   box-shadow: none;
   font-weight: 600;
 }
 
 .main-menu-btn-dim:hover:not(:disabled) {
   color: rgba(230, 236, 248, 0.88);
-  background: rgba(255, 255, 255, 0.06);
+  background: rgba(15, 52, 96, 0.8);
   border-color: rgba(233, 69, 96, 0.4);
 }
 
@@ -6135,8 +5983,8 @@ body.tech-edit-mode .tech-tooltip {
   opacity: 1;
   cursor: not-allowed;
   color: rgba(180, 190, 210, 0.38);
-  background: rgba(0, 0, 0, 0.15);
-  border-color: rgba(255, 255, 255, 0.04);
+  background: rgba(15, 52, 96, 0.4);
+  border-color: rgba(60, 80, 120, 0.4);
   box-shadow: none;
 }
 
@@ -6155,14 +6003,14 @@ body.tech-edit-mode .tech-tooltip {
   position: relative;
   z-index: 2;
   width: min(640px, 94vw);
-  padding: 30px 34px 24px;
+  padding: 24px 28px 20px;
   border-radius: 14px;
   border: 1px solid var(--border);
   background: linear-gradient(160deg, #1c2744 0%, #121a2e 100%);
   box-shadow: 0 16px 48px rgba(0, 0, 0, 0.45);
   display: flex;
   flex-direction: column;
-  gap: 16px;
+  gap: 14px;
   min-height: 420px;
 }
 
@@ -6181,10 +6029,14 @@ body.tech-edit-mode .tech-tooltip {
   bottom: 16px;
   margin: 0;
   z-index: 2;
-  font-size: 0.9rem;
+  font-size: 0.78rem;
   color: rgba(170, 180, 200, 0.75);
   letter-spacing: 0.04em;
   pointer-events: none;
+}
+
+.main-menu.mm-enter-done .main-menu-bgm-now.mm-reveal {
+  pointer-events: auto;
 }
 
 .main-menu-bgm-now {
@@ -6202,9 +6054,9 @@ body.tech-edit-mode .tech-tooltip {
   display: inline-flex;
   align-items: center;
   gap: 7px;
-  max-width: min(63vw, 300px);
+  max-width: min(42vw, 200px);
   height: 28px;
-  padding: 0 10px 0 8px;
+  padding: 0 8px 0 6px;
   border: 1px solid rgba(255, 255, 255, 0.14);
   border-radius: 999px;
   background: rgba(0, 0, 0, 0.35);
@@ -6264,11 +6116,11 @@ body.tech-edit-mode .tech-tooltip {
 .bgm-now-marquee {
   flex: 1 1 auto;
   min-width: 0;
-  width: 11em;
-  max-width: 11em;
+  width: 7.2em;
+  max-width: 7.2em;
   overflow: hidden;
-  mask-image: linear-gradient(90deg, #000 0, #000 92%, transparent 100%);
-  -webkit-mask-image: linear-gradient(90deg, #000 0, #000 92%, transparent 100%);
+  mask-image: linear-gradient(90deg, transparent 0, #000 8%, #000 92%, transparent 100%);
+  -webkit-mask-image: linear-gradient(90deg, transparent 0, #000 8%, #000 92%, transparent 100%);
 }
 
 .bgm-now-text {
@@ -6299,7 +6151,7 @@ body.tech-edit-mode .tech-tooltip {
 }
 
 .main-menu-bgm-now {
-  max-width: min(63vw, 300px);
+  max-width: min(52vw, 220px);
 }
 
 #app.app-beneath-shell {
@@ -6352,6 +6204,68 @@ body.tech-edit-mode .tech-tooltip {
     linear-gradient(165deg, #0b1020 0%, #121a2e 100%);
   opacity: 0;
   pointer-events: none;
+  transition: opacity 0.75s ease;
+}
+
+.scene-blackout {
+  position: fixed;
+  inset: 0;
+  z-index: 5150;
+  background: #000;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.4s ease;
+}
+
+.scene-blackout.hidden {
+  display: none !important;
+}
+
+.scene-blackout.scene-blackout-visible {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.scene-blackout.scene-blackout-fade-out {
+  opacity: 0;
+  pointer-events: none;
+}
+
+.scene-exit-fade-out {
+  animation: scene-exit-fade 0.7s ease forwards;
+  pointer-events: none;
+}
+
+@keyframes scene-exit-fade {
+  from { opacity: 1; }
+  to { opacity: 0; }
+}
+
+.boot-transition.boot-transition-fade-in {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.boot-transition.boot-transition-fade-out {
+  opacity: 0;
+  pointer-events: none;
+}
+
+.defense-intro.scene-enter-fade-in,
+.boot-overlay.scene-enter-fade-in {
+  animation: scene-enter-fade 0.85s ease forwards;
+}
+
+#app.scene-enter-prep,
+.defense-intro.scene-enter-prep,
+.boot-overlay.scene-enter-prep {
+  opacity: 0 !important;
+  pointer-events: none;
+}
+
+@keyframes scene-enter-fade {
+  from { opacity: 0; }
+  to { opacity: 1; }
 }
 
 .boot-transition.hidden {
