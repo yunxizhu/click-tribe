@@ -132,26 +132,6 @@ window.POINT_UPGRADE_COSTS = {
     ],
   },
 
-  tin_mine: {
-    count: [
-      { tin_ore: 15 },
-      { tin_ore: 27 },
-      { tin_ore: 41 },
-      { tin_ore: 58 },
-      { tin_ore: 77 },
-    ],
-    cooldown: [
-      { tin_ore: 17 },
-      { tin_ore: 29 },
-      { tin_ore: 44 },
-      { tin_ore: 61 },
-      { tin_ore: 80 },
-    ],
-    double: [
-      { tin_ore: 157 },
-    ],
-  },
-
   limestone_quarry: {
     count: [
       { limestone: 16 },
@@ -196,23 +176,23 @@ window.POINT_UPGRADE_COSTS = {
     ],
   },
 
-  zinc_mine: {
+  iron_mine: {
     count: [
-      { zinc_ore: 23 },
-      { zinc_ore: 42 },
-      { zinc_ore: 65 },
-      { zinc_ore: 92 },
-      { zinc_ore: 122 },
+      { iron_ore: 23 },
+      { iron_ore: 42 },
+      { iron_ore: 65 },
+      { iron_ore: 92 },
+      { iron_ore: 122 },
     ],
     cooldown: [
-      { zinc_ore: 27 },
-      { zinc_ore: 46 },
-      { zinc_ore: 69 },
-      { zinc_ore: 95 },
-      { zinc_ore: 126 },
+      { iron_ore: 27 },
+      { iron_ore: 46 },
+      { iron_ore: 69 },
+      { iron_ore: 95 },
+      { iron_ore: 126 },
     ],
     double: [
-      { zinc_ore: 248 },
+      { iron_ore: 248 },
     ],
   },
 

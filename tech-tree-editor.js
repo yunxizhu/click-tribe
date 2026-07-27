@@ -10,11 +10,34 @@
   }
 
   const STORAGE_KEY = 'techTreeTable';
-  const CENTER_R = 28;
-  const NODE_R = 22;
+  const NODE_RADII = { small: 30, medium: 45, large: 60 };
+  const CENTER_RADII = { small: 38, medium: 56, large: 75 };
+
+  function normalizeNodeSize(size) {
+    return size === 'small' || size === 'large' ? size : 'medium';
+  }
+
+  function getLayoutNodeSize(node) {
+    return normalizeNodeSize(node?.size);
+  }
+
+  function setLayoutNodeSize(node, size) {
+    const next = normalizeNodeSize(size);
+    if (next === 'medium') delete node.size;
+    else node.size = next;
+  }
 
   function nodeHalf(techId) {
-    return techId === 'unlock_workbench' ? CENTER_R : NODE_R;
+    const node = GAME_DATA.techTreeLayout?.nodes?.[techId];
+    const size = getLayoutNodeSize(node);
+    return techId === 'unlock_workbench' ? CENTER_RADII[size] : NODE_RADII[size];
+  }
+
+  function applyNodeSizeClass(el, node) {
+    if (!el) return;
+    const size = getLayoutNodeSize(node);
+    el.classList.remove('tech-size-small', 'tech-size-medium', 'tech-size-large');
+    el.classList.add(`tech-size-${size}`);
   }
 
   function isPointUpgradeTechId(id) {
@@ -81,12 +104,10 @@
         y: Math.round(n.y || 0),
         parent: n.parent ?? null,
       };
+      row.size = getLayoutNodeSize(n);
       const parents = getLayoutParents(n);
       if (parents.length > 1) row.parents = parents;
       if (tech && !isPointUpgradeTechId(id)) {
-        row.requires = tech.requires == null
-          ? null
-          : (Array.isArray(tech.requires) ? [...tech.requires] : tech.requires);
         row.cost = tech.cost ? { ...tech.cost } : {};
       }
       techs[id] = row;
@@ -168,6 +189,27 @@
 
     this._techTreeInited = false;
     this.render();
+    this._resumeGameTimeAfterTechEdit();
+  };
+
+  /** 退出科技树调整后恢复日历时间（编辑期间由 shouldFreezeGameTime 冻结） */
+  Ctor.prototype._resumeGameTimeAfterTechEdit = function _resumeGameTimeAfterTechEdit() {
+    this.lastTick = Date.now();
+    const storyEl = document.getElementById('story-dialog');
+    const storyOpen = !!(storyEl && !storyEl.classList.contains('hidden'));
+    if (
+      !this._inGameSession
+      || this._atMainMenu
+      || this._comicTimeHold
+      || this._bootTransitionActive
+      || this._pickingDifficulty
+      || this.isPauseMenuOpen?.()
+      || this._starvationDialogOpen
+      || storyOpen
+    ) {
+      return;
+    }
+    this.paused = false;
   };
 
   Ctor.prototype._ensureTechEditExitButton = function _ensureTechEditExitButton() {
@@ -196,7 +238,7 @@
     hud.innerHTML = `
       <div class="tech-edit-hud-head">
         <strong>科技树调整</strong>
-        <span class="tech-edit-hud-tip">点选节点·改坐标/多父节点·Ctrl+Z撤销·时钟旁保存退出</span>
+        <span class="tech-edit-hud-tip">点选节点·改动即时生效·方向键微调1px·Ctrl+Z撤销·时钟旁保存退出</span>
       </div>
       <div class="tech-edit-hud-body">
         <div class="tech-edit-current">
@@ -215,29 +257,69 @@
             <input id="tech-edit-y" type="number" step="1">
           </label>
         </div>
+        <label>圆圈大小
+          <select id="tech-edit-size">
+            <option value="small">小</option>
+            <option value="medium">中</option>
+            <option value="large">大</option>
+          </select>
+        </label>
         <label>布局父节点 id（多个用逗号，如精炼双线）
           <input id="tech-edit-parents" type="text" spellcheck="false" placeholder="id_a, id_b">
         </label>
-        <label>解锁依赖 id（逗号分隔）
-          <input id="tech-edit-requires" type="text" spellcheck="false" placeholder="unlock_a, unlock_b">
+        <label>解锁依赖（自动跟随布局父节点）
+          <input id="tech-edit-requires" type="text" spellcheck="false" placeholder="自动同步，无需编辑">
         </label>
         <div class="tech-edit-cost-head">
           <span>材料费用</span>
           <button type="button" class="dev-btn" id="tech-edit-cost-add">+材料</button>
         </div>
-        <div class="tech-edit-cost-hint">清空或全为 0 = 父节点解锁时自动解锁</div>
+        <div class="tech-edit-cost-hint">清空或全为 0 = 父节点解锁时自动解锁（改动即时生效）</div>
         <div id="tech-edit-cost-list" class="tech-edit-cost-list"></div>
         <div class="tech-edit-hud-actions">
           <button type="button" class="dev-btn" id="tech-edit-link-mode">点选添加父节点</button>
-          <button type="button" class="dev-btn" id="tech-edit-apply">应用修改</button>
+          <button type="button" class="dev-btn" id="tech-edit-distribute-x">X轴均匀排列</button>
+          <button type="button" class="dev-btn" id="tech-edit-distribute-y">Y轴均匀排列</button>
+          <button type="button" class="dev-btn" id="tech-edit-align-x">X轴对齐</button>
+          <button type="button" class="dev-btn" id="tech-edit-align-y">Y轴对齐</button>
+          <button type="button" class="dev-btn" id="tech-edit-rotate-left">向左旋转15°</button>
+          <button type="button" class="dev-btn" id="tech-edit-rotate-right">向右旋转15°</button>
+          <button type="button" class="dev-btn" id="tech-edit-flip-h">左右翻转</button>
+          <button type="button" class="dev-btn" id="tech-edit-flip-v">上下翻转</button>
         </div>
       </div>
     `;
     document.body.appendChild(hud);
     document.body.classList.add('tech-edit-mode');
 
-    document.getElementById('tech-edit-apply').addEventListener('click', () => this._applyTechEditForm());
-    document.getElementById('tech-edit-cost-add').addEventListener('click', () => this._addTechEditCostRow());
+    document.getElementById('tech-edit-cost-add').addEventListener('click', () => {
+      this._addTechEditCostRow();
+      this._applyTechEditForm({ pushUndo: true, silent: true, refreshHud: false });
+    });
+    document.getElementById('tech-edit-distribute-x')?.addEventListener('click', () => {
+      this._distributeSelectedTechNodes('x');
+    });
+    document.getElementById('tech-edit-distribute-y')?.addEventListener('click', () => {
+      this._distributeSelectedTechNodes('y');
+    });
+    document.getElementById('tech-edit-align-x')?.addEventListener('click', () => {
+      this._alignSelectedTechNodes('x');
+    });
+    document.getElementById('tech-edit-align-y')?.addEventListener('click', () => {
+      this._alignSelectedTechNodes('y');
+    });
+    document.getElementById('tech-edit-rotate-left')?.addEventListener('click', () => {
+      this._rotateSelectedTechNodes(-15);
+    });
+    document.getElementById('tech-edit-rotate-right')?.addEventListener('click', () => {
+      this._rotateSelectedTechNodes(15);
+    });
+    document.getElementById('tech-edit-flip-h')?.addEventListener('click', () => {
+      this._flipSelectedTechNodes('h');
+    });
+    document.getElementById('tech-edit-flip-v')?.addEventListener('click', () => {
+      this._flipSelectedTechNodes('v');
+    });
     document.getElementById('tech-edit-link-mode').addEventListener('click', () => {
       if (!this._techEditSelectedId) {
         this.showNotification('请先点选一个节点');
@@ -246,6 +328,42 @@
       this._techEditLinkSource = this._techEditSelectedId;
       this.showNotification(`再点击目标，加入「${this._techEditSelectedId}」的父节点列表`);
     });
+    this._bindTechEditHudLiveApply();
+  };
+
+  Ctor.prototype._bindTechEditHudLiveApply = function _bindTechEditHudLiveApply() {
+    const hud = document.getElementById('tech-edit-hud');
+    if (!hud || hud.dataset.liveBound === '1') return;
+    hud.dataset.liveBound = '1';
+
+    const markUndo = () => {
+      this._techEditFormUndoReady = true;
+    };
+    const liveApply = () => {
+      if (this._techEditHudSyncing || !this._techEditMode || !this._techEditSelectedId) return;
+      const pushUndo = !!this._techEditFormUndoReady;
+      this._techEditFormUndoReady = false;
+      this._applyTechEditForm({ pushUndo, silent: true, refreshHud: false });
+    };
+
+    ['tech-edit-x', 'tech-edit-y', 'tech-edit-parents'].forEach((id) => {
+      const el = document.getElementById(id);
+      if (!el) return;
+      el.addEventListener('focus', markUndo);
+      el.addEventListener('input', liveApply);
+      el.addEventListener('change', liveApply);
+    });
+
+    const sizeInput = document.getElementById('tech-edit-size');
+    sizeInput?.addEventListener('change', () => {
+      if (this._techEditHudSyncing || !this._techEditSelectedId) return;
+      this._applyTechEditForm({ pushUndo: true, silent: true, refreshHud: false });
+    });
+
+    const costList = document.getElementById('tech-edit-cost-list');
+    costList?.addEventListener('focusin', markUndo);
+    costList?.addEventListener('input', liveApply);
+    costList?.addEventListener('change', liveApply);
   };
 
   Ctor.prototype._getTechEditSelectedIds = function _getTechEditSelectedIds() {
@@ -293,75 +411,103 @@
     const desc = document.getElementById('tech-edit-desc');
     const xInput = document.getElementById('tech-edit-x');
     const yInput = document.getElementById('tech-edit-y');
+    const sizeInput = document.getElementById('tech-edit-size');
     const parentsInput = document.getElementById('tech-edit-parents');
     const reqInput = document.getElementById('tech-edit-requires');
     const costList = document.getElementById('tech-edit-cost-list');
     const costAdd = document.getElementById('tech-edit-cost-add');
-    if (!cur || !desc || !xInput || !yInput || !parentsInput || !reqInput || !costList) return;
+    const distributeXBtn = document.getElementById('tech-edit-distribute-x');
+    const distributeYBtn = document.getElementById('tech-edit-distribute-y');
+    const alignXBtn = document.getElementById('tech-edit-align-x');
+    const alignYBtn = document.getElementById('tech-edit-align-y');
+    const rotateLeftBtn = document.getElementById('tech-edit-rotate-left');
+    const rotateRightBtn = document.getElementById('tech-edit-rotate-right');
+    const flipHBtn = document.getElementById('tech-edit-flip-h');
+    const flipVBtn = document.getElementById('tech-edit-flip-v');
+    if (!cur || !desc || !xInput || !yInput || !sizeInput || !parentsInput || !reqInput || !costList) return;
 
-    if (!id) {
-      cur.textContent = '(点击科技树节点选择)';
-      desc.textContent = '(点击科技树节点查看作用)';
-      xInput.value = '';
-      yInput.value = '';
-      parentsInput.value = '';
-      reqInput.value = '';
+    this._techEditHudSyncing = true;
+    try {
+      if (!id) {
+        cur.textContent = '(点击科技树节点选择)';
+        desc.textContent = '(点击科技树节点查看作用)';
+        xInput.value = '';
+        yInput.value = '';
+        sizeInput.value = 'medium';
+        parentsInput.value = '';
+        reqInput.value = '';
+        costList.innerHTML = '';
+        reqInput.disabled = true;
+        if (costAdd) costAdd.disabled = false;
+        if (distributeXBtn) distributeXBtn.disabled = true;
+        if (distributeYBtn) distributeYBtn.disabled = true;
+        if (alignXBtn) alignXBtn.disabled = true;
+        if (alignYBtn) alignYBtn.disabled = true;
+        if (rotateLeftBtn) rotateLeftBtn.disabled = true;
+        if (rotateRightBtn) rotateRightBtn.disabled = true;
+        if (flipHBtn) flipHBtn.disabled = true;
+        if (flipVBtn) flipVBtn.disabled = true;
+        return;
+      }
+
+      const tech = GAME_DATA.techTree.find((t) => t.id === id);
+      const node = GAME_DATA.techTreeLayout.nodes[id] || {};
+      const currentLabel = tech
+        ? `${tech.icon || ''} ${tech.name} (${id})`.trim()
+        : id;
+      cur.textContent = selectedIds.length > 1
+        ? `${currentLabel} · 已选 ${selectedIds.length} 个`
+        : currentLabel;
+      desc.textContent = selectedIds.length > 1
+        ? `主选中：${this._getTechEditDescription(id)}\n批量拖动：${selectedIds.length} 个节点`
+        : this._getTechEditDescription(id);
+      xInput.value = Math.round(node.x || 0);
+      yInput.value = Math.round(node.y || 0);
+      sizeInput.value = getLayoutNodeSize(node);
+      parentsInput.value = getLayoutParents(node).join(', ');
+
+      const isPointUp = isPointUpgradeTechId(id);
+      const multiSelected = selectedIds.length > 1;
+      reqInput.disabled = true;
+      if (costAdd) costAdd.disabled = isPointUp || multiSelected;
+      if (distributeXBtn) distributeXBtn.disabled = !multiSelected;
+      if (distributeYBtn) distributeYBtn.disabled = !multiSelected;
+      if (alignXBtn) alignXBtn.disabled = !multiSelected;
+      if (alignYBtn) alignYBtn.disabled = !multiSelected;
+      if (rotateLeftBtn) rotateLeftBtn.disabled = !multiSelected;
+      if (rotateRightBtn) rotateRightBtn.disabled = !multiSelected;
+      if (flipHBtn) flipHBtn.disabled = !multiSelected;
+      if (flipVBtn) flipVBtn.disabled = !multiSelected;
+      xInput.disabled = false;
+      yInput.disabled = false;
+      sizeInput.disabled = false;
+      parentsInput.disabled = false;
+
+      if (isPointUp) {
+        reqInput.value = getLayoutParents(node).join(', ');
+        costList.innerHTML = '';
+        const hint = document.createElement('div');
+        hint.className = 'tech-edit-cost-hint';
+        hint.textContent = '资源点升级节点：可改坐标与多父连线；费用/依赖由数据生成';
+        costList.appendChild(hint);
+        return;
+      }
+
       costList.innerHTML = '';
-      reqInput.disabled = false;
-      if (costAdd) costAdd.disabled = false;
-      return;
+      if (multiSelected) {
+        const hint = document.createElement('div');
+        hint.className = 'tech-edit-cost-hint';
+        hint.textContent = '当前为多选：可左键拖动整组节点；表单仍仅编辑主选中节点。';
+        costList.appendChild(hint);
+      }
+
+      reqInput.value = getLayoutParents(node).join(', ');
+      const costEntries = Object.entries(tech?.cost || {}).filter(([, amt]) => Number(amt) > 0);
+      costEntries.forEach(([res, amt]) => this._addTechEditCostRow(res, amt));
+    } finally {
+      this._techEditHudSyncing = false;
+      this._techEditFormUndoReady = false;
     }
-
-    const tech = GAME_DATA.techTree.find((t) => t.id === id);
-    const node = GAME_DATA.techTreeLayout.nodes[id] || {};
-    const currentLabel = tech
-      ? `${tech.icon || ''} ${tech.name} (${id})`.trim()
-      : id;
-    cur.textContent = selectedIds.length > 1
-      ? `${currentLabel} · 已选 ${selectedIds.length} 个`
-      : currentLabel;
-    desc.textContent = selectedIds.length > 1
-      ? `主选中：${this._getTechEditDescription(id)}\n批量拖动：${selectedIds.length} 个节点`
-      : this._getTechEditDescription(id);
-    xInput.value = Math.round(node.x || 0);
-    yInput.value = Math.round(node.y || 0);
-    parentsInput.value = getLayoutParents(node).join(', ');
-
-    const isPointUp = isPointUpgradeTechId(id);
-    const multiSelected = selectedIds.length > 1;
-    reqInput.disabled = isPointUp || multiSelected;
-    if (costAdd) costAdd.disabled = isPointUp || multiSelected;
-    xInput.disabled = false;
-    yInput.disabled = false;
-    parentsInput.disabled = false;
-
-    if (isPointUp) {
-      const reqs = tech?.requires;
-      reqInput.value = reqs == null
-        ? ''
-        : (Array.isArray(reqs) ? reqs.join(', ') : String(reqs));
-      costList.innerHTML = '';
-      const hint = document.createElement('div');
-      hint.className = 'tech-edit-cost-hint';
-      hint.textContent = '资源点升级节点：可改坐标与多父连线；费用/依赖由数据生成';
-      costList.appendChild(hint);
-      return;
-    }
-
-    if (multiSelected) {
-      const hint = document.createElement('div');
-      hint.className = 'tech-edit-cost-hint';
-      hint.textContent = '当前为多选：可左键拖动整组节点；表单仍仅编辑主选中节点。';
-      costList.appendChild(hint);
-    }
-
-    const reqs = tech?.requires;
-    reqInput.value = reqs == null
-      ? ''
-      : (Array.isArray(reqs) ? reqs.join(', ') : String(reqs));
-    costList.innerHTML = '';
-    const costEntries = Object.entries(tech?.cost || {}).filter(([, amt]) => Number(amt) > 0);
-    costEntries.forEach(([res, amt]) => this._addTechEditCostRow(res, amt));
   };
 
   Ctor.prototype._addTechEditCostRow = function _addTechEditCostRow(resId = '', amt = 0) {
@@ -377,53 +523,47 @@
       <input type="number" class="tech-edit-cost-amt" min="0" step="1" value="${amt || 0}">
       <button type="button" class="dev-btn tech-edit-cost-del">x</button>
     `;
-    row.querySelector('.tech-edit-cost-del').addEventListener('click', () => row.remove());
+    row.querySelector('.tech-edit-cost-del').addEventListener('click', () => {
+      row.remove();
+      this._applyTechEditForm({ pushUndo: true, silent: true, refreshHud: false });
+    });
     list.appendChild(row);
   };
 
-  Ctor.prototype._applyTechEditForm = function _applyTechEditForm() {
+  Ctor.prototype._applyTechEditForm = function _applyTechEditForm(opts = {}) {
+    const pushUndo = opts.pushUndo !== false;
+    const silent = !!opts.silent;
+    const refreshHud = !!opts.refreshHud;
     const id = this._techEditSelectedId;
     if (!id) return;
     const tech = GAME_DATA.techTree.find((t) => t.id === id);
     const node = GAME_DATA.techTreeLayout.nodes[id];
     if (!node) return;
-    this._pushTechEditUndo();
+    if (pushUndo) this._pushTechEditUndo();
 
     const x = Number(document.getElementById('tech-edit-x')?.value);
     const y = Number(document.getElementById('tech-edit-y')?.value);
     if (Number.isFinite(x)) node.x = Math.round(x);
     if (Number.isFinite(y)) node.y = Math.round(y);
+    setLayoutNodeSize(node, document.getElementById('tech-edit-size')?.value || 'medium');
 
-    const parentIds = parseIdList(document.getElementById('tech-edit-parents')?.value || '');
-    setLayoutParents(node, parentIds.filter((pid) => pid !== id));
+    const parentIds = parseIdList(document.getElementById('tech-edit-parents')?.value || '')
+      .filter((pid) => pid !== id);
+    setLayoutParents(node, parentIds);
 
     if (tech && !isPointUpgradeTechId(id)) {
-      const reqRaw = (document.getElementById('tech-edit-requires')?.value || '').trim();
       let requires = null;
-      if (reqRaw) {
-        const parts = parseIdList(reqRaw);
-        requires = parts.length <= 1 ? (parts[0] || null) : parts;
-      }
-      // 布局父节点默认并入解锁依赖（可再手动改）
       if (parentIds.length) {
-        if (requires == null) {
-          requires = parentIds.length <= 1 ? parentIds[0] : [...parentIds];
-        } else {
-          const arr = Array.isArray(requires) ? [...requires] : [requires];
-          parentIds.forEach((pid) => {
-            if (!arr.includes(pid)) arr.push(pid);
-          });
-          requires = arr.length <= 1 ? arr[0] : arr;
-        }
+        requires = parentIds.length <= 1 ? parentIds[0] : [...parentIds];
       } else if (id === 'unlock_workbench') {
         requires = null;
       }
       tech.requires = requires;
 
       const cost = {};
-      document.querySelectorAll('#tech-edit-cost-list .tech-edit-cost-row').forEach((row) => {
-        const res = row.querySelector('.tech-edit-cost-res')?.value;
-        const amt = Number(row.querySelector('.tech-edit-cost-amt')?.value);
+      document.querySelectorAll('#tech-edit-cost-list .tech-edit-cost-row').forEach((rowEl) => {
+        const res = rowEl.querySelector('.tech-edit-cost-res')?.value;
+        const amt = Number(rowEl.querySelector('.tech-edit-cost-amt')?.value);
         if (res && Number.isFinite(amt) && amt > 0) cost[res] = Math.floor(amt);
       });
       tech.cost = cost;
@@ -433,6 +573,7 @@
     const half = nodeHalf(id);
     const el = this._techNodes?.querySelector(`.tech-node[data-tech-id="${id}"]`);
     if (el) {
+      applyNodeSizeClass(el, node);
       el.style.left = `${node.x - half}px`;
       el.style.top = `${node.y - half}px`;
     }
@@ -440,8 +581,12 @@
     this._rebuildTechTreeEdges();
     this._updateTechTreeDisplay();
     this._highlightTechEditSelection();
-    this._refreshTechEditHud();
-    this.showNotification(`Applied: ${tech?.name || id}`);
+
+    const reqInput = document.getElementById('tech-edit-requires');
+    if (reqInput) reqInput.value = getLayoutParents(node).join(', ');
+
+    if (refreshHud) this._refreshTechEditHud();
+    if (!silent) this.showNotification(`已更新：${tech?.name || id}`);
   };
 
   Ctor.prototype._highlightTechEditSelection = function _highlightTechEditSelection() {
@@ -484,6 +629,178 @@
     });
   };
 
+  Ctor.prototype._distributeSelectedTechNodes = function _distributeSelectedTechNodes(axis = 'x') {
+    if (!this._techEditMode) return;
+    const key = axis === 'y' ? 'y' : 'x';
+    const selectedIds = this._getTechEditSelectedIds();
+    if (selectedIds.length < 3) {
+      this.showNotification(`${key.toUpperCase()}轴均匀排列至少需要选中 3 个节点`);
+      return;
+    }
+    const entries = selectedIds
+      .map((id) => ({ id, node: GAME_DATA.techTreeLayout.nodes[id] }))
+      .filter((entry) => entry.node && Number.isFinite(entry.node[key]));
+    if (entries.length < 3) {
+      this.showNotification('可排列的节点不足');
+      return;
+    }
+
+    entries.sort((a, b) => a.node[key] - b.node[key]);
+    const min = entries[0].node[key];
+    const max = entries[entries.length - 1].node[key];
+    if (Math.abs(max - min) < 1) {
+      this.showNotification(`${key.toUpperCase()}轴跨度过小，无法均匀排列`);
+      return;
+    }
+
+    this._pushTechEditUndo();
+    const step = (max - min) / (entries.length - 1);
+    entries.forEach((entry, index) => {
+      entry.node[key] = Math.round(min + step * index);
+    });
+
+    this._syncTechEditNodePositionsFromLayout();
+    this._rebuildTechTreeEdges();
+    this._updateTechTreeDisplay();
+    this._highlightTechEditSelection();
+    this._refreshTechEditHud();
+    this.showNotification(`已按${key.toUpperCase()}轴均匀排列 ${entries.length} 个节点`);
+  };
+
+  Ctor.prototype._alignSelectedTechNodes = function _alignSelectedTechNodes(axis = 'x') {
+    if (!this._techEditMode) return;
+    const key = axis === 'y' ? 'y' : 'x';
+    const selectedIds = this._getTechEditSelectedIds();
+    if (selectedIds.length < 2) {
+      this.showNotification(`${key.toUpperCase()}轴对齐至少需要选中 2 个节点`);
+      return;
+    }
+    const entries = selectedIds
+      .map((id) => ({ id, node: GAME_DATA.techTreeLayout.nodes[id] }))
+      .filter((entry) => entry.node && Number.isFinite(entry.node[key]));
+    if (entries.length < 2) {
+      this.showNotification('可对齐的节点不足');
+      return;
+    }
+
+    const avg = Math.round(entries.reduce((sum, entry) => sum + entry.node[key], 0) / entries.length);
+    this._pushTechEditUndo();
+    entries.forEach((entry) => {
+      entry.node[key] = avg;
+    });
+
+    this._syncTechEditNodePositionsFromLayout();
+    this._rebuildTechTreeEdges();
+    this._updateTechTreeDisplay();
+    this._highlightTechEditSelection();
+    this._refreshTechEditHud();
+    this.showNotification(`已按${key.toUpperCase()}轴对齐 ${entries.length} 个节点`);
+  };
+
+  Ctor.prototype._getSelectedTechLayoutEntries = function _getSelectedTechLayoutEntries() {
+    return this._getTechEditSelectedIds()
+      .map((id) => ({ id, node: GAME_DATA.techTreeLayout.nodes[id] }))
+      .filter((entry) => entry.node
+        && Number.isFinite(entry.node.x)
+        && Number.isFinite(entry.node.y));
+  };
+
+  Ctor.prototype._getSelectedTechLayoutCenter = function _getSelectedTechLayoutCenter(entries) {
+    const list = entries || this._getSelectedTechLayoutEntries();
+    if (!list.length) return null;
+    const cx = list.reduce((sum, entry) => sum + entry.node.x, 0) / list.length;
+    const cy = list.reduce((sum, entry) => sum + entry.node.y, 0) / list.length;
+    return { x: cx, y: cy };
+  };
+
+  Ctor.prototype._commitSelectedTechLayoutChange = function _commitSelectedTechLayoutChange(message) {
+    this._syncTechEditNodePositionsFromLayout();
+    this._rebuildTechTreeEdges();
+    this._updateTechTreeDisplay();
+    this._highlightTechEditSelection();
+    this._refreshTechEditHud();
+    if (message) this.showNotification(message);
+  };
+
+  /** degrees: 正数=向右(顺时针)，负数=向左(逆时针)；绕最后选中的节点旋转 */
+  Ctor.prototype._rotateSelectedTechNodes = function _rotateSelectedTechNodes(degrees = 15) {
+    if (!this._techEditMode) return;
+    const entries = this._getSelectedTechLayoutEntries();
+    if (entries.length < 2) {
+      this.showNotification('旋转布局至少需要选中 2 个节点');
+      return;
+    }
+    const pivotId = this._techEditSelectedId;
+    const pivotEntry = entries.find((entry) => entry.id === pivotId) || entries[entries.length - 1];
+    if (!pivotEntry?.node) {
+      this.showNotification('找不到旋转基准节点');
+      return;
+    }
+    const center = { x: pivotEntry.node.x, y: pivotEntry.node.y };
+    const rad = (Number(degrees) || 0) * Math.PI / 180;
+    const cos = Math.cos(rad);
+    const sin = Math.sin(rad);
+
+    this._pushTechEditUndo();
+    entries.forEach((entry) => {
+      if (entry.id === pivotEntry.id) return;
+      const dx = entry.node.x - center.x;
+      const dy = entry.node.y - center.y;
+      // 屏幕坐标 y 向下：正角度为顺时针
+      entry.node.x = Math.round(center.x + dx * cos - dy * sin);
+      entry.node.y = Math.round(center.y + dx * sin + dy * cos);
+    });
+    this._commitSelectedTechLayoutChange(
+      `已绕「${pivotEntry.id}」${degrees > 0 ? '向右' : '向左'}旋转 ${Math.abs(degrees)}°（${entries.length} 个）`
+    );
+  };
+
+  /** mode: 'h' 左右翻转（关于中心竖轴），'v' 上下翻转（关于中心横轴） */
+  Ctor.prototype._flipSelectedTechNodes = function _flipSelectedTechNodes(mode = 'h') {
+    if (!this._techEditMode) return;
+    const entries = this._getSelectedTechLayoutEntries();
+    if (entries.length < 2) {
+      this.showNotification('翻转布局至少需要选中 2 个节点');
+      return;
+    }
+    const center = this._getSelectedTechLayoutCenter(entries);
+    if (!center) return;
+    const horizontal = mode !== 'v';
+
+    this._pushTechEditUndo();
+    entries.forEach((entry) => {
+      if (horizontal) entry.node.x = Math.round(2 * center.x - entry.node.x);
+      else entry.node.y = Math.round(2 * center.y - entry.node.y);
+    });
+    this._commitSelectedTechLayoutChange(
+      `已${horizontal ? '左右' : '上下'}翻转 ${entries.length} 个节点`
+    );
+  };
+
+  Ctor.prototype._nudgeSelectedTechNodes = function _nudgeSelectedTechNodes(dx = 0, dy = 0, opts = {}) {
+    if (!this._techEditMode) return false;
+    const selectedIds = this._getTechEditSelectedIds();
+    if (!selectedIds.length) return false;
+    const stepX = Math.trunc(dx) || 0;
+    const stepY = Math.trunc(dy) || 0;
+    if (!stepX && !stepY) return false;
+
+    if (opts.pushUndo !== false) this._pushTechEditUndo();
+    selectedIds.forEach((id) => {
+      const node = GAME_DATA.techTreeLayout.nodes[id];
+      if (!node) return;
+      node.x = Math.round((Number(node.x) || 0) + stepX);
+      node.y = Math.round((Number(node.y) || 0) + stepY);
+    });
+
+    this._syncTechEditNodePositionsFromLayout();
+    this._rebuildTechTreeEdges();
+    this._updateTechTreeDisplay();
+    this._highlightTechEditSelection();
+    this._refreshTechEditHud();
+    return true;
+  };
+
   Ctor.prototype._undoTechEdit = function _undoTechEdit() {
     if (!this._techEditMode) return;
     const stack = this._techEditUndoStack;
@@ -499,6 +816,47 @@
     this._refreshTechEditHud();
     this._highlightTechEditSelection();
     this.showNotification('已撤销');
+  };
+
+  Ctor.prototype._quickLinkSelectedTechTo = function _quickLinkSelectedTechTo(targetId) {
+    if (!this._techEditMode || !isSelectableTechId(targetId)) return false;
+    const selectedIds = this._getTechEditSelectedIds();
+    const childId = this._techEditSelectedId;
+    if (!childId || selectedIds.length !== 1 || childId === targetId) return false;
+    const childNode = GAME_DATA.techTreeLayout.nodes[childId];
+    if (!childNode) return false;
+
+    const parents = getLayoutParents(childNode);
+    const child = GAME_DATA.techTree.find((t) => t.id === childId);
+    const canEditRequires = !!(child && !isPointUpgradeTechId(childId));
+    const alreadyLinked = parents.includes(targetId);
+
+    this._pushTechEditUndo();
+
+    if (alreadyLinked) {
+      setLayoutParents(childNode, parents.filter((pid) => pid !== targetId));
+      if (canEditRequires) {
+        const nextParents = getLayoutParents(childNode);
+        child.requires = nextParents.length === 0
+          ? null
+          : (nextParents.length === 1 ? nextParents[0] : nextParents);
+      }
+      this.showNotification(`已从 ${childId} 移除父节点：${targetId}`);
+    } else {
+      if (!parents.includes(targetId)) parents.push(targetId);
+      setLayoutParents(childNode, parents);
+      if (canEditRequires) {
+        child.requires = parents.length === 1 ? parents[0] : [...parents];
+      }
+      this.showNotification(`已为 ${childId} 添加父节点：${targetId}`);
+    }
+
+    this._techEditLinkSource = null;
+    this._rebuildTechTreeEdges();
+    this._updateTechTreeDisplay();
+    this._refreshTechEditHud();
+    this._highlightTechEditSelection();
+    return true;
   };
 
   Ctor.prototype._bindTechEditInteractions = function _bindTechEditInteractions() {
@@ -531,16 +889,7 @@
           if (!parents.includes(id)) parents.push(id);
           setLayoutParents(childNode, parents);
           if (child && !isPointUpgradeTechId(childId)) {
-            const prev = child.requires;
-            if (prev == null) child.requires = parents.length <= 1 ? parents[0] : [...parents];
-            else if (Array.isArray(prev)) {
-              parents.forEach((pid) => {
-                if (!prev.includes(pid)) prev.push(pid);
-              });
-              child.requires = prev;
-            } else if (prev !== id) {
-              child.requires = normalizeParents([prev, ...parents]);
-            }
+            child.requires = parents.length <= 1 ? parents[0] : [...parents];
           }
           this._techEditSelectedId = childId;
           this._techEditLinkSource = null;
@@ -552,7 +901,14 @@
         return;
       }
 
-      this._setTechEditSelection([id], id);
+      const prevSelected = this._getTechEditSelectedIds();
+      const keepGroup = prevSelected.length > 1 && prevSelected.includes(id);
+      if (keepGroup) {
+        // 多选中拖已选节点：整组一起动，主选中切到当前节点
+        this._setTechEditSelection(prevSelected, id);
+      } else {
+        this._setTechEditSelection([id], id);
+      }
 
       const selectedIds = this._getTechEditSelectedIds();
       const startLayouts = Object.fromEntries(selectedIds.map((sid) => {
@@ -598,10 +954,24 @@
           this.showNotification(selectedIds.length > 1
             ? `已移动 ${selectedIds.length} 个节点`
             : `${id} -> (${GAME_DATA.techTreeLayout.nodes[id].x}, ${GAME_DATA.techTreeLayout.nodes[id].y})`);
+          return;
         }
+        // 仅点击未拖动：多选中点某个节点时，收成单选该节点
+        if (keepGroup) this._setTechEditSelection([id], id);
       };
       document.addEventListener('mousemove', onMove);
       document.addEventListener('mouseup', onUp);
+    }, true);
+
+    content.addEventListener('contextmenu', (e) => {
+      if (!this._techEditMode) return;
+      const node = e.target.closest('.tech-node');
+      if (!node) return;
+      const targetId = node.dataset.techId;
+      if (!isSelectableTechId(targetId)) return;
+      if (!this._quickLinkSelectedTechTo(targetId)) return;
+      e.preventDefault();
+      e.stopPropagation();
     }, true);
 
     const canvas = document.getElementById('tech-tree-canvas');
@@ -682,11 +1052,27 @@
       this._techEditKeyBound = true;
       document.addEventListener('keydown', (e) => {
         if (!this._techEditMode) return;
-        if (!(e.ctrlKey || e.metaKey) || (e.key !== 'z' && e.key !== 'Z')) return;
         const tag = (e.target && e.target.tagName) ? e.target.tagName.toLowerCase() : '';
         if (tag === 'input' || tag === 'textarea' || tag === 'select' || e.target?.isContentEditable) return;
+
+        if ((e.ctrlKey || e.metaKey) && (e.key === 'z' || e.key === 'Z')) {
+          e.preventDefault();
+          this._undoTechEdit();
+          return;
+        }
+
+        const arrowMap = {
+          ArrowLeft: [-1, 0],
+          ArrowRight: [1, 0],
+          ArrowUp: [0, -1],
+          ArrowDown: [0, 1],
+        };
+        const delta = arrowMap[e.key];
+        if (!delta) return;
+        if (!this._getTechEditSelectedIds().length) return;
         e.preventDefault();
-        this._undoTechEdit();
+        // 连按只记一次撤销，松手后再按会重新入栈
+        this._nudgeSelectedTechNodes(delta[0], delta[1], { pushUndo: !e.repeat });
       });
     }
   };
@@ -696,7 +1082,7 @@
     const layout = GAME_DATA.techTreeLayout;
     if (!svg || !layout?.nodes) return;
     while (svg.firstChild) svg.removeChild(svg.firstChild);
-    const nodeRadius = (techId) => (techId === 'unlock_workbench' ? CENTER_R : NODE_R);
+    const nodeRadius = (techId) => nodeHalf(techId);
     Object.entries(layout.nodes).forEach(([childId, entry]) => {
       // 无对应科技定义的布局节点不画线（避免已删科技留下幽灵连线）
       const hasTech = (GAME_DATA.techTree || []).some((t) => t.id === childId)
@@ -719,7 +1105,7 @@
         line.setAttribute('x2', ep.x1);
         line.setAttribute('y2', ep.y1);
         line.setAttribute('stroke', 'rgba(120, 200, 255, 0.35)');
-        line.setAttribute('stroke-width', '1.5');
+        line.setAttribute('stroke-width', '2.25');
         line.setAttribute('stroke-linecap', 'round');
         line.setAttribute('class', 'tech-edge');
         line.dataset.from = parentId;

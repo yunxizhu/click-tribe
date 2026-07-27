@@ -466,7 +466,8 @@
         this._prevRestActive = false;
         this._prevFightActive = false;
         if (!this._suspenseAudio) {
-          this._startSuspense({ forceVol: 0.12 });
+          // 漫画开场：袭击预告轨从 1:00 起播
+          this._startSuspense({ forceVol: 0.12, startAt: 60 });
         }
         this._prevSuspenseActive = true;
         return;
@@ -1047,14 +1048,24 @@
       this._suspenseVol = vol;
       console.log('[BGM] 启动袭击音轨, vol:', vol);
       const url = musicUrl('Suspense7_PerituneMaterial_Suspense7_loop.mp3');
-      const a = this._createAudio(url, true, 1.0);
+      const startAt = Number(opts.startAt);
+      const seekTo = Number.isFinite(startAt) && startAt > 0 ? startAt : 0;
+      const a = this._createAudio(url, true, 1.0, seekTo);
       this._suspenseAudio = a;
-      try { a.volume = 0; a.currentTime = 0; } catch (_) { /* ignore */ }
+      try { a.volume = 0; a.currentTime = seekTo; } catch (_) { /* ignore */ }
+      const ensureSeek = () => {
+        if (!(seekTo > 0) || this._suspenseAudio !== a) return;
+        try {
+          if (Math.abs((a.currentTime || 0) - seekTo) > 0.35) a.currentTime = seekTo;
+        } catch (_) { /* ignore */ }
+      };
+      a.addEventListener('loadedmetadata', ensureSeek, { once: true });
       a.play().then(() => {
         if (this._suspenseAudio !== a) {
           this._destroyAudio(a);
           return;
         }
+        ensureSeek();
         this._onTrackReady(a, '_suspenseAudio', vol);
         if (this._suspenseAudio === a) this._fadeIn(a, vol, '_suspenseAudio');
       }).catch(e => {

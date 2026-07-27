@@ -134,7 +134,7 @@ html.app-quitting body {
 }
 
 .game-header h1 {
-  font-size: 1.5rem;
+  font-size: 2.1rem;
   margin: 0;
   justify-self: start;
   min-width: 0;
@@ -496,7 +496,7 @@ html.app-quitting body {
 }
 
 .achievement-icon {
-  font-size: 1.5rem;
+  font-size: 2.1rem;
   line-height: 1;
   flex-shrink: 0;
   width: 1.6em;
@@ -2605,7 +2605,8 @@ html.app-quitting body {
 .story-dialog {
   position: fixed;
   inset: 0;
-  z-index: 1250;
+  /* 须高于科技树编辑 HUD(2100)/退出按钮(2200)，避免编辑时饿死确认被挡住导致 paused 卡死 */
+  z-index: 2300;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -3299,24 +3300,36 @@ body.tut-interaction-lock .tech-tree-canvas:active {
   pointer-events: none;
 }
 
-/* 圆形科技节点 */
+/* 圆形科技节点：小60 / 中90 / 大120；普通与复合主图标同字号 */
 .tech-node {
   position: absolute;
-  width: 44px;
-  height: 44px;
+  width: 90px;
+  height: 90px;
   border-radius: 50%;
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 1.2rem;
+  font-size: 2.85rem;
   cursor: pointer;
   transition: all 0.15s;
   background: var(--bg-card, #1a1f2e);
-  border: 2px solid var(--border, #3a4558);
+  border: 3px solid var(--border, #3a4558);
   z-index: 2;
   pointer-events: auto;
-  font-size: 1rem;
   box-sizing: border-box;
+}
+
+.tech-node.tech-size-small {
+  width: 60px;
+  height: 60px;
+  font-size: 1.9rem;
+}
+
+.tech-node.tech-size-large {
+  width: 120px;
+  height: 120px;
+  font-size: 3.8rem;
+  border-width: 4px;
 }
 
 .tech-node.state-done {
@@ -3357,20 +3370,30 @@ body.tut-interaction-lock .tech-tree-canvas:active {
 }
 
 .tech-node.center-node {
-  width: 56px;
-  height: 56px;
-  font-size: 1.5rem;
-  border-width: 3px;
+  width: 112px;
+  height: 112px;
+  font-size: 4.25rem;
+  border-width: 4px;
   border-color: var(--accent, #4fc3f7);
   box-shadow: 0 0 14px rgba(79, 195, 247, 0.2);
   z-index: 3;
   background: #1a2540;
 }
 
-.tech-node.has-composite-icon {
-  font-size: 0.85rem;
+.tech-node.center-node.tech-size-small {
+  width: 75px;
+  height: 75px;
+  font-size: 2.85rem;
 }
 
+.tech-node.center-node.tech-size-large {
+  width: 150px;
+  height: 150px;
+  font-size: 5.7rem;
+  border-width: 5px;
+}
+
+/* 复合图标不再单独改字号，主图与普通解锁图标同大 */
 .tech-node-composite {
   position: relative;
   width: 100%;
@@ -3381,24 +3404,25 @@ body.tut-interaction-lock .tech-tree-canvas:active {
 }
 
 .tech-node-composite .tech-node-res {
-  font-size: 1.05em;
+  font-size: 1em;
   line-height: 1;
 }
 
 .tech-node-composite .tech-node-type {
   position: absolute;
-  right: -2px;
-  bottom: -2px;
-  font-size: 0.62em;
+  right: -0.08em;
+  bottom: -0.08em;
+  font-size: 0.68em;
   line-height: 1;
   background: rgba(26, 32, 53, 0.92);
   border-radius: 50%;
-  width: 16px;
-  height: 16px;
+  width: 1.35em;
+  height: 1.35em;
   display: flex;
   align-items: center;
   justify-content: center;
   border: 1px solid rgba(255, 255, 255, 0.15);
+  box-sizing: content-box;
 }
 
 .tech-tooltip-composite .tech-node-type {

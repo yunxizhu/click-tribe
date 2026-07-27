@@ -13,10 +13,9 @@ const DEV_STATION_ORDER = [
   { type: 'point', id: 'coal_mine' },
   { type: 'recipe', id: 'smelt_copper' },
   { type: 'recipe', id: 'craft_gear' },
-  { type: 'point', id: 'tin_mine' },
-  { type: 'point', id: 'zinc_mine' },
-  { type: 'recipe', id: 'craft_bronze' },
-  { type: 'recipe', id: 'craft_brass' },
+  { type: 'point', id: 'iron_mine' },
+  { type: 'recipe', id: 'smelt_iron' },
+  { type: 'recipe', id: 'smelt_steel' },
 ];
 
 /** 加载层最少停留、离场渐隐与黑屏间隔（毫秒） */
@@ -1075,6 +1074,16 @@ class FactoryGame {
           upgrades: { dropRate: 0, rewardTypes: 0, rewardAmount: 0 },
           assignedWorkers: 0,
         };
+      } else if (def.isAltar) {
+        resourcePoints[k] = {
+          unlocked: false,
+          currentCount: 0,
+          cooldownRemaining: 0,
+          miningMultiplier: 1,
+          upgradeCostScale: { countCd: 1, refine: 1, refineBumps: 0 },
+          upgrades: { count: 0, cooldown: 0, double: 0, efficiency: 0 },
+          assignedWorkers: 0,
+        };
       } else {
         resourcePoints[k] = {
           unlocked: def.unlockRequires == null
@@ -1709,11 +1718,17 @@ class FactoryGame {
       this.state.activeStation.id = legacyToolRecipes[this.state.activeStation.id];
     }
 
-    // 旧档：木板/木质武器曾是独立科技，现已并入工作台
+    // 旧档：木质武器曾并入工作台；现已拆为 unlock_weapons_lv*
     if (Array.isArray(this.state.unlockedTech)) {
-      this.state.unlockedTech = this.state.unlockedTech.filter(
-        id => id !== 'unlock_plank_craft' && id !== 'unlock_wood_weapons'
-      );
+      const mapped = [];
+      for (const id of this.state.unlockedTech) {
+        if (id === 'unlock_wood_weapons') {
+          if (!mapped.includes('unlock_weapons_lv1')) mapped.push('unlock_weapons_lv1');
+          continue;
+        }
+        mapped.push(id);
+      }
+      this.state.unlockedTech = mapped;
     }
 
     if (!this.state.workers) this.state.workers = { ...defaults.workers };
@@ -1832,7 +1847,162 @@ class FactoryGame {
     this.migrateGateTechsFromLevel();
     this.migrateCooldownUpgradeCapTo5();
     this.migrateCountUpgradeCapTo5();
+    this.migrateZincMineToIron();
+    this.migrateMetalSimplify();
+    this.migrateSmeltSlabTechs();
+    this.migratePlankHouseUpgradeTechs();
+    this.migrateGearLevelTechs();
+    this.migrateCraftEfficiencyTechs();
     this.migrateRemovedHighResources();
+    this.enforceAutoProduceTechGate();
+    this.ensureSanctuaryState();
+  }
+
+  /** 旧存档：锌矿→铁矿；黄铜/青铜/锡清理为铜铁钢体系 */
+  migrateZincMineToIron() {
+    if (this.state._zincToIronMigrated) return;
+    const res = this.state.resources;
+    if (res && typeof res === 'object') {
+      const zinc = Number(res.zinc_ore) || 0;
+      if (zinc > 0) {
+        res.iron_ingot = (Number(res.iron_ingot) || 0) + zinc;
+      }
+      delete res.zinc_ore;
+    }
+    if (this.state.resourcePoints && this.state.resourcePoints.zinc_mine) {
+      this.state.resourcePoints.iron_mine = this.state.resourcePoints.zinc_mine;
+      delete this.state.resourcePoints.zinc_mine;
+    }
+    if (Array.isArray(this.state.unlockedTech)) {
+      this.state.unlockedTech = this.state.unlockedTech.map((id) => {
+        if (id === 'unlock_zinc_mine') return 'unlock_iron_mine';
+        if (typeof id === 'string' && id.startsWith('point_up_zinc_mine_')) {
+          return id.replace('point_up_zinc_mine_', 'point_up_iron_mine_');
+        }
+        return id;
+      });
+    }
+    this.state._zincToIronMigrated = true;
+  }
+
+  migrateMetalSimplify() {
+    if (this.state._metalSimplifyMigrated) return;
+    const res = this.state.resources;
+    if (res && typeof res === 'object') {
+      const add = (to, from) => {
+        const n = Number(res[from]) || 0;
+        if (n > 0) res[to] = (Number(res[to]) || 0) + n;
+        delete res[from];
+      };
+      add('iron_ingot', 'brass');
+      add('copper_ingot', 'bronze');
+      add('copper_ore', 'tin_ore');
+      // 旧版铁矿点直接产铁锭：库存保留；新产线用铁矿石
+    }
+    if (this.state.resourcePoints) {
+      delete this.state.resourcePoints.tin_mine;
+    }
+    if (Array.isArray(this.state.unlockedTech)) {
+      const drop = new Set([
+        'unlock_tin_mine',
+        'unlock_bronze_craft',
+        'unlock_brass_craft',
+        'unlock_copper_smelt',
+      ]);
+      const mapped = [];
+      for (const id of this.state.unlockedTech) {
+        if (drop.has(id)) {
+          if (id === 'unlock_copper_smelt' && !mapped.includes('unlock_furnace')) {
+            mapped.push('unlock_furnace');
+          }
+          continue;
+        }
+        if (typeof id === 'string' && id.startsWith('point_up_tin_mine_')) continue;
+        mapped.push(id);
+      }
+      this.state.unlockedTech = mapped;
+    }
+    this.state._metalSimplifyMigrated = true;
+  }
+
+  /** 石板/铁锭/钢锭改为独立科技：旧存档按原前置补发解锁 */
+  migrateSmeltSlabTechs() {
+    if (this.state._smeltSlabTechsMigrated) return;
+    const unlocked = this.state.unlockedTech;
+    if (Array.isArray(unlocked)) {
+      const grant = (ifHas, addId) => {
+        if (unlocked.includes(ifHas) && !unlocked.includes(addId)) unlocked.push(addId);
+      };
+      grant('unlock_quarry', 'unlock_stone_slab');
+      grant('unlock_furnace', 'unlock_iron_smelt');
+      grant('unlock_furnace_upgrade', 'unlock_steel_smelt');
+    }
+    this.state._smeltSlabTechsMigrated = true;
+  }
+
+  /** 木板加工 / 房屋各级升级改为独立科技：旧档补发 */
+  migratePlankHouseUpgradeTechs() {
+    if (this.state._plankHouseUpgradeTechsMigrated) return;
+    const unlocked = this.state.unlockedTech;
+    if (Array.isArray(unlocked)) {
+      const grant = (addId) => {
+        if (!unlocked.includes(addId)) unlocked.push(addId);
+      };
+      // 旧版木板随工作台开放
+      if (unlocked.includes('unlock_workbench')) grant('unlock_plank_craft');
+      // 已达到过的房屋等级对应升级科技补发
+      let maxLv = 0;
+      (this.state.houses || []).forEach((h) => {
+        maxLv = Math.max(maxLv, Number(h.level) || 0);
+      });
+      const purchases = this.state.houseUpgradePurchases || {};
+      Object.keys(purchases).forEach((k) => {
+        if ((Number(purchases[k]) || 0) > 0) maxLv = Math.max(maxLv, Number(k) || 0);
+      });
+      for (let lv = 1; lv <= maxLv; lv++) grant(`unlock_house_upgrade_${lv}`);
+    }
+    this.state._plankHouseUpgradeTechsMigrated = true;
+  }
+
+  /** 工具/武器分等级独立科技：按旧前置补发 */
+  migrateGearLevelTechs() {
+    if (this.state._gearLevelTechsMigrated) return;
+    const unlocked = this.state.unlockedTech;
+    if (Array.isArray(unlocked)) {
+      const grant = (addId) => {
+        if (!unlocked.includes(addId)) unlocked.push(addId);
+      };
+      if (unlocked.includes('unlock_tool_crafting') || unlocked.includes('unlock_workbench')) {
+        grant('unlock_tools_lv1');
+      }
+      if (unlocked.includes('unlock_wood_weapons')) grant('unlock_weapons_lv1');
+      if (unlocked.includes('unlock_quarry')) {
+        grant('unlock_tools_lv2');
+        grant('unlock_weapons_lv2');
+      }
+      if (unlocked.includes('unlock_iron_smelt') || unlocked.includes('unlock_furnace')) {
+        grant('unlock_tools_lv3');
+        grant('unlock_weapons_lv3');
+      }
+      if (unlocked.includes('unlock_steel_smelt') || unlocked.includes('unlock_furnace_upgrade')) {
+        grant('unlock_tools_lv4');
+        grant('unlock_weapons_lv4');
+      }
+    }
+    this.state._gearLevelTechsMigrated = true;
+  }
+
+  /** 原高级工作台附带订单 0.2/人/秒：改为独立合成效率科技，旧档补发满级 */
+  migrateCraftEfficiencyTechs() {
+    if (this.state._craftEfficiencyTechsMigrated) return;
+    const unlocked = this.state.unlockedTech;
+    if (Array.isArray(unlocked) && unlocked.includes('unlock_advanced_workbench')) {
+      for (let i = 1; i <= 5; i++) {
+        const id = `unlock_craft_efficiency_v${i}`;
+        if (!unlocked.includes(id)) unlocked.push(id);
+      }
+    }
+    this.state._craftEfficiencyTechsMigrated = true;
   }
 
   /** 去掉高级/终极资源后：丢弃未知资源键与已删资源点/配方状态，清理已删科技 id */
@@ -2043,13 +2213,14 @@ class FactoryGame {
 
   /**
    * 游戏内时间是否应冻结（日历/生产等模拟不推进）。
-   * 主菜单、Esc 菜单、中转黑屏、开场漫画、显式 paused 均冻结。
+   * 主菜单、Esc 菜单、中转黑屏、开场漫画、科技树调整、显式 paused 均冻结。
    */
   shouldFreezeGameTime() {
     if (!this._inGameSession || this._atMainMenu) return true;
     if (this._bootTransitionActive) return true;
     if (this._pickingDifficulty) return true;
     if (this._comicTimeHold) return true;
+    if (this._techEditMode) return true;
     if (this.isPauseMenuOpen?.()) return true;
     if (this.paused) return true;
     return false;
@@ -2425,16 +2596,24 @@ class FactoryGame {
       return null;
     };
 
-    // 旧教程残留：不再引导去科技树点「木板加工」
+    // 旧教程：引导解锁木板加工科技
     if (step.id === 'unlock_plank') {
+      if (this.isTechUnlocked('unlock_plank_craft')) {
+        return {
+          ...step,
+          id: 'craft_plank',
+          title: '制作木板',
+          text: '木板加工已解锁。自己打开「合成」做 1 块木板即可。',
+          highlight: ['.tab-btn[data-tab="craft"]', '.craft-overview-item[data-recipe-id="craft_plank"]'],
+          progress: 'plank',
+          target: 1,
+        };
+      }
       return {
         ...step,
-        id: 'craft_plank',
-        title: '制作木板',
-        text: '木板已随工作台解锁，无需再点科技。自己打开「合成」做 1 块木板即可。',
-        highlight: ['.tab-btn[data-tab="craft"]', '.craft-overview-item[data-recipe-id="craft_plank"]'],
-        progress: 'plank',
-        target: 1,
+        title: '解锁木板加工',
+        text: '打开「科技」，找到并解锁「木板加工」。',
+        highlight: ['.tab-btn[data-tab="tech"]', '.tech-node[data-tech-id="unlock_plank_craft"]'],
       };
     }
 
@@ -2456,6 +2635,15 @@ class FactoryGame {
     }
 
     if (step.id === 'craft_plank') {
+      if (!this.isTechUnlocked('unlock_plank_craft')) {
+        return {
+          ...step,
+          id: 'unlock_plank',
+          title: '解锁木板加工',
+          text: '制作木板前需先解锁科技「木板加工」。打开「科技」找到并解锁它。',
+          highlight: ['.tab-btn[data-tab="tech"]', '.tech-node[data-tech-id="unlock_plank_craft"]'],
+        };
+      }
       const queued = this.getCraftQueueCount('craft_plank') > 0;
       const made = (this.state.tutorial?.planksCrafted || 0) < (step.target || 1);
       // 用「本步是否已做出木板」判断，不能看库存：宝箱开局就有木板
@@ -2491,7 +2679,36 @@ class FactoryGame {
       };
     }
 
+    if (step.id === 'unlock_weapons') {
+      if (this.isTechUnlocked('unlock_weapons_lv1')) {
+        return {
+          ...step,
+          id: 'craft_weapon',
+          title: '制作第一件武器',
+          text: '木质武器已解锁。自己打开「武器」页下单制作任意一件武器。',
+          highlight: ['.tab-btn[data-tab="weapons"]', '#weapon-list .craft-overview-item'],
+          progress: 'weapon',
+          target: 1,
+        };
+      }
+      return {
+        ...step,
+        title: '解锁木质武器',
+        text: '打开「科技」，找到并解锁「木质武器」。',
+        highlight: ['.tab-btn[data-tab="tech"]', '.tech-node[data-tech-id="unlock_weapons_lv1"]'],
+      };
+    }
+
     if (step.id === 'craft_weapon') {
+      if (!this.isTechUnlocked('unlock_weapons_lv1')) {
+        return {
+          ...step,
+          id: 'unlock_weapons',
+          title: '解锁木质武器',
+          text: '制作武器前需先解锁科技「木质武器」。打开「科技」找到并解锁它。',
+          highlight: ['.tab-btn[data-tab="tech"]', '.tech-node[data-tech-id="unlock_weapons_lv1"]'],
+        };
+      }
       if (this.getTutorialProgressValue('weapon') >= 1) {
         return { ...step, highlight: [] };
       }
@@ -2917,9 +3134,13 @@ class FactoryGame {
     if (id === 'unlock_workbench') return (this.state.unlockedTech || []).includes('unlock_workbench');
     if (id === 'open_tech_tree') return this.state.activeTab === 'tech';
     if (id === 'craft_tool') return this.getTutorialProgressValue('tool') >= 1;
+    if (id === 'unlock_weapons') return this.isTechUnlocked('unlock_weapons_lv1');
     if (id === 'craft_weapon') return this.getTutorialProgressValue('weapon') >= 1;
-    if (id === 'craft_plank' || id === 'unlock_plank') {
+    if (id === 'craft_plank') {
       return (this.state.tutorial?.planksCrafted || 0) >= (step.target || 1);
+    }
+    if (id === 'unlock_plank') {
+      return this.isTechUnlocked('unlock_plank_craft');
     }
     if (id === 'assign_forest') return (this.state.resourcePoints.forest?.assignedWorkers || 0) >= 2;
     if (id === 'assign_berry') return (this.state.resourcePoints.berry_bush?.assignedWorkers || 0) >= 4;
@@ -3371,6 +3592,12 @@ class FactoryGame {
       this.save();
       return;
     }
+    if (enabled && !this.isAutoProduceUnlocked()) {
+      st.autoProduce = false;
+      this.showNotification('需先解锁科技「自动生产」');
+      this.save();
+      return;
+    }
     st.autoProduce = !!enabled;
     if (!enabled) {
       st.autoMode = 'always';
@@ -3380,6 +3607,23 @@ class FactoryGame {
     if (enabled && this.getCraftQueueCount(recipeId) <= 0) {
       this.tryAutoProduce(recipeId);
     }
+  }
+
+  isAutoProduceUnlocked() {
+    return this.isTechUnlocked('unlock_auto_produce');
+  }
+
+  /** 未解锁时强制关闭所有自动生产开关 */
+  enforceAutoProduceTechGate() {
+    if (this.isAutoProduceUnlocked()) return;
+    let changed = false;
+    Object.values(this.state.craftStations || {}).forEach((st) => {
+      if (st?.autoProduce) {
+        st.autoProduce = false;
+        changed = true;
+      }
+    });
+    if (changed) this.save();
   }
 
   setAutoRepair(recipeId, enabled) {
@@ -3418,6 +3662,7 @@ class FactoryGame {
   }
 
   tryAutoProduce(recipeId) {
+    if (!this.isAutoProduceUnlocked()) return false;
     const st = this.state.craftStations[recipeId];
     if (!st?.autoProduce) return false;
     if (this.getCraftQueueCount(recipeId) > 0) return false;
@@ -3427,6 +3672,7 @@ class FactoryGame {
 
   /** 获得材料后：扫一遍自动生产（库存不足 / 一直生产且当前无单） */
   scanAutoProduces() {
+    if (!this.isAutoProduceUnlocked()) return 0;
     if (this._scanningAutoProduces) return 0;
     this._scanningAutoProduces = true;
     let n = 0;
@@ -3542,7 +3788,7 @@ class FactoryGame {
     queue.splice(idx, 1);
     // 如果取消的是自动生产订单且依然满足条件，补一个订单
     let extraMsg = '';
-    if (order.autoProduced) {
+    if (order.autoProduced && this.isAutoProduceUnlocked()) {
       const st = this.state.craftStations[order.recipeId];
       if (st?.autoProduce && this._checkAutoCondition(order.recipeId)) {
         this.placeCraftOrder(order.recipeId, 1, { silent: true, autoProduced: true });
@@ -3590,6 +3836,7 @@ class FactoryGame {
    * 则补单（若尚无订单）并上提至队列最前。
    */
   ensureToolAutoCraftPriority(toolId, level) {
+    if (!this.isAutoProduceUnlocked()) return false;
     const recipe = this.getToolRecipe(toolId, level);
     if (!recipe) return false;
     const st = this.state.craftStations[recipe.id];
@@ -3691,6 +3938,7 @@ class FactoryGame {
 
     Object.entries(recipe.outputs || {}).forEach(([res, amt]) => this.addResource(res, amt));
     this.applyOutputTools(recipe.outputTools);
+    this.trySanctuaryCraftRefund(recipe, { silent });
     order.count -= 1;
     order.progress = 0;
 
@@ -3746,7 +3994,7 @@ class FactoryGame {
       }
     }
 
-    if (st?.autoProduce && !recipe.isToolRecipe && this._checkAutoCondition(recipeId)) {
+    if (st?.autoProduce && !recipe.isToolRecipe && this.isAutoProduceUnlocked() && this._checkAutoCondition(recipeId)) {
       this.placeCraftOrder(recipeId, 1, { silent: true, autoProduced: true });
     }
   }
@@ -3913,6 +4161,350 @@ class FactoryGame {
     const lv = this.getTechRepeatLevel('unlock_worker_efficiency').current;
     return base + lv * 0.01;
   }
+
+  /** 生产订单每人效率：徒手基础 + 合成效率科技（每级 +0.02） */
+  getCraftWorkerSpeed() {
+    const per = GAME_DATA.villagerWork?.craftSpeedPerTechLevel ?? 0.02;
+    const lv = this.getTechRepeatLevel('unlock_craft_efficiency').current;
+    return this.getVillagerBaseSpeed() + lv * per;
+  }
+
+  ensureSanctuaryState() {
+
+    if (!this.state.sanctuary || typeof this.state.sanctuary !== 'object') {
+
+      this.state.sanctuary = {
+
+        lastEffCheckDay: 0,
+
+        lastEffCheckHour: -1,
+
+        workBuffMult: 1,
+
+        workBuffExpiresAt: 0,
+
+      };
+
+    }
+
+    const st = this.state.sanctuary;
+
+    if (st.lastEffCheckHour === undefined) st.lastEffCheckHour = -1;
+
+    if (st.lastEffCheckDay === undefined) st.lastEffCheckDay = 0;
+
+    if (st.workBuffMult == null) st.workBuffMult = 1;
+
+    if (st.workBuffExpiresAt == null) st.workBuffExpiresAt = 0;
+
+    return st;
+
+  }
+
+
+
+  getGameAbsoluteMs() {
+
+    const dayMs = GAME_DATA.calendar?.dayDurationMs || 900000;
+
+    return ((this.state.day || 1) - 1) * dayMs + (this.state.dayProgress || 0);
+
+  }
+
+
+
+  getGameMinuteMs() {
+
+    const dayMs = GAME_DATA.calendar?.dayDurationMs || 900000;
+
+    return dayMs / (24 * 60);
+
+  }
+
+
+
+  _sanctuarySeriesLevel(seriesId) {
+
+    return this.getTechRepeatLevel(seriesId).current;
+
+  }
+
+
+
+  isSanctuaryBranchUnlocked(branchKey) {
+
+    const cfg = GAME_DATA.sanctuary?.[branchKey];
+
+    return !!(cfg?.unlockTech && this.isTechUnlocked(cfg.unlockTech));
+
+  }
+
+
+
+  getSanctuaryGatherChance() {
+
+    if (!this.isSanctuaryBranchUnlocked('gather')) return 0;
+
+    const cfg = GAME_DATA.sanctuary.gather;
+
+    return cfg.chanceBase + this._sanctuarySeriesLevel(cfg.chanceSeries) * cfg.chancePerLevel;
+
+  }
+
+
+
+  getSanctuaryGatherMult() {
+
+    if (!this.isSanctuaryBranchUnlocked('gather')) return 1;
+
+    const cfg = GAME_DATA.sanctuary.gather;
+
+    return cfg.multBase + this._sanctuarySeriesLevel(cfg.multSeries) * cfg.multPerLevel;
+
+  }
+
+
+
+  rollSanctuaryGatherBonus() {
+
+    const chance = this.getSanctuaryGatherChance();
+
+    if (chance <= 0) return null;
+
+    if (Math.random() >= chance) return null;
+
+    return this.getSanctuaryGatherMult();
+
+  }
+
+
+
+  getSanctuaryCraftRefundChance() {
+
+    if (!this.isSanctuaryBranchUnlocked('craft')) return 0;
+
+    const cfg = GAME_DATA.sanctuary.craft;
+
+    return cfg.chanceBase + this._sanctuarySeriesLevel(cfg.chanceSeries) * cfg.chancePerLevel;
+
+  }
+
+
+
+  getSanctuaryCraftRefundRate() {
+
+    if (!this.isSanctuaryBranchUnlocked('craft')) return 0;
+
+    const cfg = GAME_DATA.sanctuary.craft;
+
+    return cfg.refundBase + this._sanctuarySeriesLevel(cfg.refundSeries) * cfg.refundPerLevel;
+
+  }
+
+
+
+  trySanctuaryCraftRefund(recipe, { silent = false } = {}) {
+
+    const chance = this.getSanctuaryCraftRefundChance();
+
+    const rate = this.getSanctuaryCraftRefundRate();
+
+    if (chance <= 0 || rate <= 0) return null;
+
+    if (Math.random() >= chance) return null;
+
+    const refunded = {};
+
+    Object.entries(recipe?.inputs || {}).forEach(([res, amt]) => {
+
+      const n = Math.floor(Number(amt) * rate);
+
+      if (n > 0) {
+
+        this.addResource(res, n);
+
+        refunded[res] = n;
+
+      }
+
+    });
+
+    if (!Object.keys(refunded).length) return null;
+
+    if (!silent) {
+
+      const parts = Object.entries(refunded).map(([res, n]) =>
+
+        `${GAME_DATA.resources[res]?.icon || res}×${n}`
+
+      );
+
+      this.showNotification(`🛠️ 生产庇护：返还 ${parts.join('、')}`);
+
+    }
+
+    return refunded;
+
+  }
+
+
+
+  getSanctuaryWarCritChance() {
+
+    if (!this.isSanctuaryBranchUnlocked('war')) return 0;
+
+    const cfg = GAME_DATA.sanctuary.war;
+
+    return cfg.chanceBase + this._sanctuarySeriesLevel(cfg.chanceSeries) * cfg.chancePerLevel;
+
+  }
+
+
+
+  getSanctuaryWarCritMult() {
+
+    if (!this.isSanctuaryBranchUnlocked('war')) return 1;
+
+    const cfg = GAME_DATA.sanctuary.war;
+
+    return cfg.critMultBase + this._sanctuarySeriesLevel(cfg.critMultSeries) * cfg.critMultPerLevel;
+
+  }
+
+
+
+  getSanctuaryEfficiencyChance() {
+
+    if (!this.isSanctuaryBranchUnlocked('efficiency')) return 0;
+
+    const cfg = GAME_DATA.sanctuary.efficiency;
+
+    return cfg.chanceBase + this._sanctuarySeriesLevel(cfg.chanceSeries) * cfg.chancePerLevel;
+
+  }
+
+
+
+  getSanctuaryEfficiencyMult() {
+
+    if (!this.isSanctuaryBranchUnlocked('efficiency')) return 1;
+
+    const cfg = GAME_DATA.sanctuary.efficiency;
+
+    return cfg.multBase + this._sanctuarySeriesLevel(cfg.multSeries) * cfg.multPerLevel;
+
+  }
+
+
+
+  getSanctuaryEfficiencyDurationMin() {
+
+    if (!this.isSanctuaryBranchUnlocked('efficiency')) return 0;
+
+    const cfg = GAME_DATA.sanctuary.efficiency;
+
+    return cfg.durationMinBase + this._sanctuarySeriesLevel(cfg.durationSeries) * cfg.durationMinPerLevel;
+
+  }
+
+
+
+  getSanctuaryWorkSpeedFactor() {
+
+    const st = this.ensureSanctuaryState();
+
+    const mult = Number(st.workBuffMult) || 1;
+
+    if (mult <= 1) return 1;
+
+    if (this.getGameAbsoluteMs() >= (Number(st.workBuffExpiresAt) || 0)) return 1;
+
+    return mult;
+
+  }
+
+
+
+  processSanctuaryEfficiencyTick() {
+
+    if (!this.isSanctuaryBranchUnlocked('efficiency')) return;
+
+    if (this.isVillagersResting()) return;
+
+    const { hours } = this.getGameTimeOfDay();
+
+    const day = this.state.day || 1;
+
+    const st = this.ensureSanctuaryState();
+
+    if (st.lastEffCheckDay === day && st.lastEffCheckHour === hours) return;
+
+    st.lastEffCheckDay = day;
+
+    st.lastEffCheckHour = hours;
+
+    const chance = this.getSanctuaryEfficiencyChance();
+
+    if (chance <= 0 || Math.random() >= chance) return;
+
+    const mult = this.getSanctuaryEfficiencyMult();
+
+    const mins = this.getSanctuaryEfficiencyDurationMin();
+
+    st.workBuffMult = mult;
+
+    st.workBuffExpiresAt = this.getGameAbsoluteMs() + mins * this.getGameMinuteMs();
+
+    this.showNotification(`🌟 效率庇护发动！全工作效率 ×${mult.toFixed(2)}，持续 ${mins} 分钟（游戏时间）`);
+
+  }
+
+
+
+  formatAltarStatusHtml() {
+
+    const unlocked = !!this.state.resourcePoints.altar?.unlocked;
+
+    if (!unlocked) {
+
+      return '神坛尚未建造。请先在科技树解锁「神坛」。';
+
+    }
+
+    const lines = ['神坛已启用。当前庇护状态：'];
+
+    if (this.isSanctuaryBranchUnlocked('gather')) {
+
+      lines.push(`🌾 采集：${(this.getSanctuaryGatherChance() * 100).toFixed(0)}% 概率 ×${this.getSanctuaryGatherMult().toFixed(1)}`);
+
+    } else lines.push('🌾 采集庇护：未解锁');
+
+    if (this.isSanctuaryBranchUnlocked('craft')) {
+
+      lines.push(`🛠️ 生产：${(this.getSanctuaryCraftRefundChance() * 100).toFixed(0)}% 概率返还 ${(this.getSanctuaryCraftRefundRate() * 100).toFixed(0)}%`);
+
+    } else lines.push('🛠️ 生产庇护：未解锁');
+
+    if (this.isSanctuaryBranchUnlocked('war')) {
+
+      lines.push(`🛡️ 战争：${(this.getSanctuaryWarCritChance() * 100).toFixed(0)}% 暴击 ×${this.getSanctuaryWarCritMult().toFixed(1)}`);
+
+    } else lines.push('🛡️ 战争庇护：未解锁');
+
+    if (this.isSanctuaryBranchUnlocked('efficiency')) {
+
+      const active = this.getSanctuaryWorkSpeedFactor() > 1;
+
+      lines.push(`🌟 效率：整点 ${(this.getSanctuaryEfficiencyChance() * 100).toFixed(0)}% / ×${this.getSanctuaryEfficiencyMult().toFixed(1)} / ${this.getSanctuaryEfficiencyDurationMin()} 分钟${active ? ' · <b>生效中</b>' : ''}`);
+
+    } else lines.push('🌟 效率庇护：未解锁');
+
+    return lines.join('<br>');
+
+  }
+
+
+
 
   /** 食物采集科技：每级给所有食物点 +0.01/秒/人（最高 3 级） */
   getFoodGatherSpeedBonus() {
@@ -4259,6 +4851,13 @@ class FactoryGame {
     }) || null;
   }
 
+  getRepairCostRatio() {
+    const base = GAME_DATA.toolDurability?.repairCostRatio ?? 0.5;
+    const per = GAME_DATA.toolDurability?.repairCostReducePerLevel ?? 0.06;
+    const lv = this.getTechRepeatLevel('unlock_efficient_repair').current;
+    return Math.max(0, base - lv * per);
+  }
+
   getPieceRepairFactor(toolId, piece) {
     if (!piece) return null;
     const max = Math.max(1, Number(piece.maxDur)
@@ -4267,8 +4866,8 @@ class FactoryGame {
     const missing = Math.max(0, Math.min(1, (max - cur) / max));
     const minMissing = GAME_DATA.toolDurability?.repairMinMissing ?? 0.01;
     if (missing < minMissing - 1e-9) return null;
-    const ratio = GAME_DATA.toolDurability?.repairCostRatio ?? 0.5;
-    return { factor: ratio * missing, missing, max, cur };
+    const ratio = this.getRepairCostRatio();
+    return { factor: ratio * missing, missing, max, cur, ratio };
   }
 
   computeRepairCostFromFactor(recipe, factor) {
@@ -4876,9 +5475,10 @@ class FactoryGame {
 
   isStationUnlocked(type, id) {
     if (type === 'point') {
+      const def = GAME_DATA.resourcePoints[id];
+      if (def?.isAltar) return true;
       const pt = this.state.resourcePoints[id];
       if (!pt?.unlocked) return false;
-      const def = GAME_DATA.resourcePoints[id];
       if (def?.isTreasureChest) return (pt.stock || 0) > 0;
       return true;
     }
@@ -4890,6 +5490,8 @@ class FactoryGame {
   }
 
   isPointVisibleInSidebar(pointId) {
+    const def = GAME_DATA.resourcePoints[pointId];
+    if (def?.isAltar) return true;
     const pt = this.state.resourcePoints[pointId];
     if (!pt?.unlocked) return false;
     // 魔王始终在列表中可见（即使被无敌笼罩）
@@ -5468,8 +6070,20 @@ class FactoryGame {
     if (!house) return false;
     const next = (house.level || 0) + 1;
     if (next > (GAME_DATA.housing.maxHouseLevel || 2)) return false;
+    if (!this.isHouseUpgradeTechUnlocked(next)) return false;
     const cost = this.getHouseUpgradeCost(next);
     return !!cost && this.canAfford(cost);
+  }
+
+  /** 房屋升到 targetLevel 所需科技是否已解锁 */
+  isHouseUpgradeTechUnlocked(targetLevel) {
+    const lv = Number(targetLevel) || 0;
+    if (lv <= 0) return true;
+    return this.isTechUnlocked(`unlock_house_upgrade_${lv}`);
+  }
+
+  getHouseUpgradeTechId(targetLevel) {
+    return `unlock_house_upgrade_${Number(targetLevel) || 0}`;
   }
 
   /** 开始升级房屋（扣材料，设进度） */
@@ -5520,7 +6134,7 @@ class FactoryGame {
   processHouseConstruction(dt) {
     if (this.isVillagersResting()) return;
     const seconds = dt / 1000;
-    const speed = this.getVillagerBaseSpeed();
+    const speed = this.getVillagerBaseSpeed() * this.getSanctuaryWorkSpeedFactor();
     const progress = speed * seconds;
 
     // 建造进度
@@ -5615,7 +6229,9 @@ class FactoryGame {
       // 合计全局生产工人
       const craftWorkers = this.state.workers?.craftWorkers || 0;
       if (craftWorkers <= 0) return 0;
-      speed = craftWorkers * (this.isTechUnlocked('unlock_advanced_workbench') ? 0.2 : this.getVillagerBaseSpeed());
+      speed = craftWorkers * this.getCraftWorkerSpeed();
+    } else if (GAME_DATA.resourcePoints[id]?.isAltar) {
+      return 0;
     } else {
       const st = this.getStationState(type, id);
       const assign = this.getStationToolAssignment(type, id);
@@ -5635,6 +6251,7 @@ class FactoryGame {
     speed *= this.getHungerWorkFactor();
     // 成长期村民工作效率减半
     speed *= this.getGrowthWorkFactor();
+    speed *= this.getSanctuaryWorkSpeedFactor();
     return speed;
   }
 
@@ -6130,6 +6747,8 @@ class FactoryGame {
         }
       }
     }
+
+    this.processSanctuaryEfficiencyTick();
 
     const resting = this.isVillagersResting();
     if (!this._suppressSounds && wasResting !== resting) {
@@ -6774,6 +7393,7 @@ class FactoryGame {
     }
 
     if (type === 'point') {
+      if (GAME_DATA.resourcePoints[id]?.isAltar) return false;
       this.harvestResource(id, opts);
       return true;
     }
@@ -6783,15 +7403,23 @@ class FactoryGame {
   /** 发放采集收益与掉落（填满动画结束后调用） */
   _grantPointHarvestLoot(pointId, yieldAmount) {
     const def = GAME_DATA.resourcePoints[pointId];
-    if (!def || def.isTreasureChest) return;
-    this.addResource(def.resource, yieldAmount);
+    if (!def || def.isTreasureChest || def.isAltar) return;
+    let amount = yieldAmount;
+    let blessMult = null;
+    const rolled = this.rollSanctuaryGatherBonus();
+    if (rolled && rolled > 1) {
+      blessMult = rolled;
+      amount = Math.max(1, Math.floor(amount * rolled));
+    }
+    this.addResource(def.resource, amount);
     if (pointId === 'berry_bush' && this.state.tutorial && !this.state.tutorial.completed) {
-      this.state.tutorial.berryHarvests = (this.state.tutorial.berryHarvests || 0) + yieldAmount;
+      this.state.tutorial.berryHarvests = (this.state.tutorial.berryHarvests || 0) + amount;
     }
     const isActive = this.state.activeStation?.type === 'point' && this.state.activeStation?.id === pointId;
     if (!this._suppressSounds && isActive) this.sounds.playHarvest(def.resource);
     const resDef = GAME_DATA.resources[def.resource];
-    this.showResourceGainNotification(`获得 ${resDef.icon} ${resDef.name} ×${yieldAmount}`);
+    const blessTxt = blessMult ? `（采集庇护 ×${blessMult.toFixed(1)}）` : '';
+    this.showResourceGainNotification(`获得 ${resDef.icon} ${resDef.name} ×${amount}${blessTxt}`);
     this.tryGrantStarterChest(pointId);
     const starterAt = GAME_DATA.starterChest?.afterForestHarvests ?? 2;
     if (!(pointId === 'forest' && this.state.forestHarvestCount === starterAt)) {
@@ -6941,7 +7569,7 @@ class FactoryGame {
     const queue = this.state.craftOrderQueue || [];
     if (queue.length === 0) return;
     let changed = false;
-    const baseSpeed = this.getVillagerBaseSpeed();
+    const baseSpeed = this.getCraftWorkerSpeed() * this.getSanctuaryWorkSpeedFactor();
 
     // 全局生产工人 → 处理队首订单
     const globalWorkers = this.state.workers?.craftWorkers || 0;
@@ -7002,7 +7630,7 @@ class FactoryGame {
     const seconds = dt / 1000;
     Object.keys(GAME_DATA.resourcePoints).forEach(id => {
       const def = GAME_DATA.resourcePoints[id];
-      if (def?.isTreasureChest || def?.isDemonKing || def?.isBossPoint) return;
+      if (def?.isTreasureChest || def?.isAltar || def?.isDemonKing || def?.isBossPoint) return;
       if (!this.isStationUnlocked('point', id)) return;
       const speed = this.getStationAutoSpeed('point', id);
       if (speed <= 0) return;
@@ -9080,7 +9708,55 @@ class FactoryGame {
     });
     if (tech.id === 'unlock_furnace_upgrade') extras.push('🔥 熔炉配方计数值减半');
     if (tech.id === 'unlock_workbench') {
-      extras.push('🔨 开放合成、工具与武器栏；工具制作、木板与木质工具/武器已可用');
+      extras.push('🔨 开放合成、工具与武器栏；各级工具/武器需另解锁对应科技（木质工具开局已有）');
+    }
+    if (tech.id === 'unlock_plank_craft') {
+      extras.push('🟫 配方已解锁：制作木板（前往合成页安排生产）');
+    }
+    if (/^unlock_house_upgrade_\d+$/.test(tech.id)) {
+      const lv = Number(tech.id.replace('unlock_house_upgrade_', '')) || 0;
+      const up = GAME_DATA.housing?.upgrades?.[lv];
+      extras.push(`🏠 可升级房屋至「${up?.name || `Lv.${lv}`}」`);
+    }
+    if (/^unlock_tools_lv\d+$/.test(tech.id)) {
+      extras.push('🪓 对应等级采集工具配方已解锁（前往工具页）');
+    }
+    if (/^unlock_weapons_lv\d+$/.test(tech.id)) {
+      extras.push('🗡️ 对应等级武器与护甲配方已解锁（前往武器页）');
+    }
+    if (tech.id === 'unlock_auto_produce') {
+      extras.push('🔁 合成页可勾选「自动生产」，队列清空后自动补单');
+    }
+    if (tech.id === 'unlock_altar') {
+      extras.push('⛩️ 神坛已建造，可研发采集/生产/战争/效率庇护');
+    }
+    if (tech.id === 'unlock_sanctuary_gather') {
+      extras.push(`🌾 采集庇护：${(this.getSanctuaryGatherChance() * 100).toFixed(0)}% 概率 ×${this.getSanctuaryGatherMult().toFixed(1)} 产量`);
+    }
+    if (tech.id === 'unlock_sanctuary_craft') {
+      extras.push(`🛠️ 生产庇护：${(this.getSanctuaryCraftRefundChance() * 100).toFixed(0)}% 概率返还 ${(this.getSanctuaryCraftRefundRate() * 100).toFixed(0)}% 材料`);
+    }
+    if (tech.id === 'unlock_sanctuary_war') {
+      extras.push(`🛡️ 战争庇护：${(this.getSanctuaryWarCritChance() * 100).toFixed(0)}% 暴击，×${this.getSanctuaryWarCritMult().toFixed(1)} 伤害`);
+    }
+    if (tech.id === 'unlock_sanctuary_efficiency') {
+      extras.push(`🌟 效率庇护：日间整点 ${(this.getSanctuaryEfficiencyChance() * 100).toFixed(0)}% 触发，×${this.getSanctuaryEfficiencyMult().toFixed(1)} / ${this.getSanctuaryEfficiencyDurationMin()} 分钟`);
+    }
+    if (tech.techSeries === 'unlock_sanctuary_gather_chance' || tech.techSeries === 'unlock_sanctuary_gather_power') {
+      extras.push(`🌾 采集庇护：${(this.getSanctuaryGatherChance() * 100).toFixed(0)}% → ×${this.getSanctuaryGatherMult().toFixed(1)}`);
+    }
+    if (tech.techSeries === 'unlock_sanctuary_craft_chance' || tech.techSeries === 'unlock_sanctuary_craft_power') {
+      extras.push(`🛠️ 生产庇护：${(this.getSanctuaryCraftRefundChance() * 100).toFixed(0)}% → 返还 ${(this.getSanctuaryCraftRefundRate() * 100).toFixed(0)}%`);
+    }
+    if (tech.techSeries === 'unlock_sanctuary_war_chance' || tech.techSeries === 'unlock_sanctuary_war_power') {
+      extras.push(`🛡️ 战争庇护：${(this.getSanctuaryWarCritChance() * 100).toFixed(0)}% 暴击 ×${this.getSanctuaryWarCritMult().toFixed(1)}`);
+    }
+    if (
+      tech.techSeries === 'unlock_sanctuary_eff_chance'
+      || tech.techSeries === 'unlock_sanctuary_eff_power'
+      || tech.techSeries === 'unlock_sanctuary_eff_duration'
+    ) {
+      extras.push(`🌟 效率庇护：${(this.getSanctuaryEfficiencyChance() * 100).toFixed(0)}% / ×${this.getSanctuaryEfficiencyMult().toFixed(1)} / ${this.getSanctuaryEfficiencyDurationMin()} 分钟`);
     }
     if (tech.id === 'unlock_auto_click') {
       const { current, max } = this.getTechRepeatLevel(tech);
@@ -9105,9 +9781,19 @@ class FactoryGame {
       const { current, max } = this.getTechRepeatLevel('unlock_tool_efficiency');
       extras.push(`⚡ 工具采集效率 +${current * 5}%（${this.formatUpgradeLevel(current, max)}）`);
     }
+    if (tech.techSeries === 'unlock_craft_efficiency' || tech.id === 'unlock_craft_efficiency') {
+      const { current, max } = this.getTechRepeatLevel('unlock_craft_efficiency');
+      const per = GAME_DATA.villagerWork?.craftSpeedPerTechLevel ?? 0.02;
+      extras.push(`⚙️ 生产订单：${this.getCraftWorkerSpeed().toFixed(2)}/人/秒（${this.formatUpgradeLevel(current, max)}，每级 +${per}）`);
+    }
     if (tech.techSeries === 'unlock_tool_durability' || tech.id === 'unlock_tool_durability') {
       const { current, max } = this.getTechRepeatLevel('unlock_tool_durability');
       extras.push(`🛡️ 工具/武器耐久 +${current * 10}%（${this.formatUpgradeLevel(current, max)}）`);
+    }
+    if (tech.techSeries === 'unlock_efficient_repair' || tech.id === 'unlock_efficient_repair') {
+      const { current, max } = this.getTechRepeatLevel('unlock_efficient_repair');
+      const pct = Math.round(this.getRepairCostRatio() * 100);
+      extras.push(`🔧 近毁装备维修约需造价 ${pct}%（${this.formatUpgradeLevel(current, max)}，每级 −6%）`);
     }
     if (tech.id === 'unlock_point_recovery') {
       extras.push('💨 资源点恢复时间 −10%');
@@ -9747,12 +10433,14 @@ class FactoryGame {
       : (onCooldown ? 0 : Math.min(100, (st.currentCount / maxCount) * 100));
     const barClass = 'mini-progress';
     const isChest = def.isTreasureChest;
+    const isAltar = !!def.isAltar;
+    const altarLocked = isAltar && !st?.unlocked;
     const chestStock = isChest ? (st.stock || 0) : 0;
     const depleted = isChest && chestStock <= 0;
     const isDemon = def.isDemonKing || def.isBossPoint;
 
     let dailyEstHtml = '';
-    if (!isChest && !isDemon && !depleted) {
+    if (!isChest && !isAltar && !isDemon && !depleted) {
       const daily = this.getPointDailyExpectedOutput(id);
       const resName = GAME_DATA.resources[def.resource]?.name || '';
       const workSec = this.getDailyAutoWorkSeconds();
@@ -9765,7 +10453,7 @@ class FactoryGame {
 
     const el = document.createElement('button');
     el.type = 'button';
-    el.className = `station-btn ${active ? 'active' : ''} ${depleted ? 'depleted' : ''}${this.shouldFlashUnlockPoint(id) ? ' unlock-flash' : ''} ${isDemon ? 'station-boss' : ''}`;
+    el.className = `station-btn ${active ? 'active' : ''} ${depleted ? 'depleted' : ''}${altarLocked ? ' locked' : ''}${this.shouldFlashUnlockPoint(id) ? ' unlock-flash' : ''} ${isDemon ? 'station-boss' : ''}${isAltar ? ' station-altar' : ''}`;
     el.dataset.stationType = type;
     el.dataset.stationId = id;
     const demonStatus = isDemon
@@ -9838,6 +10526,14 @@ class FactoryGame {
       chestCount++;
     });
 
+    // 神坛：独立在外侧（未解锁也可查看）
+    Object.entries(GAME_DATA.resourcePoints).forEach(([id, def]) => {
+      if (!def.isAltar) return;
+      if (!this.isPointVisibleInSidebar(id)) return;
+      if (chestList) this.renderStationBtn(chestList, 'point', id, def);
+      chestCount++;
+    });
+
     // 先渲染魔王（特殊Boss条，始终在采集最前）
     Object.entries(GAME_DATA.resourcePoints).forEach(([id, def]) => {
       if (!this.isPointVisibleInSidebar(id)) return;
@@ -9849,7 +10545,7 @@ class FactoryGame {
     Object.entries(GAME_DATA.resourcePoints).forEach(([id, def]) => {
       if (!this.isPointVisibleInSidebar(id)) return;
       if (def.isDemonKing || def.isBossPoint) return;
-      if (def.isTreasureChest) return;
+      if (def.isTreasureChest || def.isAltar) return;
       if (def.isFoodPoint) {
         if (forageList) this.renderStationBtn(forageList, 'point', id, def);
         forageCount++;
@@ -10008,6 +10704,7 @@ class FactoryGame {
     const mainBarCooldown = onCooldown && isCraft && queueCount > 0;
 
     const isChest = type === 'point' && def.isTreasureChest;
+    const isAltar = type === 'point' && !!def.isAltar;
     const chestStock = isChest ? (st.stock || 0) : 0;
     const isDemon = type === 'point' && (def.isDemonKing || def.isBossPoint);
     const demonInvincible = isDemon && !this.state.divineArtifactReady;
@@ -10020,6 +10717,8 @@ class FactoryGame {
       ? `${def.description} | ${this.formatRecipeLine(def)}${queueCount > 0 ? ` | 生产中 ×${queueCount}` : ''}`
       : isChest
         ? `${def.description} | 待开启: ${chestStock} 个 | 爆率: ${(this.getChestDropRate() * 100).toFixed(1)}% | 升级见科技树`
+        : (type === 'point' && def.isAltar)
+        ? this.formatAltarStatusHtml()
         : isDemon
         ? demonInvincible
           ? '👹 魔王被「无敌之姿」笼罩——任何攻击都无效。必须先解锁「破魔神器」科技并铸成神器。'
@@ -10068,6 +10767,8 @@ class FactoryGame {
         ])
       : isChest
       ? [`待开启: ${chestStock}`, `开启: 4次点击`, `冷却: 0.5s`]
+      : isAltar
+      ? [st.unlocked ? '神坛已启用' : '神坛未建造', '查看庇护状态', '研发见科技树']
       : isDemon
       ? demonInvincible
         ? ['不可攻击', '无敌护盾', '需先铸就神器']
@@ -10077,7 +10778,7 @@ class FactoryGame {
         autoLabel,
         holdLabel,
       ];
-    if (type === 'point' && !isChest && !isDemon) {
+    if (type === 'point' && !isChest && !isAltar && !isDemon) {
       stats.push(`单次采集: ${this.getHarvestYield(id)}`);
       const daily = this.getPointDailyExpectedOutput(id);
       const resName = GAME_DATA.resources[def.resource]?.name || '';
@@ -10100,6 +10801,9 @@ class FactoryGame {
       if (!document.getElementById('chest-visual')?.classList.contains('chest-opening-complete')) {
         this.updateChestVisual(st.currentCount, maxCount, onCooldown);
       }
+    } else if (isAltar) {
+      progressContainer?.classList.add('hidden');
+      chestUi?.classList.add('hidden');
     } else {
       progressContainer?.classList.remove('hidden');
       chestUi?.classList.add('hidden');
@@ -10123,8 +10827,8 @@ class FactoryGame {
     const houseClickable = isHouse && this.isStationUnlocked(type, id);
     const isDemonStation = isDemon;
     const pointCooling = !!(pointBar && pointBar.cooling);
-    clickArea.className = `click-area ${(pointBar ? pointCooling : onCooldown) ? 'cooldown' : ''} ${isChest && chestStock <= 0 ? 'disabled' : ''} ${isChest ? 'chest-click-area' : ''} ${isDemonStation ? 'disabled' : ''}`;
-    clickArea.style.pointerEvents = (isCraft && !craftClickable) || (isHouse && !houseClickable) || (isChest && chestStock <= 0) || isDemonStation ? 'none' : '';
+    clickArea.className = `click-area ${(pointBar ? pointCooling : onCooldown) ? 'cooldown' : ''} ${isChest && chestStock <= 0 ? 'disabled' : ''} ${isChest ? 'chest-click-area' : ''} ${isDemonStation || isAltar ? 'disabled' : ''}`;
+    clickArea.style.pointerEvents = (isCraft && !craftClickable) || (isHouse && !houseClickable) || (isChest && chestStock <= 0) || isDemonStation || isAltar ? 'none' : '';
     document.querySelector('.click-hint').textContent = isHouse
       ? '点击推进建造/升级进度'
       : isCraft
@@ -10137,6 +10841,8 @@ class FactoryGame {
             ? '宝箱冷却中，请稍候...'
             : '每次点击撬开宝箱一点，共需点击 4 次（也可按空格）'
           : ''
+        : isAltar
+        ? (st.unlocked ? '神坛状态见上方说明；庇护效果自动生效' : '请先在科技树解锁并建造神坛')
         : isDemonStation
         ? demonInvincible
           ? '👹 魔王被无敌护盾笼罩，无法攻击。需要铸成破魔神器。'
@@ -10147,10 +10853,10 @@ class FactoryGame {
             ? '点击以进行采集'
             : '点击以进行采集'));
 
-    document.getElementById('point-upgrades').style.display = type === 'point' ? 'block' : 'none';
-    document.getElementById('point-workers').style.display = isChest ? 'none' : 'block';
-    if (type === 'point') this.renderPointUpgrades(id);
-    this.renderStationWorkers(type, id);
+    document.getElementById('point-upgrades').style.display = type === 'point' && !isAltar ? 'block' : 'none';
+    document.getElementById('point-workers').style.display = isChest || isAltar ? 'none' : 'block';
+    if (type === 'point' && !isAltar) this.renderPointUpgrades(id);
+    if (!isAltar) this.renderStationWorkers(type, id);
   }
 
   renderPointUpgrades(pointId) {
@@ -10443,8 +11149,10 @@ class FactoryGame {
       const isMaxed = lv >= maxLv;
       const next = lv + 1;
       const upCost = !isMaxed ? this.getHouseUpgradeCost(next) : null;
-      const canUp = !isMaxed && this.canUpgradeHouseLevel(lv);
+      const techUnlocked = isMaxed || this.isHouseUpgradeTechUnlocked(next);
+      const canUp = !isMaxed && techUnlocked && this.canUpgradeHouseLevel(lv);
       const upName = GAME_DATA.housing.upgrades[next]?.name || `升级至 Lv.${next}`;
+      const techDef = !isMaxed ? GAME_DATA.techTree.find(t => t.id === this.getHouseUpgradeTechId(next)) : null;
 
       // 检查是否有进行中的升级
       let upgradingHtml = '';
@@ -10461,18 +11169,31 @@ class FactoryGame {
       const el = document.createElement('div');
       el.className = `house-item ${isMaxed ? 'maxed' : (canUp ? 'affordable' : 'unaffordable')}`;
       el.dataset.houseLevel = String(lv);
+      const descText = isMaxed
+        ? '已满级'
+        : (!techUnlocked
+          ? `需先解锁科技「${techDef?.name || upName}」`
+          : `${upName}：${GAME_DATA.housing.upgrades[next]?.desc || '人口容量 +2'}（消耗材料后自动升级）`);
+      const costText = isMaxed
+        ? '已满级'
+        : (!techUnlocked ? `🔒 ${techDef?.name || '未解锁科技'}` : this.formatCost(upCost));
+      const btnText = isMaxed
+        ? '已满级'
+        : (!techUnlocked
+          ? '需科技'
+          : (this.state.houseUpgradeProgress && Object.values(this.state.houseUpgradeProgress).some(p => p.targetLevel === next) ? '升级中' : '开始升级'));
       el.innerHTML = `
         <div class="upgrade-info">
           <span>🏠 ${this.getHouseLevelLabel(lv)} <strong>×${count}</strong>
             <small class="level-tag">${this.formatUpgradeLevel(lv, maxLv)}</small>
             <small> · ${capEach}/间 · 合计容量 ${capTotal}</small>
           </span>
-          <span class="upgrade-desc">${isMaxed ? '已满级' : `${upName}：${GAME_DATA.housing.upgrades[next]?.desc || '人口容量 +2'}（消耗材料后自动升级）`}</span>
+          <span class="upgrade-desc">${descText}</span>
           ${upgradingHtml}
         </div>
         <div class="upgrade-action">
-          <span class="cost">${isMaxed ? '已满级' : this.formatCost(upCost)}</span>
-          <button type="button" class="btn-upgrade btn-upgrade-house" data-house-level="${lv}" ${upgradeBtnDisabled ? 'disabled' : ''}>${isMaxed ? '已满级' : (this.state.houseUpgradeProgress && Object.values(this.state.houseUpgradeProgress).some(p => p.targetLevel === next) ? '升级中' : '开始升级')}</button>
+          <span class="cost">${costText}</span>
+          <button type="button" class="btn-upgrade btn-upgrade-house" data-house-level="${lv}" ${upgradeBtnDisabled ? 'disabled' : ''}>${btnText}</button>
         </div>
       `;
       houseList.appendChild(el);
@@ -10481,7 +11202,7 @@ class FactoryGame {
     container.appendChild(houseSection);
 
     const allPoints = Object.keys(GAME_DATA.resourcePoints)
-      .filter(id => this.isPointVisibleInSidebar(id) && !GAME_DATA.resourcePoints[id].isTreasureChest && !GAME_DATA.resourcePoints[id].isDemonKing && !GAME_DATA.resourcePoints[id].isBossPoint);
+      .filter(id => this.isPointVisibleInSidebar(id) && !GAME_DATA.resourcePoints[id].isTreasureChest && !GAME_DATA.resourcePoints[id].isAltar && !GAME_DATA.resourcePoints[id].isDemonKing && !GAME_DATA.resourcePoints[id].isBossPoint);
     const foragePoints = allPoints
       .filter(id => GAME_DATA.resourcePoints[id].isFoodPoint)
       .map(id => ({ type: 'point', id }));
@@ -10551,7 +11272,7 @@ class FactoryGame {
           </span>
           <button type="button" class="btn-repair-all-tools" data-tool-id="${toolId}" data-tool-level="${toolLevel}">修复全部</button>
         </div>`;
-    } else {
+    } else if (this.isAutoProduceUnlocked()) {
       autoControlsHtml = `
         <div class="craft-auto-controls">
           <label class="craft-auto-label">
@@ -10569,6 +11290,8 @@ class FactoryGame {
               title="库存低于此值时自动生产">
           </span>
         </div>`;
+    } else {
+      autoControlsHtml = '';
     }
 
     el.innerHTML = `
@@ -10619,8 +11342,8 @@ class FactoryGame {
         const tip = document.createElement('p');
         tip.className = 'hint';
         tip.textContent = combatOnly
-          ? '解锁「工作台」后，可在此查看并制作木质武器与护甲。'
-          : '解锁「工作台」后，可在此查看并制作木质采集工具。';
+          ? '解锁「工作台」后，再解锁对应武器科技，即可制作武器与护甲。'
+          : '解锁「工作台」后，再解锁对应工具科技，即可制作采集工具。';
         container.appendChild(tip);
         return;
       }
@@ -10820,6 +11543,29 @@ class FactoryGame {
     if (overlay) overlay.classList.add('hidden');
   }
 
+  _normalizeTechNodeSize(size) {
+    return size === 'small' || size === 'large' ? size : 'medium';
+  }
+
+  _getTechNodeLayoutSize(techId) {
+    const node = GAME_DATA.techTreeLayout?.nodes?.[techId];
+    return this._normalizeTechNodeSize(node?.size);
+  }
+
+  _getTechNodeRadius(techId) {
+    const size = this._getTechNodeLayoutSize(techId);
+    const rootR = { small: 38, medium: 56, large: 75 };
+    const nodeR = { small: 30, medium: 45, large: 60 };
+    return techId === 'unlock_workbench' ? rootR[size] : nodeR[size];
+  }
+
+  _applyTechNodeSizeClass(el, techId) {
+    if (!el) return;
+    const size = this._getTechNodeLayoutSize(techId);
+    el.classList.remove('tech-size-small', 'tech-size-medium', 'tech-size-large');
+    el.classList.add(`tech-size-${size}`);
+  }
+
   /** 点击科技树覆盖背景 → 不做任何事 */
   _setupTechTreeOverlayEvents() {
     const overlay = document.getElementById('tech-tree-overlay');
@@ -10901,9 +11647,7 @@ class FactoryGame {
       return;
     }
 
-    const NODE_R = 22;
-    const CENTER_R = 28;
-    const nodeRadius = (techId) => (techId === 'unlock_workbench' ? CENTER_R : NODE_R);
+    const nodeRadius = (techId) => this._getTechNodeRadius(techId);
 
     content.style.width = (layout.canvas?.width || 1320) + 'px';
     content.style.height = (layout.canvas?.height || 1660) + 'px';
@@ -10916,11 +11660,12 @@ class FactoryGame {
         return;
       }
       const isCenter = !entry.parent;
-      const half = isCenter ? CENTER_R : NODE_R;
+      const half = nodeRadius(tech.id);
 
       const el = document.createElement('div');
       el.className = 'tech-node';
       if (isCenter) el.classList.add('center-node');
+      this._applyTechNodeSizeClass(el, tech.id);
       this._setTechNodeIcon(el, tech, isCenter);
       el.style.left = (entry.x - half) + 'px';
       el.style.top = (entry.y - half) + 'px';
@@ -10980,7 +11725,7 @@ class FactoryGame {
         line.setAttribute('x2', ep.x1);
         line.setAttribute('y2', ep.y1);
         line.setAttribute('stroke', 'rgba(255, 255, 255, 0.10)');
-        line.setAttribute('stroke-width', '1.5');
+        line.setAttribute('stroke-width', '2.25');
         line.setAttribute('stroke-linecap', 'round');
         line.setAttribute('class', 'tech-edge');
         line.dataset.from = parentId;
@@ -11032,8 +11777,8 @@ class FactoryGame {
       const mx = e.clientX - rect.left;
       const my = e.clientY - rect.top;
       const factor = e.deltaY > 0 ? 0.9 : 1.1;
-      const ZOOM_MIN = 0.35;
-      const ZOOM_MAX = 2.5;
+      const ZOOM_MIN = 0.15;
+      const ZOOM_MAX = 4.5;
       const nextZoom = Math.max(ZOOM_MIN, Math.min(ZOOM_MAX, this._techZoom * factor));
       if (nextZoom === this._techZoom) return;
       const wx = (mx - this._panX) / this._techZoom;
@@ -11137,6 +11882,7 @@ class FactoryGame {
       if (this._techEditMode) {
         el.style.display = '';
         el.className = 'tech-node' + (isRoot ? ' center-node' : '');
+        this._applyTechNodeSizeClass(el, tech.id);
         this._setTechNodeIcon(el, tech, isRoot);
         if (!el.textContent && !el.querySelector('.tech-node-composite')) {
           el.textContent = (tech.name && tech.name[0]) || tech.id.slice(0, 2) || '#';
@@ -11156,6 +11902,7 @@ class FactoryGame {
       if (isHint) {
         el.className = 'tech-node state-hint';
         if (isRoot) el.classList.add('center-node');
+        this._applyTechNodeSizeClass(el, tech.id);
         el.textContent = '?';
         el.classList.remove('has-composite-icon');
         return;
@@ -11163,6 +11910,7 @@ class FactoryGame {
 
       el.className = 'tech-node';
       if (isRoot) el.classList.add('center-node');
+      this._applyTechNodeSizeClass(el, tech.id);
       this._setTechNodeIcon(el, tech, isRoot);
       el.classList.add('state-' + this._getTechNodeVisualState(tech));
     });
@@ -11359,7 +12107,11 @@ class FactoryGame {
 
   renderCraftOverview() {
     const container = document.getElementById('craft-overview');
-    container.innerHTML = '<h4>合成配方</h4><p class="hint craft-tab-hint">安排生产后立即扣材料；同类型合并显示；勾选自动生产后队列清空会自动补 1 单</p>';
+    container.innerHTML = '<h4>合成配方</h4><p class="hint craft-tab-hint">安排生产后立即扣材料；同类型合并显示'
+      + (this.isAutoProduceUnlocked()
+        ? '；勾选自动生产后队列清空会自动补 1 单'
+        : '（解锁科技「自动生产」后可勾选自动补单）')
+      + '</p>';
 
     const materialRecipes = GAME_DATA.recipes.filter(r => !r.isToolRecipe && this.isRecipeTechUnlocked(r.id));
     materialRecipes.forEach(recipe => {
@@ -11368,7 +12120,7 @@ class FactoryGame {
     });
 
     if (!materialRecipes.length) {
-      container.innerHTML += '<p class="hint">解锁「工作台」后，木板等合成配方会显示在此</p>';
+      container.innerHTML += '<p class="hint">解锁「工作台」与对应合成科技后，配方会显示在此</p>';
     }
   }
 

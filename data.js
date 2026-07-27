@@ -160,8 +160,8 @@ function generatePointUpgradeTechEntries(resourcePoints, chestUpgradeCosts) {
 /** 生成资源点升级科技布局（碰撞避让，相对各资源解锁节点偏移） */
 function generatePointUpgradeTechLayout(resourcePoints, existingNodes) {
   const layout = {};
-  const NODE_R = 22;
-  const CENTER_R = 28;
+  const NODE_R = 45;
+  const CENTER_R = 56;
   const GAP = 6;
   const SAFE_MIN_X = 60;
   const SAFE_MIN_Y = 60;
@@ -511,10 +511,9 @@ const GAME_DATA = {
     pitch: { id: 'pitch', name: '松香', icon: '🟤', color: '#8B4513' },
     copper_ore: { id: 'copper_ore', name: '铜矿', icon: '🟤', color: '#B87333' },
     copper_ingot: { id: 'copper_ingot', name: '铜锭', icon: '🔶', color: '#DA8A67' },
-    tin_ore: { id: 'tin_ore', name: '锡矿', icon: '🪙', color: '#A8B4C0' },
-    bronze: { id: 'bronze', name: '青铜', icon: '🥉', color: '#CD7F32' },
-    zinc_ore: { id: 'zinc_ore', name: '锌矿', icon: '🔘', color: '#9AA5B0' },
-    brass: { id: 'brass', name: '黄铜', icon: '🟡', color: '#B5A642' },
+    iron_ore: { id: 'iron_ore', name: '铁矿', icon: '⛏️', color: '#6B7280' },
+    iron_ingot: { id: 'iron_ingot', name: '铁锭', icon: '🔩', color: '#7A8490' },
+    steel: { id: 'steel', name: '钢锭', icon: '⛓️', color: '#9CA3AF' },
     limestone: { id: 'limestone', name: '石灰石', icon: '▫️', color: '#E8E0D0' },
     lime: { id: 'lime', name: '石灰', icon: '⬜', color: '#F5F5DC' },
     coal: { id: 'coal', name: '煤炭', icon: '⚫', color: '#333' },
@@ -536,7 +535,7 @@ const GAME_DATA = {
       description: '5木头合成1木板',
       inputs: { wood: 5 },
       outputs: { plank: 1 },
-      requires: 'unlock_workbench',
+      requires: 'unlock_plank_craft',
       baseMaxCount: 12,
       baseCooldown: 2000,
     },
@@ -555,10 +554,10 @@ const GAME_DATA = {
       id: 'smelt_copper',
       name: '冶炼铜锭',
       icon: '🔶',
-      description: '2铜矿冶炼1铜锭',
-      inputs: { copper_ore: 2 },
+      description: '3铜矿+1煤炭冶炼1铜锭（需熔炉）',
+      inputs: { copper_ore: 3, coal: 1 },
       outputs: { copper_ingot: 1 },
-      requires: 'unlock_copper_smelt',
+      requires: 'unlock_furnace',
       usesFurnace: true,
       baseMaxCount: 8,
       baseCooldown: 3000,
@@ -587,18 +586,6 @@ const GAME_DATA = {
       baseCooldown: 3000,
     },
     {
-      id: 'craft_bronze',
-      name: '铸造青铜',
-      icon: '🥉',
-      description: '2铜锭+1锡矿铸成1青铜',
-      inputs: { copper_ingot: 2, tin_ore: 1 },
-      outputs: { bronze: 1 },
-      requires: 'unlock_bronze_craft',
-      usesFurnace: true,
-      baseMaxCount: 10,
-      baseCooldown: 3500,
-    },
-    {
       id: 'craft_pitch',
       name: '提炼松香',
       icon: '🟤',
@@ -616,7 +603,7 @@ const GAME_DATA = {
       description: '4石头加工为1石板',
       inputs: { stone: 4 },
       outputs: { stone_slab: 1 },
-      requires: 'unlock_quarry',
+      requires: 'unlock_stone_slab',
       baseMaxCount: 8,
       baseCooldown: 2200,
     },
@@ -645,16 +632,28 @@ const GAME_DATA = {
       baseCooldown: 2800,
     },
     {
-      id: 'craft_brass',
-      name: '铸造黄铜',
-      icon: '🟡',
-      description: '1铜锭+1锌矿铸成1黄铜',
-      inputs: { copper_ingot: 1, zinc_ore: 1 },
-      outputs: { brass: 1 },
-      requires: 'unlock_brass_craft',
+      id: 'smelt_iron',
+      name: '冶炼铁锭',
+      icon: '🔩',
+      description: '3铁矿+1煤炭冶炼1铁锭（需熔炉）',
+      inputs: { iron_ore: 3, coal: 1 },
+      outputs: { iron_ingot: 1 },
+      requires: 'unlock_iron_smelt',
       usesFurnace: true,
-      baseMaxCount: 10,
+      baseMaxCount: 8,
       baseCooldown: 3200,
+    },
+    {
+      id: 'smelt_steel',
+      name: '冶炼钢锭',
+      icon: '⛓️',
+      description: '2铁锭+2煤炭冶炼1钢锭（需高级熔炉）',
+      inputs: { iron_ingot: 2, coal: 2 },
+      outputs: { steel: 1 },
+      requires: 'unlock_steel_smelt',
+      usesFurnace: true,
+      baseMaxCount: 6,
+      baseCooldown: 4000,
     },
 
     // 工具/武器/护甲配方见 config/tool-recipes.js（由 applyToolRecipes 合并）
@@ -667,7 +666,7 @@ const GAME_DATA = {
       icon: '🪓',
       targets: ['forest', 'resin_grove'],
       maxLevel: 4,
-      levelNames: { 1: '木斧', 2: '青铜斧', 3: '钢斧', 4: '金斧' },
+      levelNames: { 1: '木斧', 2: '石斧', 3: '铁斧', 4: '钢斧' },
     },
     pickaxe: {
       id: 'pickaxe',
@@ -675,11 +674,11 @@ const GAME_DATA = {
       icon: '⛏️',
       targets: [
         'quarry', 'copper_mine', 'coal_mine',
-        'tin_mine', 'limestone_quarry', 'zinc_mine',
+        'limestone_quarry', 'iron_mine',
         'gravel_bed', 'clay_pit',
       ],
       maxLevel: 4,
-      levelNames: { 1: '木镐', 2: '黄铜镐', 3: '银镐', 4: '晶镐' },
+      levelNames: { 1: '木镐', 2: '石镐', 3: '铁镐', 4: '钢镐' },
     },
     shovel: {
       id: 'shovel',
@@ -687,7 +686,7 @@ const GAME_DATA = {
       icon: '🥄',
       targets: ['clay_pit', 'gravel_bed'],
       maxLevel: 4,
-      levelNames: { 1: '木铲', 2: '灰浆铲', 3: '曜石铲', 4: '陨铲' },
+      levelNames: { 1: '木铲', 2: '石铲', 3: '铁铲', 4: '钢铲' },
     },
     sword: {
       id: 'sword',
@@ -696,7 +695,7 @@ const GAME_DATA = {
       targets: [],
       combat: true,
       maxLevel: 4,
-      levelNames: { 1: '木剑', 2: '青铜剑', 3: '铁剑', 4: '钢剑' },
+      levelNames: { 1: '木剑', 2: '石剑', 3: '铁剑', 4: '钢剑' },
     },
     spear: {
       id: 'spear',
@@ -705,7 +704,7 @@ const GAME_DATA = {
       targets: [],
       combat: true,
       maxLevel: 4,
-      levelNames: { 1: '木矛', 2: '青铜矛', 3: '铁矛', 4: '钢矛' },
+      levelNames: { 1: '木矛', 2: '石矛', 3: '铁矛', 4: '钢矛' },
     },
     bow: {
       id: 'bow',
@@ -714,7 +713,7 @@ const GAME_DATA = {
       targets: [],
       combat: true,
       maxLevel: 4,
-      levelNames: { 1: '木弓', 2: '青铜弓', 3: '铁弓', 4: '钢弓' },
+      levelNames: { 1: '木弓', 2: '石弓', 3: '铁弓', 4: '钢弓' },
     },
     crossbow: {
       id: 'crossbow',
@@ -723,7 +722,7 @@ const GAME_DATA = {
       targets: [],
       combat: true,
       maxLevel: 4,
-      levelNames: { 1: '木弩', 2: '青铜弩', 3: '铁弩', 4: '钢弩' },
+      levelNames: { 1: '木弩', 2: '石弩', 3: '铁弩', 4: '钢弩' },
     },
     shield: {
       id: 'shield',
@@ -732,7 +731,7 @@ const GAME_DATA = {
       targets: [],
       combat: true,
       maxLevel: 4,
-      levelNames: { 1: '木盾', 2: '青铜盾', 3: '铁盾', 4: '钢盾' },
+      levelNames: { 1: '木盾', 2: '石盾', 3: '铁盾', 4: '钢盾' },
     },
     armor: {
       id: 'armor',
@@ -741,7 +740,7 @@ const GAME_DATA = {
       targets: [],
       combat: true,
       maxLevel: 4,
-      levelNames: { 1: '木甲', 2: '青铜甲', 3: '铁甲', 4: '钢甲' },
+      levelNames: { 1: '木甲', 2: '石甲', 3: '铁甲', 4: '钢甲' },
     },
   },
 
@@ -773,14 +772,14 @@ const GAME_DATA = {
       },
       3: {
         name: '灰浆厅堂',
-        desc: '人口上限翻倍（8→16）：石灰砂浆 + 青铜构件 + 铁矿骨架',
+        desc: '人口上限翻倍（8→16）：石灰砂浆 + 铜构件 + 铁矿骨架',
         baseCost: { pitch: 5, brick: 3, glass: 3, copper_ore: 5 },
         costBump: null,
       },
       4: {
         name: '精钢堡垒',
         desc: '人口上限翻倍（16→32）：钢梁 + 银饰 + 黑曜加固',
-        baseCost: { lime: 3, brass: 5, coke: 3, limestone: 3 },
+        baseCost: { lime: 3, iron_ingot: 5, coke: 3, limestone: 3 },
         costBump: null,
       },
     },
@@ -809,6 +808,51 @@ const GAME_DATA = {
     baseClickPower: 1,
     // 手动点击由科技「点击强化」升级，不再由工具提供
     tooledSpeed: 0.25,
+    /** 合成效率科技：每级给生产订单 +0.02/人/秒 */
+    craftSpeedPerTechLevel: 0.02,
+  },
+
+  /** 庇护体系数值（神坛解锁后各分支生效） */
+  sanctuary: {
+    gather: {
+      unlockTech: 'unlock_sanctuary_gather',
+      chanceBase: 0.05,
+      chancePerLevel: 0.02,
+      chanceSeries: 'unlock_sanctuary_gather_chance',
+      multBase: 1.5,
+      multPerLevel: 0.3,
+      multSeries: 'unlock_sanctuary_gather_power',
+    },
+    craft: {
+      unlockTech: 'unlock_sanctuary_craft',
+      chanceBase: 0.25,
+      chancePerLevel: 0.05,
+      chanceSeries: 'unlock_sanctuary_craft_chance',
+      refundBase: 0.25,
+      refundPerLevel: 0.05,
+      refundSeries: 'unlock_sanctuary_craft_power',
+    },
+    war: {
+      unlockTech: 'unlock_sanctuary_war',
+      chanceBase: 0.05,
+      chancePerLevel: 0.05,
+      chanceSeries: 'unlock_sanctuary_war_chance',
+      critMultBase: 1.5,
+      critMultPerLevel: 0.1,
+      critMultSeries: 'unlock_sanctuary_war_power',
+    },
+    efficiency: {
+      unlockTech: 'unlock_sanctuary_efficiency',
+      chanceBase: 0.25,
+      chancePerLevel: 0.05,
+      chanceSeries: 'unlock_sanctuary_eff_chance',
+      multBase: 1.5,
+      multPerLevel: 0.3,
+      multSeries: 'unlock_sanctuary_eff_power',
+      durationMinBase: 20,
+      durationMinPerLevel: 8,
+      durationSeries: 'unlock_sanctuary_eff_duration',
+    },
   },
 
   // 工具耐久默认值；正式以 config/tool-recipes.js → TOOL_DURABILITY 为准
@@ -816,6 +860,8 @@ const GAME_DATA = {
     maxByLevel: { 1: 150, 2: 300, 3: 600, 4: 1200 },
     repairMinMissing: 0.01,
     repairCostRatio: 0.5,
+    /** 高效维修每级减免（相对造价比例）；满 5 级：50%→20% */
+    repairCostReducePerLevel: 0.06,
     wearPerUserPerSecond: 0.2,
   },
 
@@ -906,7 +952,7 @@ const GAME_DATA = {
   },
 
   /** 新开档已解锁科技（教程必备：森林、宝箱、工具制作） */
-  startingTechs: ['unlock_forest', 'unlock_treasure_chest', 'unlock_tool_crafting'],
+  startingTechs: ['unlock_forest', 'unlock_treasure_chest', 'unlock_tool_crafting', 'unlock_tools_lv1'],
 
   /**
    * 首次攒够第 N 次森林砍伐时，固定掉落引导宝箱（含一把木斧的材料）
@@ -949,6 +995,241 @@ const GAME_DATA = {
       branch: 'mining',
     },
     {
+      id: 'unlock_plank_craft',
+      name: '木板加工',
+      icon: '🟫',
+      description: '解锁木板配方（5木头→1木板）',
+      cost: { wood: 8 },
+      requires: 'unlock_workbench',
+      branch: 'craft',
+    },
+    {
+      id: 'unlock_auto_produce',
+      name: '自动生产',
+      icon: '🔁',
+      description: '解锁合成配方的自动生产：队列清空后可按设定自动补单',
+      cost: { plank: 10, stone: 8, wood: 12 },
+      requires: 'unlock_workbench',
+      branch: 'craft',
+    },
+    {
+      id: 'unlock_altar',
+      name: '神坛',
+      icon: '⛩️',
+      description: '建造神坛，开启庇护体系。外侧神坛点位将解锁，并可研发四类庇护',
+      cost: { stone: 20, plank: 15, wood: 25 },
+      requires: 'unlock_workbench',
+      branch: 'sanctuary',
+    },
+    {
+      id: 'unlock_sanctuary_gather',
+      name: '采集庇护',
+      icon: '🌾',
+      description: '解锁采集庇护：采集时有概率获得额外产量（默认 5% 概率、1.5 倍）',
+      cost: { plank: 16, stone: 14, food: 20 },
+      requires: 'unlock_altar',
+      branch: 'sanctuary',
+    },
+    {
+      id: 'unlock_sanctuary_craft',
+      name: '生产庇护',
+      icon: '🛠️',
+      description: '解锁生产庇护：完成订单时有概率返还消耗材料（默认 25% 概率、返还 25%）',
+      cost: { plank: 18, brick: 8, stone_slab: 8 },
+      requires: 'unlock_altar',
+      branch: 'sanctuary',
+    },
+    {
+      id: 'unlock_sanctuary_war',
+      name: '战争庇护',
+      icon: '🛡️',
+      description: '解锁战争庇护：友军攻击有概率暴击（默认 5% 概率、1.5 倍暴击伤）',
+      cost: { plank: 16, iron_ingot: 4, stone_slab: 10 },
+      requires: 'unlock_altar',
+      branch: 'sanctuary',
+    },
+    {
+      id: 'unlock_sanctuary_efficiency',
+      name: '效率庇护',
+      icon: '🌟',
+      description: '解锁效率庇护：白天每整点判定一次，触发后短时提升全部工作效率（默认 25% 概率、1.5 倍、持续 20 分钟）',
+      cost: { plank: 20, glass: 8, pitch: 6 },
+      requires: 'unlock_altar',
+      branch: 'sanctuary',
+    },
+    ...expandTechSeries({
+      id: 'unlock_sanctuary_gather_chance',
+      name: '采集祝福·概率',
+      icon: '🎲',
+      description: '采集庇护触发概率 +2%/级（解锁采集庇护后生效，默认 5%）',
+      requires: 'unlock_sanctuary_gather',
+      branch: 'sanctuary',
+      costs: [
+        {"wood":15,"plank":8},
+        {"plank":12,"stone":12},
+        {"stone_slab":10,"plank":14},
+        {"brick":10,"resin":8},
+        {"iron_ingot":4,"glass":6},
+      ],
+    }),
+    ...expandTechSeries({
+      id: 'unlock_sanctuary_gather_power',
+      name: '采集祝福·丰收',
+      icon: '✨',
+      description: '采集庇护触发时产量倍率 +0.3/级（默认 1.5 倍，满级 3 倍）',
+      requires: 'unlock_sanctuary_gather',
+      branch: 'sanctuary',
+      costs: [
+        {"wood":12,"stone":10},
+        {"plank":14,"stone_slab":8},
+        {"brick":8,"clay":12},
+        {"pitch":6,"plank":12},
+        {"iron_ingot":5,"glass":8},
+      ],
+    }),
+    ...expandTechSeries({
+      id: 'unlock_sanctuary_craft_chance',
+      name: '生产祝福·概率',
+      icon: '🔁',
+      description: '生产庇护返还触发概率 +5%/级（默认 25%）',
+      requires: 'unlock_sanctuary_craft',
+      branch: 'sanctuary',
+      costs: [
+        {"plank":12,"wood":10},
+        {"plank":14,"stone":12},
+        {"brick":8,"stone_slab":8},
+        {"brick":12,"pitch":5},
+        {"iron_ingot":4,"gear":2},
+      ],
+    }),
+    ...expandTechSeries({
+      id: 'unlock_sanctuary_craft_power',
+      name: '生产祝福·节料',
+      icon: '📦',
+      description: '生产庇护触发时返还比例 +5%/级（默认返还 25%，满级 50%）',
+      requires: 'unlock_sanctuary_craft',
+      branch: 'sanctuary',
+      costs: [
+        {"plank":10,"stone":10},
+        {"stone_slab":8,"plank":12},
+        {"brick":10,"clay":10},
+        {"pitch":6,"glass":6},
+        {"iron_ingot":5,"gear":2},
+      ],
+    }),
+    ...expandTechSeries({
+      id: 'unlock_sanctuary_war_chance',
+      name: '战争祝福·暴击率',
+      icon: '💥',
+      description: '战斗暴击率 +5%/级（默认 5%）',
+      requires: 'unlock_sanctuary_war',
+      branch: 'sanctuary',
+      costs: [
+        {"wood":14,"plank":8},
+        {"plank":12,"stone_slab":8},
+        {"brick":10,"resin":8},
+        {"iron_ingot":4,"pitch":5},
+        {"steel":2,"gear":2},
+      ],
+    }),
+    ...expandTechSeries({
+      id: 'unlock_sanctuary_war_power',
+      name: '战争祝福·暴击伤',
+      icon: '⚔️',
+      description: '暴击伤害倍率 +0.1/级（默认 1.5 倍，满级 2 倍）',
+      requires: 'unlock_sanctuary_war',
+      branch: 'sanctuary',
+      costs: [
+        {"plank":12,"stone":12},
+        {"stone_slab":10,"plank":12},
+        {"brick":12,"pitch":6},
+        {"iron_ingot":5,"glass":6},
+        {"steel":3,"gear":2},
+      ],
+    }),
+    ...expandTechSeries({
+      id: 'unlock_sanctuary_eff_chance',
+      name: '效率祝福·天启',
+      icon: '☀️',
+      description: '日间整点效率庇护触发概率 +5%/级（默认 25%）',
+      requires: 'unlock_sanctuary_efficiency',
+      branch: 'sanctuary',
+      costs: [
+        {"wood":16,"plank":8},
+        {"plank":14,"stone":12},
+        {"stone_slab":10,"brick":8},
+        {"pitch":6,"glass":8},
+        {"iron_ingot":4,"lime":4},
+      ],
+    }),
+    ...expandTechSeries({
+      id: 'unlock_sanctuary_eff_power',
+      name: '效率祝福·狂潮',
+      icon: '⚡',
+      description: '效率庇护触发时工作效率倍率 +0.3/级（默认 1.5 倍，满级 3 倍）',
+      requires: 'unlock_sanctuary_efficiency',
+      branch: 'sanctuary',
+      costs: [
+        {"plank":12,"stone":10},
+        {"stone_slab":10,"plank":12},
+        {"brick":10,"resin":8},
+        {"pitch":8,"glass":8},
+        {"iron_ingot":5,"gear":2},
+      ],
+    }),
+    ...expandTechSeries({
+      id: 'unlock_sanctuary_eff_duration',
+      name: '效率祝福·延时',
+      icon: '⏳',
+      description: '效率庇护持续时间 +8 游戏分钟/级（默认 20 分钟，满级 60 分钟）',
+      requires: 'unlock_sanctuary_efficiency',
+      branch: 'sanctuary',
+      costs: [
+        {"wood":14,"plank":10},
+        {"plank":14,"stone_slab":8},
+        {"brick":10,"clay":10},
+        {"glass":8,"pitch":6},
+        {"iron_ingot":4,"lime":6},
+      ],
+    }),
+
+    {
+      id: 'unlock_house_upgrade_1',
+      name: '房屋升级·木石基座',
+      icon: '🪵',
+      description: '解锁房屋升级至「木石基座」（人口上限 2→4）',
+      cost: { wood: 15, stone: 8 },
+      requires: 'unlock_workbench',
+      branch: 'workers',
+    },
+    {
+      id: 'unlock_house_upgrade_2',
+      name: '房屋升级·砖瓦开窗',
+      icon: '🧱',
+      description: '解锁房屋升级至「砖瓦开窗」（人口上限 4→8）',
+      cost: { clay: 12, stone: 10, wood: 10 },
+      requires: 'unlock_workbench',
+      branch: 'workers',
+    },
+    {
+      id: 'unlock_house_upgrade_3',
+      name: '房屋升级·灰浆厅堂',
+      icon: '🏛️',
+      description: '解锁房屋升级至「灰浆厅堂」（人口上限 8→16）',
+      cost: { brick: 10, glass: 4, plank: 12 },
+      requires: 'unlock_workbench',
+      branch: 'workers',
+    },
+    {
+      id: 'unlock_house_upgrade_4',
+      name: '房屋升级·精钢堡垒',
+      icon: '🏰',
+      description: '解锁房屋升级至「精钢堡垒」（人口上限 16→32）',
+      cost: { iron_ingot: 5, coke: 3, limestone: 4 },
+      requires: 'unlock_workbench',
+      branch: 'workers',
+    },
+    {
       id: 'unlock_house_capacity',
       name: '房屋扩容',
       icon: '🏠',
@@ -967,7 +1248,7 @@ const GAME_DATA = {
       costs: [
         { plank: 12, stone: 10 },
         { brick: 15, stone_slab: 8 },
-        { brick: 25, brass: 5, pitch: 8 },
+        { brick: 25, iron_ingot: 5, pitch: 8 },
       ],
     }),
     ...expandTechSeries({
@@ -982,15 +1263,87 @@ const GAME_DATA = {
         { wood: 30, plank: 15, stone: 10 },
         { plank: 25, stone_slab: 12 },
         { brick: 20, pitch: 8 },
-        { brass: 8, gear: 3 },
+        { iron_ingot: 8, gear: 3 },
       ],
     }),
     {
       id: 'unlock_tool_crafting',
       name: '工具制作',
       icon: '🪓',
-      description: '开局已解锁。解锁工作台后可在「工具」页制作斧/镐/铲，在「武器」页制作弓/弩/剑/矛/盾/铠甲',
+      description: '开局已解锁。工具体系入口（耐久/效率科技前置）；各级工具与武器需单独解锁对应科技',
       cost: {},
+      requires: 'unlock_workbench',
+      branch: 'tools',
+    },
+    {
+      id: 'unlock_tools_lv1',
+      name: '木质工具',
+      icon: '🪓',
+      description: '解锁木质采集工具制作（斧/镐/铲）',
+      cost: {"wood":8},
+      requires: 'unlock_workbench',
+      branch: 'tools',
+    },
+    {
+      id: 'unlock_tools_lv2',
+      name: '石质工具',
+      icon: '⛏️',
+      description: '解锁石质采集工具制作（斧/镐/铲）',
+      cost: {"stone":12,"plank":6},
+      requires: 'unlock_workbench',
+      branch: 'tools',
+    },
+    {
+      id: 'unlock_tools_lv3',
+      name: '铁质工具',
+      icon: '🔩',
+      description: '解锁铁质采集工具制作（斧/镐/铲）',
+      cost: {"iron_ingot":4,"plank":10},
+      requires: 'unlock_workbench',
+      branch: 'tools',
+    },
+    {
+      id: 'unlock_tools_lv4',
+      name: '钢质工具',
+      icon: '⛓️',
+      description: '解锁钢质采集工具制作（斧/镐/铲）',
+      cost: {"steel":2,"plank":12},
+      requires: 'unlock_workbench',
+      branch: 'tools',
+    },
+    {
+      id: 'unlock_weapons_lv1',
+      name: '木质武器',
+      icon: '🗡️',
+      description: '解锁木质武器与护甲制作（剑/矛/弓/弩/盾/甲）',
+      cost: {"wood":12,"plank":4},
+      requires: 'unlock_workbench',
+      branch: 'tools',
+    },
+    {
+      id: 'unlock_weapons_lv2',
+      name: '石质武器',
+      icon: '🛡️',
+      description: '解锁石质武器与护甲制作',
+      cost: {"stone_slab":8,"plank":8},
+      requires: 'unlock_workbench',
+      branch: 'tools',
+    },
+    {
+      id: 'unlock_weapons_lv3',
+      name: '铁质武器',
+      icon: '⚔️',
+      description: '解锁铁质武器与护甲制作',
+      cost: {"iron_ingot":6,"plank":10},
+      requires: 'unlock_workbench',
+      branch: 'tools',
+    },
+    {
+      id: 'unlock_weapons_lv4',
+      name: '钢质武器',
+      icon: '🏯',
+      description: '解锁钢质武器与护甲制作',
+      cost: {"steel":3,"plank":12},
       requires: 'unlock_workbench',
       branch: 'tools',
     },
@@ -1028,7 +1381,7 @@ const GAME_DATA = {
         { food: 40, plank: 15 },
         { food: 60, brick: 12 },
         { food: 90, glass: 10, stone_slab: 5 },
-        { food: 120, brass: 4, glass: 12 },
+        { food: 120, iron_ingot: 4, glass: 12 },
       ],
     }),
     {
@@ -1059,7 +1412,7 @@ const GAME_DATA = {
         { pitch: 6 },
         { stone: 25, clay: 25 },
         { stone_slab: 15, copper_ore: 25 },
-        { brass: 15, gear: 10 },
+        { iron_ingot: 15, gear: 10 },
         { lime: 15 },
       ],
     },
@@ -1112,7 +1465,22 @@ const GAME_DATA = {
         { plank: 18, brick: 8, gravel: 12 },
         { stone_slab: 12, brick: 10, pitch: 4 },
         { brick: 14, stone_slab: 4, glass: 8 },
-        { brass: 4, gear: 2, pitch: 6 },
+        { iron_ingot: 4, gear: 2, pitch: 6 },
+      ],
+    }),
+    ...expandTechSeries({
+      id: 'unlock_efficient_repair',
+      name: '高效维修',
+      icon: '🔧',
+      description: '工具/武器维修费用 −6%（可叠加；满级时近毁装备约需造价的 20%）',
+      requires: 'unlock_workbench',
+      branch: 'tools',
+      costs: [
+        { wood: 12, plank: 6 },
+        { plank: 12, stone: 10 },
+        { stone_slab: 8, plank: 14 },
+        { brick: 10, pitch: 5 },
+        { iron_ingot: 4, glass: 6, plank: 10 },
       ],
     }),
     {
@@ -1170,6 +1538,33 @@ const GAME_DATA = {
       branch: 'craft',
     },
     {
+      id: 'unlock_stone_slab',
+      name: '石板制作',
+      icon: '▦',
+      description: '解锁石板配方（4石头→1石板）',
+      cost: { stone: 10, wood: 6 },
+      requires: 'unlock_workbench',
+      branch: 'craft',
+    },
+    {
+      id: 'unlock_iron_smelt',
+      name: '铁锭烧制',
+      icon: '🔩',
+      description: '解锁铁锭冶炼（3铁矿+1煤炭→1铁锭，需熔炉）',
+      cost: { plank: 12, stone: 16, coal: 6 },
+      requires: 'unlock_workbench',
+      branch: 'smelting',
+    },
+    {
+      id: 'unlock_steel_smelt',
+      name: '钢锭烧制',
+      icon: '⛓️',
+      description: '解锁钢锭冶炼（2铁锭+2煤炭→1钢锭，需高级熔炉）',
+      cost: { iron_ingot: 8, coal: 10, brick: 10 },
+      requires: 'unlock_workbench',
+      branch: 'smelting',
+    },
+    {
       id: 'unlock_treasure_chest',
       name: '宝箱',
       icon: '📦',
@@ -1187,11 +1582,26 @@ const GAME_DATA = {
       requires: 'unlock_brick_craft',
       branch: 'craft',
     },
+    ...expandTechSeries({
+      id: 'unlock_craft_efficiency',
+      name: '合成效率',
+      icon: '⚙️',
+      description: '生产订单效率 +0.02/人/秒（可叠加，最高 5 级）',
+      requires: 'unlock_workbench',
+      branch: 'craft',
+      costs: [
+        { wood: 12, plank: 6 },
+        { plank: 12, stone: 10 },
+        { stone_slab: 8, brick: 6 },
+        { brick: 10, pitch: 4, plank: 10 },
+        { iron_ingot: 3, glass: 6, gear: 1 },
+      ],
+    }),
     {
       id: 'unlock_furnace',
       name: '熔炉',
       icon: '🔥',
-      description: '解锁熔炉，可冶炼金属',
+      description: '解锁熔炉：可冶炼铜锭（3铜矿+1煤炭）；铁锭/钢锭另需对应冶炼科技',
       cost: { stone_slab: 16, plank: 10, pitch: 4 },
       requires: 'unlock_advanced_workbench',
       branch: 'smelting',
@@ -1206,15 +1616,6 @@ const GAME_DATA = {
       branch: 'mining',
     },
     {
-      id: 'unlock_copper_smelt',
-      name: '铜锭冶炼',
-      icon: '🔶',
-      description: '解锁铜锭配方，在合成页安排生产',
-      cost: { stone: 5 },
-      requires: 'unlock_furnace',
-      branch: 'smelting',
-    },
-    {
       id: 'unlock_coal_mine',
       name: '煤矿',
       icon: '🕳️',
@@ -1224,31 +1625,13 @@ const GAME_DATA = {
       branch: 'mining',
     },
     {
-      id: 'unlock_tin_mine',
-      name: '锡矿',
-      icon: '🪙',
-      description: '解锁锡矿（中级），可铸造青铜',
-      cost: { plank: 18, stone: 22 },
-      requires: 'unlock_copper_mine',
-      branch: 'mining',
-    },
-    {
-      id: 'unlock_zinc_mine',
-      name: '锌矿',
-      icon: '🔘',
-      description: '解锁锌矿（中级），可铸造黄铜',
+      id: 'unlock_iron_mine',
+      name: '铁矿',
+      icon: '⛏️',
+      description: '解锁铁矿（中级），产出铁矿石；熔炉可冶炼铁锭',
       cost: { plank: 16, stone: 22 },
       requires: 'unlock_copper_mine',
       branch: 'mining',
-    },
-    {
-      id: 'unlock_brass_craft',
-      name: '黄铜铸造',
-      icon: '🟡',
-      description: '解锁黄铜：1铜锭+1锌矿→1黄铜',
-      cost: { stone_slab: 5, plank: 8 },
-      requires: 'unlock_copper_smelt',
-      branch: 'smelting',
     },
     {
       id: 'unlock_limestone',
@@ -1266,15 +1649,6 @@ const GAME_DATA = {
       description: '解锁石灰配方（4石灰石→1石灰，需已有熔炉）',
       cost: { resin: 12, clay: 5, brick: 6 },
       requires: 'unlock_furnace',
-      branch: 'smelting',
-    },
-    {
-      id: 'unlock_bronze_craft',
-      name: '青铜铸造',
-      icon: '🥉',
-      description: '解锁青铜：2铜锭+1锡矿→1青铜',
-      cost: { stone_slab: 6, gravel: 5 },
-      requires: 'unlock_copper_smelt',
       branch: 'smelting',
     },
     {
@@ -1305,7 +1679,7 @@ const GAME_DATA = {
       costs: [
         { food: 30, plank: 15 },
         { food: 45, brick: 12, stone_slab: 10 },
-        { food: 60, brass: 6, brick: 8 },
+        { food: 60, iron_ingot: 6, brick: 8 },
         { food: 80, lime: 4, pitch: 12 },
         { food: 100, lime: 8, coke: 4 },
       ],
@@ -1319,8 +1693,8 @@ const GAME_DATA = {
       branch: 'defense',
       costs: [
         { stone_slab: 16 },
-        { brass: 5, brick: 8 },
-        { brass: 10, gear: 4 },
+        { iron_ingot: 5, brick: 8 },
+        { iron_ingot: 10, gear: 4 },
         { lime: 6, pitch: 10 },
         { lime: 10, coal: 3 },
       ],
@@ -1336,7 +1710,7 @@ const GAME_DATA = {
         { resin: 10, plank: 12 },
         { pitch: 8, plank: 18 },
         { pitch: 12, gear: 3 },
-        { gear: 6, brass: 4 },
+        { gear: 6, iron_ingot: 4 },
         { gear: 10, lime: 4 },
       ],
     }),
@@ -1377,7 +1751,7 @@ const GAME_DATA = {
       icon: '🚪',
       compositeIcon: { resource: '🚪', type: '🔩' },
       description: '城门升级为精钢门（耐久840，减伤70%）',
-      cost: { brick: 25, brass: 12, pitch: 10 },
+      cost: { brick: 25, iron_ingot: 12, pitch: 10 },
       requires: 'unlock_gate_lv3',
       branch: 'defense',
       gateLevel: 4,
@@ -1391,19 +1765,19 @@ const GAME_DATA = {
       branch: 'defense',
       costs: [
         { brick: 12, plank: 16, stone: 10 },
-        { brick: 18, brass: 4, pitch: 6 },
-        { brass: 8, pitch: 8, gear: 2 },
+        { brick: 18, iron_ingot: 4, pitch: 6 },
+        { iron_ingot: 8, pitch: 8, gear: 2 },
         { lime: 4, brick: 20, gear: 4 },
       ],
     }),
 
     {
       id: 'unlock_furnace_upgrade',
-      name: '熔炉升级',
+      name: '高级熔炉',
       icon: '🔥',
-      description: '升级熔炉：所有熔炉配方所需计数值减半',
-      cost: { brass: 10, gear: 12, brick: 15 },
-      requires: 'unlock_gear_craft',
+      description: '升级熔炉：计数值减半，并解锁钢锭冶炼（2铁锭+2煤炭）',
+      cost: { iron_ingot: 10, coal: 12, brick: 15 },
+      requires: 'unlock_iron_mine',
       branch: 'smelting',
     },
 
@@ -1419,7 +1793,7 @@ const GAME_DATA = {
         { plank: 12, stone: 16, food: 20 },
         { brick: 10, plank: 15, food: 30 },
         { glass: 8, stone_slab: 4, food: 40 },
-        { brass: 4, gear: 2, food: 50 },
+        { iron_ingot: 4, gear: 2, food: 50 },
       ],
     }),
     {
@@ -1453,6 +1827,14 @@ const GAME_DATA = {
 
       // ========== 上：工具耐久主干 + 精进左支 → 训战 ==========
       unlock_tool_crafting: { x: 2000, y: 1740, parent: 'unlock_workbench' },
+      unlock_tools_lv1: { x: 1740, y: 1740, parent: 'unlock_workbench' },
+      unlock_tools_lv2: { x: 1480, y: 1740, parent: 'unlock_workbench' },
+      unlock_tools_lv3: { x: 1220, y: 1740, parent: 'unlock_workbench' },
+      unlock_tools_lv4: { x: 960, y: 1740, parent: 'unlock_workbench' },
+      unlock_weapons_lv1: { x: 2260, y: 1740, parent: 'unlock_workbench' },
+      unlock_weapons_lv2: { x: 2520, y: 1740, parent: 'unlock_workbench' },
+      unlock_weapons_lv3: { x: 2780, y: 1740, parent: 'unlock_workbench' },
+      unlock_weapons_lv4: { x: 3040, y: 1740, parent: 'unlock_workbench' },
       unlock_tool_durability_v1: { x: 2000, y: 1580, parent: 'unlock_tool_crafting' },
       unlock_tool_durability_v2: { x: 2000, y: 1420, parent: 'unlock_tool_durability_v1' },
       unlock_tool_durability_v3: { x: 2000, y: 1260, parent: 'unlock_tool_durability_v2' },
@@ -1463,6 +1845,11 @@ const GAME_DATA = {
       unlock_tool_efficiency_v3: { x: 1760, y: 1260, parent: 'unlock_tool_efficiency_v2' },
       unlock_tool_efficiency_v4: { x: 1760, y: 1100, parent: 'unlock_tool_efficiency_v3' },
       unlock_tool_efficiency_v5: { x: 1760, y: 940, parent: 'unlock_tool_efficiency_v4' },
+      unlock_efficient_repair_v1: { x: 2260, y: 1580, parent: 'unlock_workbench' },
+      unlock_efficient_repair_v2: { x: 2260, y: 1420, parent: 'unlock_efficient_repair_v1' },
+      unlock_efficient_repair_v3: { x: 2260, y: 1260, parent: 'unlock_efficient_repair_v2' },
+      unlock_efficient_repair_v4: { x: 2260, y: 1100, parent: 'unlock_efficient_repair_v3' },
+      unlock_efficient_repair_v5: { x: 2260, y: 940, parent: 'unlock_efficient_repair_v4' },
       unlock_defense_training: { x: 2000, y: 780, parent: 'unlock_tool_durability_v5' },
       unlock_combat_hp_v1: { x: 2000, y: 620, parent: 'unlock_defense_training' },
       unlock_combat_hp_v2: { x: 2000, y: 480, parent: 'unlock_combat_hp_v1' },
@@ -1524,12 +1911,11 @@ const GAME_DATA = {
       unlock_gravel: { x: 2780, y: 2000, parent: 'unlock_quarry' },
       unlock_limestone: { x: 3040, y: 2000, parent: 'unlock_gravel' },
       unlock_copper_mine: { x: 3300, y: 2000, parent: 'unlock_limestone' },
-      unlock_tin_mine: { x: 3560, y: 2000, parent: 'unlock_copper_mine' },
 
 
 
       unlock_clay_pit: { x: 2520, y: 2260, parent: 'unlock_forest' },
-      unlock_zinc_mine: { x: 3300, y: 2260, parent: 'unlock_copper_mine' },
+      unlock_iron_mine: { x: 3300, y: 2260, parent: 'unlock_copper_mine' },
       unlock_coal_mine: { x: 3560, y: 2260, parent: 'unlock_copper_mine' },
 
 
@@ -1537,12 +1923,77 @@ const GAME_DATA = {
 
 
       // ========== 下：合成 / 冶炼主干（x=2000）==========
+      unlock_plank_craft: { x: 2130, y: 2130, parent: 'unlock_workbench' },
+      unlock_auto_produce: { x: 2390, y: 2130, parent: 'unlock_workbench' },
+      // ========== 庇护体系（左下独立支）==========
+      unlock_altar: { x: 400, y: 2000, parent: 'unlock_workbench' },
+      unlock_sanctuary_gather: { x: 160, y: 2260, parent: 'unlock_altar' },
+      unlock_sanctuary_gather_chance_v1: { x: 40, y: 2520, parent: 'unlock_sanctuary_gather' },
+      unlock_sanctuary_gather_chance_v2: { x: 40, y: 2680, parent: 'unlock_sanctuary_gather_chance_v1' },
+      unlock_sanctuary_gather_chance_v3: { x: 40, y: 2840, parent: 'unlock_sanctuary_gather_chance_v2' },
+      unlock_sanctuary_gather_chance_v4: { x: 40, y: 3000, parent: 'unlock_sanctuary_gather_chance_v3' },
+      unlock_sanctuary_gather_chance_v5: { x: 40, y: 3160, parent: 'unlock_sanctuary_gather_chance_v4' },
+      unlock_sanctuary_gather_power_v1: { x: 280, y: 2520, parent: 'unlock_sanctuary_gather' },
+      unlock_sanctuary_gather_power_v2: { x: 280, y: 2680, parent: 'unlock_sanctuary_gather_power_v1' },
+      unlock_sanctuary_gather_power_v3: { x: 280, y: 2840, parent: 'unlock_sanctuary_gather_power_v2' },
+      unlock_sanctuary_gather_power_v4: { x: 280, y: 3000, parent: 'unlock_sanctuary_gather_power_v3' },
+      unlock_sanctuary_gather_power_v5: { x: 280, y: 3160, parent: 'unlock_sanctuary_gather_power_v4' },
+      unlock_sanctuary_craft: { x: 520, y: 2260, parent: 'unlock_altar' },
+      unlock_sanctuary_craft_chance_v1: { x: 400, y: 2520, parent: 'unlock_sanctuary_craft' },
+      unlock_sanctuary_craft_chance_v2: { x: 400, y: 2680, parent: 'unlock_sanctuary_craft_chance_v1' },
+      unlock_sanctuary_craft_chance_v3: { x: 400, y: 2840, parent: 'unlock_sanctuary_craft_chance_v2' },
+      unlock_sanctuary_craft_chance_v4: { x: 400, y: 3000, parent: 'unlock_sanctuary_craft_chance_v3' },
+      unlock_sanctuary_craft_chance_v5: { x: 400, y: 3160, parent: 'unlock_sanctuary_craft_chance_v4' },
+      unlock_sanctuary_craft_power_v1: { x: 640, y: 2520, parent: 'unlock_sanctuary_craft' },
+      unlock_sanctuary_craft_power_v2: { x: 640, y: 2680, parent: 'unlock_sanctuary_craft_power_v1' },
+      unlock_sanctuary_craft_power_v3: { x: 640, y: 2840, parent: 'unlock_sanctuary_craft_power_v2' },
+      unlock_sanctuary_craft_power_v4: { x: 640, y: 3000, parent: 'unlock_sanctuary_craft_power_v3' },
+      unlock_sanctuary_craft_power_v5: { x: 640, y: 3160, parent: 'unlock_sanctuary_craft_power_v4' },
+      unlock_sanctuary_war: { x: 880, y: 2260, parent: 'unlock_altar' },
+      unlock_sanctuary_war_chance_v1: { x: 760, y: 2520, parent: 'unlock_sanctuary_war' },
+      unlock_sanctuary_war_chance_v2: { x: 760, y: 2680, parent: 'unlock_sanctuary_war_chance_v1' },
+      unlock_sanctuary_war_chance_v3: { x: 760, y: 2840, parent: 'unlock_sanctuary_war_chance_v2' },
+      unlock_sanctuary_war_chance_v4: { x: 760, y: 3000, parent: 'unlock_sanctuary_war_chance_v3' },
+      unlock_sanctuary_war_chance_v5: { x: 760, y: 3160, parent: 'unlock_sanctuary_war_chance_v4' },
+      unlock_sanctuary_war_power_v1: { x: 1000, y: 2520, parent: 'unlock_sanctuary_war' },
+      unlock_sanctuary_war_power_v2: { x: 1000, y: 2680, parent: 'unlock_sanctuary_war_power_v1' },
+      unlock_sanctuary_war_power_v3: { x: 1000, y: 2840, parent: 'unlock_sanctuary_war_power_v2' },
+      unlock_sanctuary_war_power_v4: { x: 1000, y: 3000, parent: 'unlock_sanctuary_war_power_v3' },
+      unlock_sanctuary_war_power_v5: { x: 1000, y: 3160, parent: 'unlock_sanctuary_war_power_v4' },
+      unlock_sanctuary_efficiency: { x: 1240, y: 2260, parent: 'unlock_altar' },
+      unlock_sanctuary_eff_chance_v1: { x: 1120, y: 2520, parent: 'unlock_sanctuary_efficiency' },
+      unlock_sanctuary_eff_chance_v2: { x: 1120, y: 2680, parent: 'unlock_sanctuary_eff_chance_v1' },
+      unlock_sanctuary_eff_chance_v3: { x: 1120, y: 2840, parent: 'unlock_sanctuary_eff_chance_v2' },
+      unlock_sanctuary_eff_chance_v4: { x: 1120, y: 3000, parent: 'unlock_sanctuary_eff_chance_v3' },
+      unlock_sanctuary_eff_chance_v5: { x: 1120, y: 3160, parent: 'unlock_sanctuary_eff_chance_v4' },
+      unlock_sanctuary_eff_power_v1: { x: 1360, y: 2520, parent: 'unlock_sanctuary_efficiency' },
+      unlock_sanctuary_eff_power_v2: { x: 1360, y: 2680, parent: 'unlock_sanctuary_eff_power_v1' },
+      unlock_sanctuary_eff_power_v3: { x: 1360, y: 2840, parent: 'unlock_sanctuary_eff_power_v2' },
+      unlock_sanctuary_eff_power_v4: { x: 1360, y: 3000, parent: 'unlock_sanctuary_eff_power_v3' },
+      unlock_sanctuary_eff_power_v5: { x: 1360, y: 3160, parent: 'unlock_sanctuary_eff_power_v4' },
+      unlock_sanctuary_eff_duration_v1: { x: 1600, y: 2520, parent: 'unlock_sanctuary_efficiency' },
+      unlock_sanctuary_eff_duration_v2: { x: 1600, y: 2680, parent: 'unlock_sanctuary_eff_duration_v1' },
+      unlock_sanctuary_eff_duration_v3: { x: 1600, y: 2840, parent: 'unlock_sanctuary_eff_duration_v2' },
+      unlock_sanctuary_eff_duration_v4: { x: 1600, y: 3000, parent: 'unlock_sanctuary_eff_duration_v3' },
+      unlock_sanctuary_eff_duration_v5: { x: 1600, y: 3160, parent: 'unlock_sanctuary_eff_duration_v4' },
+      unlock_house_upgrade_1: { x: 1740, y: 2130, parent: 'unlock_workbench' },
+      unlock_house_upgrade_2: { x: 1480, y: 2130, parent: 'unlock_workbench' },
+      unlock_house_upgrade_3: { x: 1220, y: 2130, parent: 'unlock_workbench' },
+      unlock_house_upgrade_4: { x: 960, y: 2130, parent: 'unlock_workbench' },
       unlock_brick_craft: { x: 2000, y: 2260, parent: 'unlock_workbench' },
+      unlock_stone_slab: { x: 2260, y: 2260, parent: 'unlock_workbench' },
+      unlock_iron_smelt: { x: 1740, y: 2260, parent: 'unlock_workbench' },
+      unlock_steel_smelt: { x: 1480, y: 2260, parent: 'unlock_workbench' },
       unlock_advanced_workbench: { x: 2000, y: 2520, parent: 'unlock_brick_craft' },
+      unlock_craft_efficiency_v1: { x: 1740, y: 2520, parent: 'unlock_workbench' },
+      unlock_craft_efficiency_v2: { x: 1480, y: 2520, parent: 'unlock_craft_efficiency_v1' },
+      unlock_craft_efficiency_v3: { x: 1220, y: 2520, parent: 'unlock_craft_efficiency_v2' },
+      unlock_craft_efficiency_v4: { x: 960, y: 2520, parent: 'unlock_craft_efficiency_v3' },
+      unlock_craft_efficiency_v5: { x: 700, y: 2520, parent: 'unlock_craft_efficiency_v4' },
       unlock_furnace: { x: 2000, y: 2780, parent: 'unlock_advanced_workbench' },
       unlock_gear_craft: { x: 2000, y: 3040, parent: 'unlock_furnace' },
 
-      unlock_furnace_upgrade: { x: 2000, y: 3560, parent: 'unlock_gear_craft' },
+      unlock_furnace_upgrade: { x: 2000, y: 3560, parent: 'unlock_iron_mine' },
 
 
 
@@ -1555,12 +2006,9 @@ const GAME_DATA = {
       unlock_gate_repair_speed_v3: { x: 1220, y: 2520, parent: 'unlock_gate_repair_speed_v2' },
       unlock_gate_repair_speed_v4: { x: 960, y: 2520, parent: 'unlock_gate_repair_speed_v3' },
 
-      // 下右：松香 / 石灰 / 铜锭与合金 / 快速恢复
+      // 下右：松香 / 石灰 / 快速恢复
       unlock_pitch: { x: 2260, y: 2520, parent: 'unlock_brick_craft' },
       unlock_lime_craft: { x: 2260, y: 2780, parent: 'unlock_furnace' },
-      unlock_copper_smelt: { x: 2260, y: 3040, parent: 'unlock_furnace' },
-      unlock_bronze_craft: { x: 2520, y: 3040, parent: 'unlock_copper_smelt' },
-      unlock_brass_craft: { x: 2780, y: 3040, parent: 'unlock_copper_smelt' },
 
 
 
@@ -1578,7 +2026,7 @@ const GAME_DATA = {
       { wood: 80, stone: 50, plank: 25, stone_slab: 3 },
       { wood: 100, stone: 70, plank: 35, stone_slab: 8 },
       { wood: 130, stone: 90, plank: 50, gear: 2 },
-      { wood: 160, stone: 120, plank: 70, gear: 5, brass: 3 },
+      { wood: 160, stone: 120, plank: 70, gear: 5, iron_ingot: 3 },
     ],
     rewardTypes: [
       { wood: 25, plank: 10 },
@@ -1656,7 +2104,7 @@ const GAME_DATA = {
           name: '砖铁门',
           maxHp: 560,
           damageReduction: 0.6,
-          upgradeCost: { brick: 25, brass: 12, pitch: 10 },
+          upgradeCost: { brick: 25, iron_ingot: 12, pitch: 10 },
         },
         4: {
           name: '精钢门',
@@ -1782,17 +2230,29 @@ const GAME_DATA = {
         requireNext: true,
       },
       {
+        id: 'unlock_plank',
+        title: '解锁木板加工',
+        text: '打开「科技」，找到并解锁「木板加工」。',
+        highlight: ['.tab-btn[data-tab="tech"]', '.tech-node[data-tech-id="unlock_plank_craft"]'],
+      },
+      {
         id: 'craft_plank',
         title: '第一件加工品',
-        text: '自己打开「合成」页下单制作木板。下单后请再点左侧「生产」进入加工界面，点击做出 1 块即可。',
+        text: '木板加工已解锁。自己打开「合成」页下单制作木板，再点左侧「生产」加工出 1 块即可。',
         highlight: ['.tab-btn[data-tab="craft"]', '.craft-overview-item[data-recipe-id="craft_plank"]'],
         progress: 'plank',
         target: 1,
       },
       {
+        id: 'unlock_weapons',
+        title: '解锁木质武器',
+        text: '打开「科技」，找到并解锁「木质武器」。',
+        highlight: ['.tab-btn[data-tab="tech"]', '.tech-node[data-tech-id="unlock_weapons_lv1"]'],
+      },
+      {
         id: 'craft_weapon',
         title: '制作第一件武器',
-        text: '自己打开「武器」页下单制作任意一件武器（剑/矛/弓/弩均可）。下单后点左侧「生产」进入并点击做出一件。',
+        text: '木质武器已解锁。自己打开「武器」页下单制作任意一件武器（剑/矛/弓/弩均可），再点左侧「生产」做出一件。',
         highlight: ['.tab-btn[data-tab="weapons"]', '#weapon-list .craft-overview-item'],
         progress: 'weapon',
         target: 1,
@@ -1877,7 +2337,29 @@ GAME_DATA.achievements = (() => {
   return list;
 })();
 
-/** 四向主干布局已在 techTreeLayout 中固定，这里只保证画布尺寸，并同步 parent=requires[0] */
+/** 将科技解锁依赖完全同步为布局父节点（单父=string，多父=array，无父=null） */
+function syncTechRequiresWithLayout() {
+  const layout = GAME_DATA.techTreeLayout;
+  if (!layout?.nodes || !Array.isArray(GAME_DATA.techTree)) return;
+  const byId = Object.fromEntries(GAME_DATA.techTree.map((t) => [t.id, t]));
+  Object.keys(layout.nodes).forEach((id) => {
+    const tech = byId[id];
+    if (!tech) return;
+    const node = layout.nodes[id] || {};
+    const parents = Array.isArray(node.parents) && node.parents.length
+      ? [...node.parents]
+      : (node.parent ? [node.parent] : []);
+    if (!parents.length) {
+      tech.requires = null;
+    } else if (parents.length === 1) {
+      tech.requires = parents[0];
+    } else {
+      tech.requires = parents;
+    }
+  });
+}
+
+/** 四向主干布局已在 techTreeLayout 中固定，这里只保证画布尺寸，并清理无效节点 */
 (function rebalanceBaseTechTreeLayout() {
   const layout = GAME_DATA.techTreeLayout;
   if (!layout?.nodes) return;
@@ -1891,13 +2373,9 @@ GAME_DATA.achievements = (() => {
       delete layout.nodes[id];
       return;
     }
-    if (tech.requires == null) {
-      layout.nodes[id].parent = null;
-      return;
-    }
-    const reqs = Array.isArray(tech.requires) ? tech.requires : [tech.requires];
-    if (reqs[0]) layout.nodes[id].parent = reqs[0];
+    // 父节点以布局为准；requires 由 syncTechRequiresWithLayout 统一反向写入
   });
+  syncTechRequiresWithLayout();
 })();
 
 /**
@@ -1998,8 +2476,7 @@ function rebalancePointUpgradeClusters() {
   placeStd('gravel_bed', A('unlock_gravel').x, A('unlock_gravel').y, 'up-right', 1, 'unlock_gravel');
   placeStd('limestone_quarry', A('unlock_limestone').x, A('unlock_limestone').y, 'up-right', 1, 'unlock_limestone');
   placeStd('copper_mine', A('unlock_copper_mine').x, A('unlock_copper_mine').y, 'up-right', 1, 'unlock_copper_mine');
-  placeStd('tin_mine', A('unlock_tin_mine').x, A('unlock_tin_mine').y, 'up-right', 1, 'unlock_tin_mine');
-  placeStd('zinc_mine', A('unlock_zinc_mine').x, A('unlock_zinc_mine').y, 'down-right', 1, 'unlock_zinc_mine');
+  placeStd('iron_mine', A('unlock_iron_mine').x, A('unlock_iron_mine').y, 'down-right', 1, 'unlock_iron_mine');
   placeStd('clay_pit', A('unlock_clay_pit').x, A('unlock_clay_pit').y, 'down-right', 1, 'unlock_clay_pit');
   placeStd('coal_mine', A('unlock_coal_mine').x, A('unlock_coal_mine').y, 'down-right', 1, 'unlock_coal_mine');
 
@@ -2046,7 +2523,7 @@ function applyToolDurability(data) {
   if (data.maxByLevel && typeof data.maxByLevel === 'object') {
     GAME_DATA.toolDurability.maxByLevel = { ...data.maxByLevel };
   }
-  ['repairMinMissing', 'repairCostRatio', 'wearPerUserPerSecond'].forEach((k) => {
+  ['repairMinMissing', 'repairCostRatio', 'repairCostReducePerLevel', 'wearPerUserPerSecond'].forEach((k) => {
     if (data[k] != null) GAME_DATA.toolDurability[k] = Number(data[k]);
   });
 }
@@ -2147,7 +2624,7 @@ function applyCombatUnitsData(data) {
 }
 
 /**
- * 应用科技树数据表（布局 / 依赖 / 费用）
+ * 应用科技树数据表（布局 / 费用）
  * 由 config/tech-tree-table.js 或编辑器导出覆盖 data.js 中的默认值
  */
 function applyTechTreeTable(table) {
@@ -2165,6 +2642,10 @@ function applyTechTreeTable(table) {
     const node = GAME_DATA.techTreeLayout.nodes[id];
     if (row.x != null) node.x = row.x;
     if (row.y != null) node.y = row.y;
+    if (Object.prototype.hasOwnProperty.call(row, 'size')) {
+      node.size = row.size === 'small' || row.size === 'large' ? row.size : 'medium';
+      if (node.size === 'medium') delete node.size;
+    }
     if (Object.prototype.hasOwnProperty.call(row, 'parents')) {
       if (Array.isArray(row.parents) && row.parents.length > 1) {
         node.parents = [...row.parents];
@@ -2192,11 +2673,6 @@ function applyTechTreeTable(table) {
     const tech = byId[id];
     // 表里残留的已删科技：不写入布局，避免「幽灵连线」
     if (!tech) return;
-    if (Object.prototype.hasOwnProperty.call(row, 'requires')) {
-      tech.requires = row.requires == null
-        ? null
-        : (Array.isArray(row.requires) ? [...row.requires] : row.requires);
-    }
     if (row.cost && typeof row.cost === 'object') {
       tech.cost = { ...row.cost };
     }
@@ -2216,5 +2692,7 @@ function applyTechTreeTable(table) {
     if (!row || !byId[id]) return;
     applyLayoutRow(id, row);
   });
+  // 解锁依赖不再独立维护：完全跟随布局父节点
+  syncTechRequiresWithLayout();
 }
 

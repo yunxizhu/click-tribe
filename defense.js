@@ -602,6 +602,13 @@
       flatDr += this.getAllyFlatDrBonus();
     }
     let finalDmg = Math.max(1, attacker.atk * (1 - dr) - flatDr);
+    if (attacker.isAlly && typeof this.getSanctuaryWarCritChance === 'function') {
+      const critChance = this.getSanctuaryWarCritChance() || 0;
+      if (critChance > 0 && Math.random() < critChance) {
+        const critMult = this.getSanctuaryWarCritMult?.() || 1.5;
+        finalDmg = Math.max(1, Math.floor(finalDmg * critMult));
+      }
+    }
 
     if (target.isAlly && (target.armorHp || 0) > 0) {
       const absorbed = Math.min(target.armorHp, finalDmg);

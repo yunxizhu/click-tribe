@@ -104,20 +104,6 @@ window.RESOURCE_POINTS = {
     baseYield: 1,
   },
 
-  tin_mine: {
-    id: "tin_mine",
-    name: "锡矿",
-    icon: "🪙",
-    description: "开采锡矿",
-    resource: "tin_ore",
-    tier: "mid",
-    maxUpgrades: { count: 5, cooldown: 5, double: 1 },
-    unlockRequires: "unlock_tin_mine",
-    baseMaxCount: 42,
-    baseCooldown: 2800,
-    baseYield: 1,
-  },
-
   limestone_quarry: {
     id: "limestone_quarry",
     name: "石灰岩场",
@@ -150,15 +136,15 @@ window.RESOURCE_POINTS = {
     baseYield: 1,
   },
 
-  zinc_mine: {
-    id: "zinc_mine",
-    name: "锌矿",
-    icon: "🔘",
-    description: "开采锌矿",
-    resource: "zinc_ore",
+  iron_mine: {
+    id: "iron_mine",
+    name: "铁矿",
+    icon: "⛏️",
+    description: "开采铁矿石",
+    resource: "iron_ore",
     tier: "mid",
     maxUpgrades: { count: 5, cooldown: 5, double: 1 },
-    unlockRequires: "unlock_zinc_mine",
+    unlockRequires: "unlock_iron_mine",
     baseMaxCount: 42,
     baseCooldown: 2700,
     baseYield: 1,
@@ -218,6 +204,20 @@ window.RESOURCE_POINTS = {
     unlockRequires: "unlock_treasure_chest",
     baseMaxCount: 4,
     baseCooldown: 500,
+  },
+
+  /** 庇护神坛：默认存在于外侧列表，未解锁前仅可查看 */
+  altar: {
+    id: "altar",
+    name: "神坛",
+    icon: "⛩️",
+    description: "部落庇护的核心。解锁建造后，可研发采集 / 生产 / 战争 / 效率庇护",
+    isAltar: true,
+    unlockRequires: "unlock_altar",
+    maxUpgrades: { count: 0, cooldown: 0, double: 0 },
+    maxWorkers: 0,
+    baseMaxCount: 1,
+    baseCooldown: 0,
   },
 };
 
