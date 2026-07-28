@@ -1,6 +1,6 @@
 /** Tech tree table: layout / requires / cost. Runtime reads this first. */
 window.TECH_TREE_TABLE = {
-  "version": 19,
+  "version": 20,
   "canvas": {
     "width": 5600,
     "height": 5800
