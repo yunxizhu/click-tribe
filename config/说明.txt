@@ -2,10 +2,28 @@
 
   tool-recipes.js         — 工具/武器/护甲制作配方、持工具效率(TOOL_EFFICIENCY)、工具耐久(TOOL_DURABILITY)
   resource-points.js      — 资源点完整定义（名称/解锁/产量/冷却/升级上限等）
-  point-upgrade-costs.js  — 各资源点采集/资源恢复/精炼升级费用
   combat-units.js         — 敌我单位、铠甲、波次
-  tech-tree-table.js      — 科技树布局 / 依赖 / 费用（覆盖 data.js 中已有科技；名称/图标等仍在 data.js）
+  tech-tree-table.js      — 科技树布局 / 依赖 / 费用 / 多级升级(maxRepeat+repeatCosts)
+                            / 作用说明(description 或 levelEffects[].description)
+                            / 机械实现(effects 或 levelEffects[].effects)
+                            （含采集点 point_up_*；覆盖 data.js 默认值）
+  lang/zh-CN.js           — 简体中文界面文案（设置里可切换）
+  lang/en.js              — English UI strings
+  lang/ja.js              — 日本語 UI 文字列
   gameplay.js             — 通用玩法数值（如生产订单完成后冷却 craftOrderCooldownMs）
+
+【界面语言】
+  壳层文案（主菜单/设置/暂停/选档/难度等）由 lang/*.js 提供；
+  运行时 i18n.js 的 t(key) / applyDom 读取。设置 → 游戏 → 语言。
+  校验：node scripts/check-i18n-keys.js
+  资源名/科技描述本轮仍在 data.js / tech-tree-table（未进语言包）。
+
+【科技 effects】
+  每条科技须声明 effects（纯前置用 { type:"prereqOnly" }）。
+  合法 type：unlockPoint / unlockRecipe / unlockFlag / stat / gateLevel /
+             houseUpgrade / pointUpgrade / sanctuary / onUnlock / prereqOnly
+  运行时由 game.js 的 sumTechStat / hasTechFlag / forEachUnlockedTechEffect 读取；
+  改 value 后一般无需改 game.js。校验：node scripts/check-tech-effects.js
 
 打包后这些文件会出现在 exe 同级的 config/ 下，可单独替换。
 

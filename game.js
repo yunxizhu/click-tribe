@@ -49,19 +49,158 @@ class FactoryGame {
     // init 由 startFactoryGame 异步调用（Electron 存档在 saves/ 需 await）
   }
 
-  /** Electron：saves/factoryGame.json；浏览器：localStorage */
+  /** Electron：saves/slot-*.json；浏览器：localStorage factoryGame_* */
   _saveApi() {
     return window.__TRIBE_SAVE_API__ || null;
   }
 
-  async hasSaveData() {
+  getSaveSlots() {
+    return ['a', 'b', 'c'];
+  }
+
+  normalizeSaveSlot(slot) {
+    const s = String(slot || this._saveSlot || 'a').toLowerCase();
+    return this.getSaveSlots().includes(s) ? s : 'a';
+  }
+
+  getSaveSlotLabel(slot) {
+    const map = { a: 'A档', b: 'B档', c: 'C档' };
+    return map[this.normalizeSaveSlot(slot)] || 'A档';
+  }
+
+  getActiveSaveSlot() {
+    return this.normalizeSaveSlot(this._saveSlot || this.settings?.activeSaveSlot || 'a');
+  }
+
+  setActiveSaveSlot(slot) {
+    this._saveSlot = this.normalizeSaveSlot(slot);
+    if (!this.settings) this.settings = this.getDefaultSettings();
+    this.settings.activeSaveSlot = this._saveSlot;
+    try { localStorage.setItem('clickTribeActiveSlot', this._saveSlot); } catch (_) { /* ignore */ }
+    void this.saveSettings?.();
+  }
+
+  _browserSaveKey(slot) {
+    return 'factoryGame_' + this.normalizeSaveSlot(slot);
+  }
+
+  /** 浏览器旧单档 factoryGame → A 档 */
+  migrateBrowserLegacySaves() {
+    try {
+      const legacy = localStorage.getItem('factoryGame');
+      if (!legacy) return;
+      const any = this.getSaveSlots().some((sl) => localStorage.getItem(this._browserSaveKey(sl)));
+      if (!any) localStorage.setItem(this._browserSaveKey('a'), legacy);
+      localStorage.removeItem('factoryGame');
+    } catch (_) { /* ignore */ }
+  }
+
+  async hasSaveData(slot) {
+    this.migrateBrowserLegacySaves();
     const api = this._saveApi();
     if (api?.exists) {
       try {
-        if (await api.exists()) return true;
+        if (await api.exists(slot == null ? '*' : this.normalizeSaveSlot(slot))) return true;
       } catch (_) { /* fall through */ }
     }
-    return localStorage.getItem('factoryGame') !== null;
+    if (slot == null) {
+      return this.getSaveSlots().some((sl) => localStorage.getItem(this._browserSaveKey(sl)) !== null);
+    }
+    return localStorage.getItem(this._browserSaveKey(slot)) !== null;
+  }
+
+  _summarizeSaveRaw(raw, slot) {
+    const id = this.normalizeSaveSlot(slot);
+    if (!raw) return { slot: id, empty: true };
+    try {
+      const data = JSON.parse(raw);
+      return {
+        slot: id,
+        empty: false,
+        day: Number(data.day) || 1,
+        difficulty: data.difficulty || 'normal',
+        lastSaveTime: data.lastSaveTime || null,
+        gameOver: !!data.gameOver,
+        villagers: Number(data.workers?.total) || 0,
+      };
+    } catch (_) {
+      return { slot: id, empty: false, corrupt: true };
+    }
+  }
+
+  async listSaveSlotMeta() {
+    this.migrateBrowserLegacySaves();
+    const api = this._saveApi();
+    if (api?.listMeta) {
+      try {
+        const list = await api.listMeta();
+        if (Array.isArray(list) && list.length) return list;
+      } catch (_) { /* fall through */ }
+    }
+    const out = [];
+    for (const slot of this.getSaveSlots()) {
+      let raw = null;
+      if (api?.read) {
+        try { raw = await api.read(slot); } catch (_) { raw = null; }
+      }
+      if (!raw) {
+        try { raw = localStorage.getItem(this._browserSaveKey(slot)); } catch (_) { raw = null; }
+      }
+      out.push(this._summarizeSaveRaw(raw, slot));
+    }
+    return out;
+  }
+
+  formatSaveSlotMetaLine(meta) {
+    if (!meta || meta.empty) return this.t('slots.emptyMeta');
+    if (meta.corrupt) return '存档损坏\n—';
+    const diffName = GAME_DATA.difficulty?.levels?.[meta.difficulty]?.name || meta.difficulty || '普通';
+    const day = meta.day || 1;
+    const villagers = Number(meta.villagers) || 0;
+    let time = '';
+    if (meta.lastSaveTime) {
+      try {
+        time = new Date(meta.lastSaveTime).toLocaleString();
+      } catch (_) { /* ignore */ }
+    }
+    const over = meta.gameOver ? ' · 已结束' : '';
+    const line1 = `第 ${day} 天 · ${diffName} · 村民 ${villagers}${over}`;
+    const line2 = time || '—';
+    return `${line1}\n${line2}`;
+  }
+
+  /** UI locale helpers */
+  t(key, vars) {
+    return (typeof window !== 'undefined' && window.TRIBE_I18N?.t)
+      ? window.TRIBE_I18N.t(key, vars)
+      : String(key || '');
+  }
+
+  applyLocale(locale) {
+    const i18n = typeof window !== 'undefined' ? window.TRIBE_I18N : null;
+    if (!i18n) return;
+    const next = locale || this.settings?.locale || i18n.getLocale?.() || 'zh-CN';
+    i18n.setLocale(next);
+    if (this.settings) this.settings.locale = i18n.getLocale();
+    i18n.applyDom(document);
+    const slotsEl = document.getElementById('main-menu-slots');
+    if (slotsEl && !slotsEl.classList.contains('hidden')) {
+      const title = document.getElementById('mm-slots-title');
+      const hint = document.getElementById('mm-slots-hint');
+      if (title) {
+        title.textContent = this._slotPickMode === 'load'
+          ? this.t('slots.loadTitle')
+          : this.t('slots.newTitle');
+      }
+      if (hint) {
+        hint.textContent = this._slotPickMode === 'load'
+          ? this.t('slots.hintLoad')
+          : this.t('slots.hintNew');
+      }
+      void this.renderSaveSlotPicker();
+    }
+    this.syncSettingsForm();
+    void this.refreshMainMenuLoadButton();
   }
 
   init() {
@@ -85,6 +224,7 @@ class FactoryGame {
       });
     }
     await this.loadSettings();
+    this.applyLocale(this.settings?.locale);
     this.setupMainMenu();
     this.setupPauseMenu();
     await this.showBootSequence();
@@ -173,20 +313,34 @@ class FactoryGame {
     document.getElementById('main-menu-settings')?.classList.add('hidden');
     document.getElementById('main-menu-dev')?.classList.add('hidden');
     document.getElementById('main-menu-achievements')?.classList.add('hidden');
+    document.getElementById('main-menu-slots')?.classList.add('hidden');
+    document.getElementById('main-menu')?.classList.remove('slots-open', 'overlay-open');
   }
 
   showMainMenuPage(id) {
-    const pages = ['main-menu-home', 'main-menu-settings', 'main-menu-dev', 'main-menu-achievements'];
+    const pages = ['main-menu-home', 'main-menu-settings', 'main-menu-dev', 'main-menu-achievements', 'main-menu-slots'];
+    const overlayPages = id === 'main-menu-slots' || id === 'main-menu-settings';
     pages.forEach((pid) => {
       document.getElementById(pid)?.classList.toggle('hidden', pid !== id);
     });
-    document.getElementById('main-menu-brand')?.classList.toggle('hidden', id !== 'main-menu-home');
+    document.getElementById('main-menu-brand')?.classList.toggle('hidden', id !== 'main-menu-home' && !overlayPages);
+    document.getElementById('main-menu')?.classList.toggle('slots-open', id === 'main-menu-slots');
+    document.getElementById('main-menu')?.classList.toggle('overlay-open', overlayPages);
     if (id === 'main-menu-settings') {
+      // 设置叠层：保留主菜单 home/brand
+      document.getElementById('main-menu-home')?.classList.remove('hidden');
+      document.getElementById('main-menu-brand')?.classList.remove('hidden');
       this.showMainSettingsTab(this._mmSettingsTab || 'display');
       this.syncSettingsForm();
     }
     if (id === 'main-menu-achievements') {
       this.renderAchievementsPanel();
+    }
+    if (id === 'main-menu-slots') {
+      // 选档叠层：保留主菜单 home/brand
+      document.getElementById('main-menu-home')?.classList.remove('hidden');
+      document.getElementById('main-menu-brand')?.classList.remove('hidden');
+      void this.renderSaveSlotPicker();
     }
   }
 
@@ -196,19 +350,91 @@ class FactoryGame {
     const has = await this.hasSaveData();
     if (loadBtn) {
       loadBtn.disabled = !has;
-      loadBtn.title = has ? '继续已有存档' : '暂无存档';
+      loadBtn.title = has ? this.t('slots.loadBtnTitle') : this.t('slots.noSave');
       loadBtn.classList.toggle('main-menu-btn-primary', has);
       loadBtn.classList.toggle('main-menu-btn-dim', false);
     }
     if (startBtn) {
       startBtn.classList.toggle('main-menu-btn-primary', !has);
       startBtn.classList.toggle('main-menu-btn-dim', has);
-      startBtn.title = has ? '将覆盖当前存档开始新游戏' : '开始新游戏';
+      startBtn.title = this.t('slots.newBtnTitle');
     }
     // 入场结束统一不透明；暗/禁用态靠底色与字色区分，避免整钮透明度被遮罩吞掉
     document.querySelectorAll('#main-menu .mm-reveal').forEach((el) => {
       el.style.setProperty('--mm-end-o', '1');
     });
+  }
+
+  async openSaveSlotPicker(mode) {
+    this._slotPickMode = mode === 'load' ? 'load' : 'new';
+    const title = document.getElementById('mm-slots-title');
+    const hint = document.getElementById('mm-slots-hint');
+    if (title) title.textContent = this._slotPickMode === 'load' ? this.t('slots.loadTitle') : this.t('slots.newTitle');
+    if (hint) {
+      hint.textContent = this._slotPickMode === 'load'
+        ? this.t('slots.hintLoad')
+        : this.t('slots.hintNew');
+    }
+    // 叠在主菜单上，不隐藏标题与按钮列
+    document.getElementById('main-menu-settings')?.classList.add('hidden');
+    document.getElementById('main-menu-dev')?.classList.add('hidden');
+    document.getElementById('main-menu-achievements')?.classList.add('hidden');
+    document.getElementById('main-menu-home')?.classList.remove('hidden');
+    document.getElementById('main-menu-brand')?.classList.remove('hidden');
+    document.getElementById('main-menu-slots')?.classList.remove('hidden');
+    document.getElementById('main-menu')?.classList.add('slots-open', 'overlay-open');
+    void this.renderSaveSlotPicker();
+  }
+
+  async renderSaveSlotPicker() {
+    const list = document.getElementById('mm-slots-list');
+    if (!list) return;
+    const mode = this._slotPickMode === 'load' ? 'load' : 'new';
+    const metas = await this.listSaveSlotMeta();
+    list.innerHTML = '';
+    metas.forEach((meta) => {
+      const btn = document.createElement('button');
+      btn.type = 'button';
+      btn.className = 'save-slot-btn' + (meta.empty ? '' : ' is-occupied');
+      btn.dataset.slot = meta.slot;
+      const disabled = mode === 'load' && (meta.empty || meta.corrupt);
+      btn.disabled = !!disabled;
+      const badge = meta.empty
+        ? `<span class="save-slot-badge">${this.t('slots.empty')}</span>`
+        : `<span class="save-slot-badge filled">${this.t('slots.occupied')}</span>`;
+      const metaText = this.formatSaveSlotMetaLine(meta).replace(/\n/g, '<br>');
+      btn.innerHTML = `
+        <div class="save-slot-head">
+          <span class="save-slot-label">${this.getSaveSlotLabel(meta.slot)}</span>
+          ${badge}
+        </div>
+        <div class="save-slot-meta">${metaText}</div>
+      `;
+      btn.addEventListener('click', () => {
+        void this.onSaveSlotPicked(meta.slot, meta);
+      });
+      list.appendChild(btn);
+    });
+  }
+
+  async onSaveSlotPicked(slot, meta) {
+    const id = this.normalizeSaveSlot(slot);
+    const mode = this._slotPickMode === 'load' ? 'load' : 'new';
+    if (mode === 'load') {
+      if (!meta || meta.empty || meta.corrupt) {
+        this.showNotification(this.t('slots.unavailable'));
+        return;
+      }
+      await this.loadGameFromMenu(id);
+      return;
+    }
+    if (meta && !meta.empty) {
+      const label = this.getSaveSlotLabel(id);
+      if (!confirm(this.t('slots.overwriteConfirm', { label, day: meta.day || 1 }))) {
+        return;
+      }
+    }
+    await this.startNewGameFromMenu(id);
   }
 
   enterGameShell({ holdForComic = false, keepCovered = false } = {}) {
@@ -266,12 +492,24 @@ class FactoryGame {
     this.startMenuBgm({ forceNew: true });
   }
 
-  async clearSaveFiles() {
+  async clearSaveFiles(slot) {
+    this.migrateBrowserLegacySaves();
     const api = this._saveApi();
-    if (api?.clear) {
-      try { await api.clear(); } catch (_) { /* ignore */ }
+    if (slot == null || slot === '*') {
+      if (api?.clear) {
+        try { await api.clear('*'); } catch (_) { /* ignore */ }
+      }
+      this.getSaveSlots().forEach((sl) => {
+        try { localStorage.removeItem(this._browserSaveKey(sl)); } catch (_) { /* ignore */ }
+      });
+      try { localStorage.removeItem('factoryGame'); } catch (_) { /* ignore */ }
+      return;
     }
-    try { localStorage.removeItem('factoryGame'); } catch (_) { /* ignore */ }
+    const id = this.normalizeSaveSlot(slot);
+    if (api?.clear) {
+      try { await api.clear(id); } catch (_) { /* ignore */ }
+    }
+    try { localStorage.removeItem(this._browserSaveKey(id)); } catch (_) { /* ignore */ }
   }
 
   stopGameBgm() {
@@ -537,10 +775,15 @@ class FactoryGame {
     document.addEventListener('keydown', unlock);
   }
 
-  async startNewGameFromMenu() {
-    const has = await this.hasSaveData();
-    if (has && !confirm('开始新游戏将覆盖当前存档，确定吗？')) return;
-    await this.clearSaveFiles();
+  async startNewGameFromMenu(slot) {
+    // 未指定档位：先进入选档界面
+    if (slot == null) {
+      await this.openSaveSlotPicker('new');
+      return;
+    }
+    const id = this.normalizeSaveSlot(slot);
+    this.setActiveSaveSlot(id);
+    await this.clearSaveFiles(id);
     this.state = this.getDefaultState();
     this.state.difficulty = 'normal';
     this.timeScale = 1;
@@ -557,27 +800,35 @@ class FactoryGame {
     document.getElementById('main-menu-home')?.classList.add('hidden');
     document.getElementById('main-menu-brand')?.classList.add('hidden');
     document.getElementById('main-menu-achievements')?.classList.add('hidden');
+    document.getElementById('main-menu-slots')?.classList.add('hidden');
+    document.getElementById('main-menu')?.classList.remove('slots-open', 'overlay-open');
     this.showDifficultySelect();
   }
 
-  async loadGameFromMenu() {
-    const has = await this.hasSaveData();
-    if (!has) {
-      alert('没有可用存档');
-      await this.refreshMainMenuLoadButton();
+  async loadGameFromMenu(slot) {
+    if (slot == null) {
+      const has = await this.hasSaveData();
+      if (!has) {
+        alert('没有可用存档');
+        await this.refreshMainMenuLoadButton();
+        return;
+      }
+      await this.openSaveSlotPicker('load');
       return;
     }
 
+    const id = this.normalizeSaveSlot(slot);
+    this.setActiveSaveSlot(id);
     this._atMainMenu = false;
     this.stopMenuBgm();
     let needComic = false;
 
     try {
       await this.playSceneEnterTransition({
-        message: '正在读取存档…',
+        message: this.t('slots.reading', { label: this.getSaveSlotLabel(id) }),
         fadeOutSelectors: ['#main-menu'],
         onDuringLoading: async () => {
-          const ok = await this.load();
+          const ok = await this.load(id);
           if (!ok) throw new Error('load failed');
           needComic = !this.state.defense?.introSeen;
           this.enterGameShell({ holdForComic: needComic, keepCovered: true });
@@ -607,7 +858,8 @@ class FactoryGame {
 
   /** 登声 → 渐隐源界面 → 黑屏 1s → 渐显加载层 → 执行加载 → 离场过渡 → 渐显下一屏 */
   async playSceneEnterTransition({
-    message = '正在进入村落…',
+    message = null,
+
     fadeOutSelectors = ['#main-menu'],
     onDuringLoading = async () => {},
     revealAfter = async () => {},
@@ -655,7 +907,9 @@ class FactoryGame {
   async _fadeInLoadingScreen(message) {
     const loading = document.getElementById('boot-transition');
     const text = document.getElementById('boot-transition-text');
-    if (text) text.textContent = message;
+    if (text) text.textContent = message == null || message === ''
+      ? this.t('boot.entering')
+      : message;
     if (loading) {
       loading.classList.remove('hidden', 'boot-transition-fade-out', 'boot-transition-play');
       void loading.offsetWidth;
@@ -666,10 +920,10 @@ class FactoryGame {
   }
 
   /** 仅渐显加载层（如返回主菜单），不含入场黑屏 */
-  async showLoadingScreen(message = '加载中…') {
+  async showLoadingScreen(message) {
     this._bootTransitionActive = true;
     this.paused = true;
-    await this._fadeInLoadingScreen(message);
+    await this._fadeInLoadingScreen(message == null ? this.t('boot.loading') : message);
     await this._sleep(LOADING_FADE_MS);
   }
 
@@ -774,8 +1028,8 @@ class FactoryGame {
     return new Promise((r) => setTimeout(r, Math.max(0, ms || 0)));
   }
 
-  async playBootTransition(message = '正在进入村落…') {
-    await this.showLoadingScreen(message);
+  async playBootTransition(message) {
+    await this.showLoadingScreen(message == null ? this.t('boot.entering') : message);
     const remain = LOADING_MIN_DWELL_MS;
     await this._sleep(remain);
   }
@@ -802,7 +1056,7 @@ class FactoryGame {
     const needComic = !this.state.defense?.introSeen;
 
     await this.playSceneEnterTransition({
-      message: fromMenu ? '正在进入村落…' : '正在重新开始…',
+      message: fromMenu ? this.t('boot.entering') : this.t('boot.restarting'),
       fadeOutSelectors: ['#main-menu', '#difficulty-select'],
       onDuringLoading: async () => {
         document.getElementById('main-menu')?.classList.add('hidden');
@@ -935,10 +1189,13 @@ class FactoryGame {
     }
 
     document.getElementById('mm-start')?.addEventListener('click', () => {
-      void this.startNewGameFromMenu();
+      void this.openSaveSlotPicker('new');
     });
     document.getElementById('mm-load')?.addEventListener('click', () => {
-      void this.loadGameFromMenu();
+      void this.openSaveSlotPicker('load');
+    });
+    document.getElementById('mm-slots-back')?.addEventListener('click', () => {
+      this.showMainMenuHome();
     });
     document.getElementById('mm-settings')?.addEventListener('click', () => {
       this._mmSettingsTab = 'display';
@@ -1030,6 +1287,12 @@ class FactoryGame {
       this.settings.enableTutorial = !!e.target.checked;
       void this.applySettings({ applyDisplay: false });
       this.syncSettingsForm();
+    });
+    document.getElementById('mm-set-locale')?.addEventListener('change', (e) => {
+      const loc = String(e.target.value || 'zh-CN');
+      this.settings.locale = loc;
+      void this.applySettings({ applyDisplay: false });
+      this.applyLocale(loc);
     });
     document.getElementById('mm-set-resource-gain-notify')?.addEventListener('change', (e) => {
       this.settings.resourceGainNotify = !!e.target.checked;
@@ -1452,38 +1715,47 @@ class FactoryGame {
     this.startTutorialIfNeeded();
   }
 
-  // ========== 存档 ==========
+  // ========== 存档（A/B/C 三档）==========
   save() {
     if (!this._inGameSession) return;
     this.state.lastSaveTime = Date.now();
     const raw = JSON.stringify(this.state);
+    const slot = this.getActiveSaveSlot();
     const api = this._saveApi();
     if (api?.write) {
-      void api.write(raw).catch((e) => console.warn('[save]', e));
+      void api.write(slot, raw).catch((e) => console.warn('[save]', e));
       return;
     }
     try {
-      localStorage.setItem('factoryGame', raw);
+      localStorage.setItem(this._browserSaveKey(slot), raw);
     } catch (e) { /* ignore */ }
   }
 
-  async load() {
+  async load(slot) {
     try {
+      this.migrateBrowserLegacySaves();
+      const id = this.normalizeSaveSlot(slot ?? this.getActiveSaveSlot());
+      this.setActiveSaveSlot(id);
       let saved = null;
       const api = this._saveApi();
       if (api?.read) {
-        saved = await api.read();
-        // 首次切到目录存档：把旧 localStorage 迁过去
+        saved = await api.read(id);
+        // 兼容：目录存档为空时尝试浏览器该档 / 旧单档
         if (!saved) {
-          const legacy = localStorage.getItem('factoryGame');
-          if (legacy) {
-            await api.write(legacy);
-            try { localStorage.removeItem('factoryGame'); } catch (_) { /* ignore */ }
-            saved = legacy;
+          const browser = localStorage.getItem(this._browserSaveKey(id))
+            || (id === 'a' ? localStorage.getItem('factoryGame') : null);
+          if (browser) {
+            await api.write(id, browser);
+            try {
+              localStorage.removeItem(this._browserSaveKey(id));
+              if (id === 'a') localStorage.removeItem('factoryGame');
+            } catch (_) { /* ignore */ }
+            saved = browser;
           }
         }
       } else {
-        saved = localStorage.getItem('factoryGame');
+        saved = localStorage.getItem(this._browserSaveKey(id))
+          || (id === 'a' ? localStorage.getItem('factoryGame') : null);
       }
       if (saved) {
         const parsed = JSON.parse(saved);
@@ -2113,10 +2385,8 @@ class FactoryGame {
   }
 
   reset({ skipConfirm = false } = {}) {
-    if (!skipConfirm && !confirm('确定要重置所有进度吗？此操作不可撤销！')) return;
-    const api = this._saveApi();
-    if (api?.clear) void api.clear().catch(() => {});
-    try { localStorage.removeItem('factoryGame'); } catch (_) { /* ignore */ }
+    if (!skipConfirm && !confirm('确定要重置当前存档进度吗？此操作不可撤销！')) return;
+    void this.clearSaveFiles(this.getActiveSaveSlot());
     this.state = this.getDefaultState();
     this.state.difficulty = 'normal';
     this.timeScale = 1;
@@ -2131,16 +2401,16 @@ class FactoryGame {
     this.showDifficultySelect();
   }
 
-  /** 主菜单设置：只清存档，不进入选难度 */
+  /** 主菜单设置：清空全部 A/B/C 存档，不进入选难度 */
   async resetSaveFromMainMenu() {
-    if (!confirm('确定要重置存档吗？此操作不可撤销！')) return;
-    await this.clearSaveFiles();
+    if (!confirm(this.t('settings.resetConfirmMain'))) return;
+    await this.clearSaveFiles('*');
     this.state = this.getDefaultState();
     this.state.difficulty = 'normal';
     document.getElementById('main-menu-achievements')?.classList.add('hidden');
     this.showMainMenuHome();
     await this.refreshMainMenuLoadButton();
-    this.showNotification('存档已重置');
+    this.showNotification('全部存档已重置');
   }
 
   // ========== 背景介绍（两页漫画）/ 新手教程 ==========
@@ -3484,7 +3754,7 @@ class FactoryGame {
 
   /** 合成栏 / 工具栏 / 武器栏：需先解锁工作台 */
   isWorkbenchTabUnlocked() {
-    return this.isTechUnlocked('unlock_workbench');
+    return this.hasTechFlag('workbench') || this.isTechUnlocked('unlock_workbench');
   }
 
   isCombatGear(toolId) {
@@ -3611,7 +3881,7 @@ class FactoryGame {
   }
 
   isAutoProduceUnlocked() {
-    return this.isTechUnlocked('unlock_auto_produce');
+    return this.hasTechFlag('autoProduce') || this.isTechUnlocked('unlock_auto_produce');
   }
 
   /** 未解锁时强制关闭所有自动生产开关 */
@@ -4151,23 +4421,20 @@ class FactoryGame {
   getToolSpeed(level) {
     const map = GAME_DATA.villagerWork.toolSpeedByLevel || {};
     let speed = map[level] ?? GAME_DATA.villagerWork.tooledSpeed ?? 0.25;
-    const effLv = this.getTechRepeatLevel('unlock_tool_efficiency').current;
-    if (effLv > 0) speed *= 1 + effLv * 0.05;
+    const { add } = this.sumTechStat('toolGatherMultAdd');
+    if (add > 0) speed *= 1 + add;
     return speed;
   }
 
   /** 村民徒手基础效率（科技「村民训练」：每级 +0.01） */
   getVillagerBaseSpeed() {
     const base = GAME_DATA.villagerWork.baseSpeed ?? 0.05;
-    const lv = this.getTechRepeatLevel('unlock_worker_efficiency').current;
-    return base + lv * 0.01;
+    return base + this.sumTechStat('workerSpeedAdd').add;
   }
 
-  /** 生产订单每人效率：徒手基础 + 合成效率科技（每级 +0.02） */
+  /** 生产订单每人效率：徒手基础 + 合成效率科技 */
   getCraftWorkerSpeed() {
-    const per = GAME_DATA.villagerWork?.craftSpeedPerTechLevel ?? 0.02;
-    const lv = this.getTechRepeatLevel('unlock_craft_efficiency').current;
-    return this.getVillagerBaseSpeed() + lv * per;
+    return this.getVillagerBaseSpeed() + this.sumTechStat('craftSpeedAdd').add;
   }
 
   ensureSanctuaryState() {
@@ -4507,17 +4774,16 @@ class FactoryGame {
 
 
 
-  /** 食物采集科技：每级给所有食物点 +0.01/秒/人（最高 3 级） */
+  /** 食物采集科技：配置 foodGatherSpeedAdd 累加 */
   getFoodGatherSpeedBonus() {
-    const lv = this.getTechRepeatLevel('unlock_food_gather_speed').current;
-    return Math.max(0, Math.min(3, lv)) * 0.01;
+    return Math.max(0, this.sumTechStat('foodGatherSpeedAdd').add);
   }
 
   getToolMaxDurability(level) {
     const map = GAME_DATA.toolDurability?.maxByLevel || {};
     let base = map[level] ?? map[1] ?? 100;
-    const durLv = this.getTechRepeatLevel('unlock_tool_durability').current;
-    if (durLv > 0) base *= 1 + durLv * 0.1;
+    const { add } = this.sumTechStat('toolDurabilityMultAdd');
+    if (add > 0) base *= 1 + add;
     return Math.floor(base);
   }
 
@@ -4854,9 +5120,7 @@ class FactoryGame {
 
   getRepairCostRatio() {
     const base = GAME_DATA.toolDurability?.repairCostRatio ?? 0.5;
-    const per = GAME_DATA.toolDurability?.repairCostReducePerLevel ?? 0.06;
-    const lv = this.getTechRepeatLevel('unlock_efficient_repair').current;
-    return Math.max(0, base - lv * per);
+    return Math.max(0, base - this.sumTechStat('repairCostReduce').add);
   }
 
   getPieceRepairFactor(toolId, piece) {
@@ -5771,9 +6035,24 @@ class FactoryGame {
     const techId = tech.id;
     this.state.unlockedTech.push(techId);
     if (tech.gateLevel) this.applyGateTechLevel(tech);
-    if (techId === 'unlock_treasure_chest') this.state.starterChestRevealed = true;
+    (tech.effects || []).forEach((e) => {
+      if (e.type === 'gateLevel' && e.level != null && !tech.gateLevel) {
+        this.applyGateTechLevel({ ...tech, gateLevel: Number(e.level) });
+      }
+    });
+    this._runTechOnUnlockActions(tech);
+    const unlockedPts = new Set();
     Object.entries(GAME_DATA.resourcePoints).forEach(([id, def]) => {
-      if (def.unlockRequires === techId) this.unlockResourcePoint(id);
+      if (def.unlockRequires === techId) {
+        this.unlockResourcePoint(id);
+        unlockedPts.add(id);
+      }
+    });
+    (tech.effects || []).forEach((e) => {
+      if (e.type === 'unlockPoint' && e.pointId && !unlockedPts.has(e.pointId)) {
+        this.unlockResourcePoint(e.pointId);
+        unlockedPts.add(e.pointId);
+      }
     });
     return true;
   }
@@ -5815,14 +6094,94 @@ class FactoryGame {
     return { current, max };
   }
 
+  /** 某次解锁对应的 effects 列表（支持 levelEffects[i].effects） */
+  _effectsForTechOccurrence(tech, occurrenceIndex = 0) {
+    if (!tech) return [];
+    const idx = Math.max(0, Math.floor(Number(occurrenceIndex) || 0));
+    if (Array.isArray(tech.levelEffects) && tech.levelEffects.length) {
+      const le = tech.levelEffects[Math.min(idx, tech.levelEffects.length - 1)];
+      if (Array.isArray(le?.effects) && le.effects.length) return le.effects;
+    }
+    return Array.isArray(tech.effects) ? tech.effects : [];
+  }
+
+  /** 遍历已解锁科技的全部 effects（可重复 id 按次数展开） */
+  forEachUnlockedTechEffect(fn) {
+    if (typeof fn !== 'function') return;
+    const byId = Object.fromEntries((GAME_DATA.techTree || []).map((t) => [t.id, t]));
+    const counts = Object.create(null);
+    (this.state.unlockedTech || []).forEach((id) => {
+      counts[id] = (counts[id] || 0) + 1;
+      const tech = byId[id];
+      if (!tech) return;
+      const effects = this._effectsForTechOccurrence(tech, counts[id] - 1);
+      effects.forEach((effect) => fn(effect, tech, counts[id] - 1));
+    });
+  }
+
+  /** 汇总配置中的数值加成（stat） */
+  sumTechStat(stat) {
+    let add = 0;
+    let mul = 1;
+    let has = false;
+    this.forEachUnlockedTechEffect((effect) => {
+      if (effect.type !== 'stat' || effect.stat !== stat) return;
+      has = true;
+      const v = Number(effect.value);
+      if (!Number.isFinite(v)) return;
+      if (effect.op === 'mul') mul *= v;
+      else add += v;
+    });
+    return { add, mul, has };
+  }
+
+  hasTechFlag(flag) {
+    let found = false;
+    this.forEachUnlockedTechEffect((effect) => {
+      if (effect.type === 'unlockFlag' && effect.flag === flag) found = true;
+    });
+    return found;
+  }
+
+  _runTechOnUnlockActions(tech) {
+    const effects = Array.isArray(tech?.effects) ? tech.effects : [];
+    effects.forEach((e) => {
+      if (e.type !== 'onUnlock') return;
+      if (e.action === 'revealStarterChest') this.state.starterChestRevealed = true;
+      if (e.action === 'flashWorkbench') {
+        const openRecipeIds = GAME_DATA.recipes
+          .filter((r) => this.isRecipeTechUnlocked(r.id))
+          .map((r) => r.id);
+        this.flashWorkbenchTabs(openRecipeIds);
+      }
+      if (e.action === 'maybeGrantStarterChest') this.maybeGrantStarterChest();
+    });
+  }
+
   getTechCost(tech) {
     if (tech.pointId && tech.upgradeType) {
       const level = this.getPointUpgradeLevel(tech.pointId, tech.upgradeType);
-      if (tech.upgradeType === 'efficiency') {
+      if (tech.upgradeType === 'efficiency' || tech.dynamicCost) {
         return this.getEfficiencyUpgradeCost(tech.pointId, level);
       }
       const costType = tech.upgradeType === 'refine' ? 'double' : tech.upgradeType;
-      return this.getPointUpgradeCost(tech.pointId, costType, level);
+      // 优先读科技节点上的费用（科技树配置 / 编辑器），再回退资源点表
+      let base = null;
+      if (tech.upgradeType === 'refine') {
+        base = tech.cost && Object.keys(tech.cost).length ? { ...tech.cost } : null;
+      } else if (Array.isArray(tech.repeatCosts) && tech.repeatCosts[level]) {
+        base = { ...tech.repeatCosts[level] };
+      }
+      if (!base) return this.getPointUpgradeCost(tech.pointId, costType, level);
+      const def = GAME_DATA.resourcePoints?.[tech.pointId];
+      if (def?.isTreasureChest) return base;
+      const scale = this.getPointUpgradeCostScale(tech.pointId, costType);
+      if (!scale || scale === 1) return base;
+      const sc = {};
+      Object.keys(base).forEach((k) => {
+        sc[k] = Math.max(1, Math.floor((base[k] || 0) * scale));
+      });
+      return sc;
     }
     if (tech.repeatable) {
       const times = this.state.unlockedTech.filter(t => t === tech.id).length;
@@ -5832,7 +6191,7 @@ class FactoryGame {
       if (this.isTechUnlocked(tech.id)) {
         const cost = tech.repeatCost || tech.cost;
         const scaled = {};
-        Object.entries(cost).forEach(([k, v]) => {
+        Object.entries(cost || {}).forEach(([k, v]) => {
           scaled[k] = Math.ceil(v * Math.pow(1.5, times));
         });
         return scaled;
@@ -5845,17 +6204,15 @@ class FactoryGame {
   getHouseCapacity(house) {
     const { baseCapacity, capacityPerLevel } = GAME_DATA.housing;
     let cap = (baseCapacity || 1) + (house?.level || 0) * (capacityPerLevel || 1);
-    if ((house?.level || 0) === 0 && this._isTechActiveUnlocked('unlock_house_capacity')) {
-      cap += 1;
+    if ((house?.level || 0) === 0 && this.hasTechFlag('houseCapacity')) {
+      cap += this.sumTechStat('houseCapacityAdd').add || 1;
     }
     return cap;
   }
 
   applyHouseCostDiscount(cost) {
     if (!cost) return cost;
-    const lv = this.getTechRepeatLevel('unlock_house_build_discount').current;
-    const per = GAME_DATA.housingTechBonuses?.houseCostDiscountPerLevel ?? 0.1;
-    const discount = per * lv;
+    const discount = this.sumTechStat('houseCostDiscount').add;
     if (discount <= 0) return { ...cost };
     const scaled = {};
     Object.entries(cost).forEach(([k, v]) => {
@@ -5866,27 +6223,24 @@ class FactoryGame {
 
   getHouseOrderCount() {
     const base = GAME_DATA.housing.houseOrderCount || 20;
-    const lv = this.getTechRepeatLevel('unlock_house_work_speed').current;
-    const reduce = (GAME_DATA.housingTechBonuses?.houseOrderReducePerLevel ?? 2) * lv;
+    const reduce = this.sumTechStat('houseOrderReduce').add;
     const min = GAME_DATA.housingTechBonuses?.houseOrderMin ?? 8;
     return Math.max(min, base - reduce);
   }
 
   getAllyCombatMults() {
-    const cfg = GAME_DATA.defenseCombatBonuses || {};
-    const hpLv = this.getTechRepeatLevel('unlock_combat_hp').current;
-    const atkLv = this.getTechRepeatLevel('unlock_combat_atk').current;
-    const aspdLv = this.getTechRepeatLevel('unlock_combat_aspd').current;
     return {
-      hp: 1 + hpLv * (cfg.hpPerLevel ?? 0.08),
-      atk: 1 + atkLv * (cfg.atkPerLevel ?? 0.06),
-      aspd: 1 + aspdLv * (cfg.aspdPerLevel ?? 0.05),
+      hp: 1 + this.sumTechStat('combatHpMultAdd').add,
+      atk: 1 + this.sumTechStat('combatAtkMultAdd').add,
+      aspd: 1 + this.sumTechStat('combatAspdMultAdd').add,
     };
   }
 
   /** 科技「坚韧皮肤」等提供的友军固定减伤 */
   getAllyFlatDrBonus() {
-    if (!this.isTechUnlocked('unlock_tough_skin')) return 0;
+    if (!this.hasTechFlag('toughSkin')) return 0;
+    const fromStat = this.sumTechStat('toughSkinFlatDr').add;
+    if (fromStat > 0) return fromStat;
     return GAME_DATA.defenseCombatBonuses?.toughSkinFlatDr ?? 1;
   }
 
@@ -6080,7 +6434,12 @@ class FactoryGame {
   isHouseUpgradeTechUnlocked(targetLevel) {
     const lv = Number(targetLevel) || 0;
     if (lv <= 0) return true;
-    return this.isTechUnlocked(`unlock_house_upgrade_${lv}`);
+    if (this.isTechUnlocked(`unlock_house_upgrade_${lv}`)) return true;
+    let ok = false;
+    this.forEachUnlockedTechEffect((effect) => {
+      if (effect.type === 'houseUpgrade' && Number(effect.level) === lv) ok = true;
+    });
+    return ok;
   }
 
   getHouseUpgradeTechId(targetLevel) {
@@ -6345,8 +6704,7 @@ class FactoryGame {
 
   getManualClickPower() {
     const base = GAME_DATA.villagerWork.baseClickPower || 1;
-    const bonus = this.state.unlockedTech.filter(t => t === 'unlock_click_power').length;
-    return base + bonus;
+    return base + this.sumTechStat('clickPowerAdd').add;
   }
 
   getClickPower(type, id) {
@@ -6356,8 +6714,7 @@ class FactoryGame {
 
   getBreedCost() {
     const base = GAME_DATA.housing?.breedFoodCost ?? 10;
-    const lv = this.getTechRepeatLevel('unlock_breed_saving').current;
-    const save = (GAME_DATA.housingTechBonuses?.breedFoodSavePerLevel ?? 2) * lv;
+    const save = this.sumTechStat('breedFoodSave').add;
     return { food: Math.max(1, base - save) };
   }
 
@@ -6509,15 +6866,24 @@ class FactoryGame {
 
   async hydrateAchievementsFromSave() {
     try {
-      let raw = null;
+      this.migrateBrowserLegacySaves();
       const api = this._saveApi();
-      if (api?.read) raw = await api.read();
-      else raw = localStorage.getItem('factoryGame');
-      if (!raw) return;
-      const data = JSON.parse(raw);
-      if (Array.isArray(data?.unlockedAchievements)) {
-        this.state.unlockedAchievements = data.unlockedAchievements.slice();
+      const merged = new Set(this.state.unlockedAchievements || []);
+      for (const slot of this.getSaveSlots()) {
+        let raw = null;
+        if (api?.read) {
+          try { raw = await api.read(slot); } catch (_) { raw = null; }
+        }
+        if (!raw) {
+          try { raw = localStorage.getItem(this._browserSaveKey(slot)); } catch (_) { raw = null; }
+        }
+        if (!raw) continue;
+        try {
+          const data = JSON.parse(raw);
+          (data?.unlockedAchievements || []).forEach((id) => merged.add(id));
+        } catch (_) { /* ignore */ }
       }
+      this.state.unlockedAchievements = [...merged];
     } catch (_) { /* ignore */ }
   }
 
@@ -7011,10 +7377,8 @@ class FactoryGame {
   }
 
   getHoldClickLevel() {
-    return Math.min(
-      this.state.unlockedTech.filter(t => t === 'unlock_auto_click').length,
-      GAME_DATA.holdClick.maxLevel
-    );
+    const max = GAME_DATA.holdClick?.maxLevel ?? 10;
+    return Math.min(this.sumTechStat('holdClickLevel').add, max);
   }
 
   getHoldClickCooldownMs() {
@@ -7104,7 +7468,7 @@ class FactoryGame {
     if (type === 'point') {
       return Math.max(1, Math.round(def.baseMaxCount * this.getCountUpgradeRatio(id)));
     }
-    if (type === 'recipe' && def?.usesFurnace && this.isTechUnlocked('unlock_furnace_upgrade')) {
+    if (type === 'recipe' && def?.usesFurnace && (this.hasTechFlag('furnaceUpgrade') || this.isTechUnlocked('unlock_furnace_upgrade'))) {
       return Math.max(1, Math.round(def.baseMaxCount / 2));
     }
     return def.baseMaxCount;
@@ -7118,7 +7482,10 @@ class FactoryGame {
     if (!def?.baseCooldown) return 0;
     if (def.isTreasureChest) return def.baseCooldown;
     let cd = def.baseCooldown * this.getCooldownUpgradeRatio(id);
-    if (this._isTechActiveUnlocked('unlock_point_recovery')) cd *= 0.9;
+    if (this.hasTechFlag('pointRecovery') || this._isTechActiveUnlocked('unlock_point_recovery')) {
+      const mult = this.sumTechStat('pointRecoveryMult');
+      cd *= mult.has ? mult.mul : 0.9;
+    }
     return cd;
   }
 
@@ -7731,14 +8098,27 @@ class FactoryGame {
     this.state.unlockedTech.push(techId);
 
     if (tech.gateLevel) this.applyGateTechLevel(tech);
+    // effects 中的 gateLevel（若未写在 tech.gateLevel）
+    (tech.effects || []).forEach((e) => {
+      if (e.type === 'gateLevel' && e.level != null && !tech.gateLevel) {
+        this.applyGateTechLevel({ ...tech, gateLevel: Number(e.level) });
+      }
+    });
 
-    if (techId === 'unlock_treasure_chest') this.state.starterChestRevealed = true;
+    this._runTechOnUnlockActions(tech);
 
     const newPointIds = [];
     Object.entries(GAME_DATA.resourcePoints).forEach(([id, def]) => {
       if (def.unlockRequires === techId) {
         this.unlockResourcePoint(id);
         newPointIds.push(id);
+      }
+    });
+    // effects.unlockPoint 兜底
+    (tech.effects || []).forEach((e) => {
+      if (e.type === 'unlockPoint' && e.pointId && !newPointIds.includes(e.pointId)) {
+        this.unlockResourcePoint(e.pointId);
+        newPointIds.push(e.pointId);
       }
     });
     const newRecipeIds = GAME_DATA.recipes
@@ -7753,20 +8133,21 @@ class FactoryGame {
           newPointIds.push(id);
         }
       });
+      this._runTechOnUnlockActions(t);
     });
 
     if (!this._suppressSounds) this.sounds.playUnlock();
     // 不再弹出右上角解锁提醒
 
-    // 工作台：开放合成/工具栏，并高亮已具备条件的配方（如开局工具制作）
-    if (techId === 'unlock_workbench') {
+    const didFlashWorkbench = (tech.effects || []).some(
+      (e) => e.type === 'onUnlock' && e.action === 'flashWorkbench'
+    );
+    if (didFlashWorkbench || techId === 'unlock_workbench') {
       const openRecipeIds = GAME_DATA.recipes
         .filter(r => this.isRecipeTechUnlocked(r.id))
         .map(r => r.id);
       this.queueUnlockHighlights({ pointIds: newPointIds, recipeIds: openRecipeIds });
-      this.flashWorkbenchTabs(openRecipeIds);
-      // 砍够木头后再解锁工作台时，随即触发引导宝箱
-      this.maybeGrantStarterChest();
+      if (!didFlashWorkbench) this.flashWorkbenchTabs(openRecipeIds);
     } else {
       this.queueUnlockHighlights({ pointIds: newPointIds, recipeIds: newRecipeIds });
     }
@@ -8327,6 +8708,10 @@ class FactoryGame {
       playBgm: true,
       masterVolume: 0.7,
       sfxVolume: 1,
+      /** 当前使用的存档位 a/b/c */
+      activeSaveSlot: 'a',
+      /** UI 语言：zh-CN / en / ja */
+      locale: 'zh-CN',
       /** 新开局是否启动新手教程（默认开） */
       enableTutorial: true,
       /** 采集/开箱/生产完成时是否弹出下方资源获得提示（默认开） */
@@ -8360,10 +8745,19 @@ class FactoryGame {
       }
       // 缺省或非法值时默认开启 BGM
       if (typeof this.settings.playBgm !== 'boolean') this.settings.playBgm = true;
+      const supported = window.TRIBE_I18N?.SUPPORTED || ['zh-CN', 'en', 'ja'];
+      if (!supported.includes(this.settings.locale)) this.settings.locale = 'zh-CN';
     } catch (_) {
       this.settings = { ...defaults };
     }
     await this.applySettings({ persist: false, applyDisplay: true });
+    try {
+      const fromLs = localStorage.getItem('clickTribeActiveSlot');
+      this._saveSlot = this.normalizeSaveSlot(this.settings?.activeSaveSlot || fromLs || 'a');
+      this.settings.activeSaveSlot = this._saveSlot;
+    } catch (_) {
+      this._saveSlot = 'a';
+    }
   }
 
   async saveSettings() {
@@ -8449,12 +8843,44 @@ class FactoryGame {
     fillResSelect(document.getElementById('mm-set-display-res'));
 
     const hintText = this._saveApi()?.displaySet
-      ? '全屏时分辨率选项仅在切回窗口化后生效。'
-      : '浏览器打开时无法改窗口大小，设置仍会保存。';
+      ? this.t('display.hintElectron')
+      : this.t('display.hintBrowser');
     const hint = document.getElementById('pause-display-hint');
     if (hint) hint.textContent = hintText;
     const mmHint = document.getElementById('mm-pause-display-hint');
     if (mmHint) mmHint.textContent = hintText;
+
+    const supportedLocale = (loc) => {
+      const supported = window.TRIBE_I18N?.SUPPORTED || ['zh-CN', 'en', 'ja'];
+      return supported.includes(loc) ? loc : 'zh-CN';
+    };
+    const fillLocaleSelect = (sel) => {
+      if (!sel) return;
+      const list = window.TRIBE_I18N?.listLocales?.() || [
+        { id: 'zh-CN', label: '简体中文' },
+        { id: 'en', label: 'English' },
+        { id: 'ja', label: '日本語' },
+      ];
+      if (!sel.dataset.ready) {
+        sel.dataset.ready = '1';
+        sel.innerHTML = '';
+        list.forEach((item) => {
+          const opt = document.createElement('option');
+          opt.value = item.id;
+          opt.textContent = item.label;
+          sel.appendChild(opt);
+        });
+      } else {
+        // 保持各语言自称的 meta.label，不随当前 UI 语言改写
+        [...sel.options].forEach((opt) => {
+          const found = list.find((x) => x.id === opt.value);
+          if (found) opt.textContent = found.label;
+        });
+      }
+      sel.value = supportedLocale(s.locale);
+    };
+    fillLocaleSelect(document.getElementById('set-locale'));
+    fillLocaleSelect(document.getElementById('mm-set-locale'));
 
     const syncAudio = (bgmId, masterId, masterValId, sfxId, sfxValId) => {
       const bgm = document.getElementById(bgmId);
@@ -8598,6 +9024,12 @@ class FactoryGame {
       this.settings.enableTutorial = !!e.target.checked;
       void this.applySettings({ applyDisplay: false });
       this.syncSettingsForm();
+    });
+    document.getElementById('set-locale')?.addEventListener('change', (e) => {
+      const loc = String(e.target.value || 'zh-CN');
+      this.settings.locale = loc;
+      void this.applySettings({ applyDisplay: false });
+      this.applyLocale(loc);
     });
     document.getElementById('set-resource-gain-notify')?.addEventListener('change', (e) => {
       this.settings.resourceGainNotify = !!e.target.checked;
@@ -8836,10 +9268,8 @@ class FactoryGame {
     });
 
     document.getElementById('dev-reset-game')?.addEventListener('click', () => {
-      if (!confirm('确定要重置游戏吗？所有进度将丢失！')) return;
-      const api = this._saveApi();
-      if (api?.clear) void api.clear().catch(() => {});
-      try { localStorage.removeItem('factoryGame'); } catch (_) { /* ignore */ }
+      if (!confirm('确定要重置当前存档吗？该档进度将丢失！')) return;
+      void this.clearSaveFiles(this.getActiveSaveSlot());
       if (this.sounds.bgm) {
         this.sounds.bgm.stop();
         this.sounds.bgm = null;
@@ -9080,10 +9510,25 @@ class FactoryGame {
     this.state.unlockedTech.push(techId);
 
     if (tech.gateLevel) this.applyGateTechLevel(tech);
-    if (techId === 'unlock_treasure_chest') this.state.starterChestRevealed = true;
+    (tech.effects || []).forEach((e) => {
+      if (e.type === 'gateLevel' && e.level != null && !tech.gateLevel) {
+        this.applyGateTechLevel({ ...tech, gateLevel: Number(e.level) });
+      }
+    });
+    this._runTechOnUnlockActions(tech);
 
+    const unlockedPts = new Set();
     Object.entries(GAME_DATA.resourcePoints).forEach(([id, def]) => {
-      if (def.unlockRequires === techId) this.unlockResourcePoint(id);
+      if (def.unlockRequires === techId) {
+        this.unlockResourcePoint(id);
+        unlockedPts.add(id);
+      }
+    });
+    (tech.effects || []).forEach((e) => {
+      if (e.type === 'unlockPoint' && e.pointId && !unlockedPts.has(e.pointId)) {
+        this.unlockResourcePoint(e.pointId);
+        unlockedPts.add(e.pointId);
+      }
     });
 
     this.showNotification(`[Dev] 解锁科技：${tech.name}`);
@@ -9843,7 +10288,7 @@ class FactoryGame {
       : tech.icon;
     toast.innerHTML = `
       <div class="unlock-toast-header"><span class="unlock-toast-icon">${toastIcon}</span><span>解锁成功：${tech.name}${toastLevel}</span></div>
-      <div class="unlock-toast-body">${tech.description}</div>
+      <div class="unlock-toast-body">${this.getTechDisplayDescription(tech, { justUnlocked: true }) || tech.description || ''}</div>
       ${extras.length ? `<div class="unlock-toast-new"><div class="unlock-toast-new-title">新内容已开放</div>${extras.map(i => `<div class="unlock-toast-item">${i}</div>`).join('')}</div>` : ''}
     `;
     container.appendChild(toast);
@@ -11579,12 +12024,43 @@ class FactoryGame {
     });
   }
 
-  /** 应用科技树平移 + 缩放 */
+  /** 应用科技树平移 + 缩放（并钳制在画布边界内） */
   _applyTechTreeTransform() {
     const content = this._techNodes;
     if (!content) return;
+    this._clampTechTreePan();
     const z = this._techZoom ?? 1;
     content.style.transform = `translate(${this._panX}px, ${this._panY}px) scale(${z})`;
+  }
+
+  /** 视角不可划出科技树画布边界 */
+  _clampTechTreePan() {
+    const canvas = document.getElementById('tech-tree-canvas');
+    const content = this._techNodes;
+    if (!canvas || !content) return;
+    const z = this._techZoom ?? 1;
+    const vw = canvas.clientWidth || 0;
+    const vh = canvas.clientHeight || 0;
+    if (vw < 2 || vh < 2) return;
+
+    const layout = GAME_DATA.techTreeLayout?.canvas;
+    const worldW = Number(layout?.width)
+      || parseFloat(content.style.width)
+      || 5600;
+    const worldH = Number(layout?.height)
+      || parseFloat(content.style.height)
+      || 5800;
+    const cw = worldW * z;
+    const ch = worldH * z;
+
+    // 内容大于视口：边缘贴齐视口；小于视口：保持整幅落在视口内
+    const minX = Math.min(0, vw - cw);
+    const maxX = Math.max(0, vw - cw);
+    const minY = Math.min(0, vh - ch);
+    const maxY = Math.max(0, vh - ch);
+
+    this._panX = Math.min(maxX, Math.max(minX, Number(this._panX) || 0));
+    this._panY = Math.min(maxY, Math.max(minY, Number(this._panY) || 0));
   }
 
   /** 将工作台节点置于画布视口中心 */
@@ -11992,7 +12468,7 @@ class FactoryGame {
     if (!canvas) return;
     const overlay = canvas.closest('.tech-tree-overlay');
     if (!overlay || overlay.classList.contains('hidden')) return;
-    const LAYOUT_VERSION = 53;
+    const LAYOUT_VERSION = 54;
     if (this._techTreeLayoutVersion !== LAYOUT_VERSION) {
       this._techTreeInited = false;
       this._techTreeLayoutVersion = LAYOUT_VERSION;
@@ -12002,6 +12478,31 @@ class FactoryGame {
     }
     this._updateTechTreeDisplay();
     this._refreshTechTooltipIfOpen();
+  }
+
+  /** 科技作用文案：优先读配置 levelEffects[档位] */
+  getTechDisplayDescription(tech, opts = {}) {
+    if (!tech) return '';
+    let levelIdx = 0;
+    if (tech.pointId && tech.upgradeType) {
+      levelIdx = this.getPointUpgradeLevel(tech.pointId, tech.upgradeType);
+    } else if (tech.repeatable) {
+      levelIdx = this.state.unlockedTech.filter((t) => t === tech.id).length;
+    } else if (tech.techSeries) {
+      levelIdx = 0;
+    }
+    // 刚解锁后次数已含本级：展示刚得到的那一级
+    if (opts.justUnlocked && (tech.repeatable || (tech.pointId && tech.upgradeType))) {
+      levelIdx = Math.max(0, levelIdx - 1);
+    }
+    if (typeof getTechEffectAtLevel === 'function') {
+      return getTechEffectAtLevel(tech, levelIdx).description || tech.description || '';
+    }
+    if (Array.isArray(tech.levelEffects) && tech.levelEffects.length) {
+      const e = tech.levelEffects[Math.min(levelIdx, tech.levelEffects.length - 1)];
+      return e?.description || tech.description || '';
+    }
+    return tech.description || '';
   }
 
   _showTechTooltip(el, tech, isPlaceholder, isUnlocked, isMaxed, canUnlock) {
@@ -12019,7 +12520,7 @@ class FactoryGame {
     const levelTag = tech.repeatable && max ? ` Lv.${current}/${max}` : '';
 
     document.getElementById('tt-name').textContent = tech.name + levelTag;
-    document.getElementById('tt-desc').textContent = tech.description;
+    document.getElementById('tt-desc').textContent = this.getTechDisplayDescription(tech);
 
     const costEl = document.getElementById('tt-cost');
     const btn = document.getElementById('tt-btn');

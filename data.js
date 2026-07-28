@@ -9,6 +9,86 @@ const POINT_UPGRADE_TYPE_META = {
   rewardAmount: { label: '奖励数量', typeIcon: '📈' },
 };
 
+/**
+ * 科技 effects 合法类型 / 字段（配置与校验共用）
+ * 运行时以 tech-tree-table 中每条科技的 effects 为权威实现声明
+ */
+const TECH_EFFECT_TYPES = {
+  unlockPoint: true,
+  unlockRecipe: true,
+  unlockFlag: true,
+  stat: true,
+  gateLevel: true,
+  houseUpgrade: true,
+  pointUpgrade: true,
+  sanctuary: true,
+  onUnlock: true,
+  prereqOnly: true,
+};
+
+const TECH_EFFECT_STATS = {
+  toolGatherMultAdd: true,
+  workerSpeedAdd: true,
+  craftSpeedAdd: true,
+  foodGatherSpeedAdd: true,
+  toolDurabilityMultAdd: true,
+  repairCostReduce: true,
+  houseCostDiscount: true,
+  houseOrderReduce: true,
+  breedFoodSave: true,
+  combatHpMultAdd: true,
+  combatAtkMultAdd: true,
+  combatAspdMultAdd: true,
+  gateRepairMultAdd: true,
+  clickPowerAdd: true,
+  holdClickLevel: true,
+  houseCapacityAdd: true,
+  toughSkinFlatDr: true,
+  pointRecoveryMult: true,
+  furnaceOrderHalf: true,
+};
+
+const TECH_EFFECT_FLAGS = {
+  workbench: true,
+  autoProduce: true,
+  toughSkin: true,
+  furnaceUpgrade: true,
+  pointRecovery: true,
+  houseCapacity: true,
+};
+
+const TECH_EFFECT_ON_UNLOCK = {
+  revealStarterChest: true,
+  flashWorkbench: true,
+  maybeGrantStarterChest: true,
+};
+
+function cloneEffectList(list) {
+  if (!Array.isArray(list)) return [];
+  return list
+    .filter((e) => e && typeof e === 'object')
+    .map((e) => {
+      const next = { ...e };
+      if (Array.isArray(e.effects)) next.effects = cloneEffectList(e.effects);
+      return next;
+    });
+}
+
+function validateTechEffectShape(effect, path = 'effects') {
+  if (!effect || typeof effect !== 'object') return `${path}: 无效对象`;
+  if (!TECH_EFFECT_TYPES[effect.type]) return `${path}: 未知 type=${effect.type}`;
+  if (effect.type === 'stat' && effect.stat && !TECH_EFFECT_STATS[effect.stat]) {
+    return `${path}: 未知 stat=${effect.stat}`;
+  }
+  if (effect.type === 'unlockFlag' && effect.flag && !TECH_EFFECT_FLAGS[effect.flag]) {
+    return `${path}: 未知 flag=${effect.flag}`;
+  }
+  if (effect.type === 'onUnlock' && effect.action && !TECH_EFFECT_ON_UNLOCK[effect.action]) {
+    return `${path}: 未知 onUnlock=${effect.action}`;
+  }
+  return null;
+}
+
 function pointUpgradeTechId(pointId, type) {
   return `point_up_${pointId}_${type}`;
 }
@@ -524,7 +604,7 @@ const GAME_DATA = {
 
   /**
    * 资源点定义：正式以 config/resource-points.js 为准（运行时 applyResourcePoints 写入）
-   * 采集/恢复/精炼费用见 config/point-upgrade-costs.js
+   * 采集/恢复/精炼费用见 config/tech-tree-table.js（point_up_* 的 maxRepeat / repeatCosts / cost）
    */
   resourcePoints: {},
   recipes: [
@@ -2529,46 +2609,6 @@ function applyToolDurability(data) {
 }
 
 /**
- * 合并资源点升级费用（config/point-upgrade-costs.js）
- * count=采集 / cooldown=资源恢复 / double=资源精炼
- */
-function applyPointUpgradeCosts(table) {
-  if (!table || !GAME_DATA?.resourcePoints) return;
-  Object.entries(table).forEach(([id, costs]) => {
-    if (!costs || typeof costs !== 'object') return;
-    const pt = GAME_DATA.resourcePoints[id];
-    if (!pt) {
-      console.warn('[config] point-upgrade-costs 未知资源点 id:', id);
-      return;
-    }
-    const copyList = (arr) => (Array.isArray(arr) ? arr.map((c) => (c && typeof c === 'object' ? { ...c } : {})) : []);
-    pt.upgradeCosts = {
-      count: copyList(costs.count),
-      cooldown: copyList(costs.cooldown),
-      double: copyList(costs.double),
-    };
-  });
-
-  // 同步已注入科技条目上的展示费用（运行时 getTechCost 仍读 upgradeCosts）
-  if (!Array.isArray(GAME_DATA.techTree)) return;
-  GAME_DATA.techTree.forEach((tech) => {
-    if (!tech?.pointId || !tech.upgradeType) return;
-    const costs = GAME_DATA.resourcePoints[tech.pointId]?.upgradeCosts;
-    if (!costs) return;
-    if (tech.upgradeType === 'refine') {
-      tech.cost = { ...(costs.double?.[0] || {}) };
-      return;
-    }
-    if (tech.upgradeType === 'count' || tech.upgradeType === 'cooldown') {
-      const arr = costs[tech.upgradeType] || [];
-      const max = tech.maxRepeat || arr.length;
-      tech.repeatCosts = arr.slice(0, max).map((c) => ({ ...c }));
-      tech.cost = { ...(tech.repeatCosts[0] || {}) };
-    }
-  });
-}
-
-/**
  * 合并通用玩法数值（config/gameplay.js）
  */
 function applyGameplayConfig(cfg) {
@@ -2581,7 +2621,7 @@ function applyGameplayConfig(cfg) {
 
 /**
  * 应用完整资源点定义表（config/resource-points.js）
- * 会重建 point_up_* 科技节点；随后仍可由 point-upgrade-costs / tech-tree-table 覆盖费用与布局
+ * 会重建 point_up_* 科技节点；随后可由 tech-tree-table 覆盖费用与布局
  */
 function applyResourcePoints(table) {
   if (!table || typeof table !== 'object' || !GAME_DATA) return;
@@ -2623,8 +2663,170 @@ function applyCombatUnitsData(data) {
   if (GAME_DATA.defense.weapons) delete GAME_DATA.defense.weapons;
 }
 
+/** 深拷贝费用对象列表 */
+function cloneCostList(arr) {
+  if (!Array.isArray(arr)) return [];
+  return arr.map((c) => (c && typeof c === 'object' ? { ...c } : {}));
+}
+
 /**
- * 应用科技树数据表（布局 / 费用）
+ * 将科技节点上的 maxRepeat / repeatCosts / cost 回写到资源点或宝箱费用表，
+ * 保证 getPointUpgradeCost 与科技树展示同源。
+ */
+function syncPointUpgradeMetaFromTech(tech) {
+  if (!tech?.pointId || !tech.upgradeType || !GAME_DATA?.resourcePoints) return;
+  const pt = GAME_DATA.resourcePoints[tech.pointId];
+  if (!pt) return;
+  if (!pt.maxUpgrades) pt.maxUpgrades = {};
+  if (!pt.upgradeCosts) pt.upgradeCosts = { count: [], cooldown: [], double: [] };
+
+  const type = tech.upgradeType;
+  if (type === 'refine') {
+    pt.maxUpgrades.double = 1;
+    pt.upgradeCosts.double = [{ ...(tech.cost || {}) }];
+    return;
+  }
+  if (type === 'count' || type === 'cooldown') {
+    const max = Math.max(0, Number(tech.maxRepeat) || 0);
+    pt.maxUpgrades[type] = max;
+    const costs = cloneCostList(tech.repeatCosts);
+    while (costs.length < max) costs.push({});
+    pt.upgradeCosts[type] = costs.slice(0, max);
+    // 精炼门槛跟随采集/恢复满级
+    const refineId = typeof pointUpgradeTechId === 'function'
+      ? pointUpgradeTechId(tech.pointId, 'refine')
+      : `point_up_${tech.pointId}_refine`;
+    const refine = GAME_DATA.techTree?.find((t) => t.id === refineId);
+    if (refine) {
+      refine.requiresPointLevels = {
+        count: pt.maxUpgrades.count || 0,
+        cooldown: pt.maxUpgrades.cooldown || 0,
+      };
+    }
+    return;
+  }
+  if (type === 'efficiency') {
+    pt.maxUpgrades.efficiency = Math.max(0, Number(tech.maxRepeat) || 0);
+    return;
+  }
+  if (pt.isTreasureChest && GAME_DATA.chestUpgradeCosts) {
+    const max = Math.max(0, Number(tech.maxRepeat) || 0);
+    pt.maxUpgrades[type] = max;
+    const costs = cloneCostList(tech.repeatCosts);
+    while (costs.length < max) costs.push({});
+    GAME_DATA.chestUpgradeCosts[type] = costs.slice(0, max);
+  }
+}
+
+/**
+ * 把表行中的费用 / 最高等级 / 作用写到科技对象
+ */
+function normalizeLevelEffects(list, max, fallbackDescription = '') {
+  const n = Math.max(0, Math.floor(Number(max) || 0));
+  const src = Array.isArray(list) ? list : [];
+  const out = [];
+  for (let i = 0; i < n; i++) {
+    const e = src[i];
+    if (e && typeof e === 'object') {
+      const next = { ...e };
+      next.description = String(next.description ?? fallbackDescription ?? '');
+      if (Array.isArray(e.effects)) next.effects = cloneEffectList(e.effects);
+      out.push(next);
+    } else if (typeof e === 'string') {
+      out.push({ description: e });
+    } else {
+      out.push({ description: String(fallbackDescription || '') });
+    }
+  }
+  return out;
+}
+
+/** 取某级作用对象（缺省回退 tech.description） */
+function getTechEffectAtLevel(tech, levelIndex = 0) {
+  if (!tech) return { description: '' };
+  const idx = Math.max(0, Math.floor(Number(levelIndex) || 0));
+  const effects = Array.isArray(tech.levelEffects) ? tech.levelEffects : null;
+  if (effects && effects.length) {
+    const e = effects[Math.min(idx, effects.length - 1)];
+    if (e && typeof e === 'object') {
+      return {
+        ...e,
+        description: String(e.description || tech.description || ''),
+      };
+    }
+  }
+  return { description: String(tech.description || '') };
+}
+
+function applyTechCostRow(tech, row) {
+  if (!tech || !row) return;
+  if (Object.prototype.hasOwnProperty.call(row, 'maxRepeat')) {
+    const max = Math.max(0, Math.floor(Number(row.maxRepeat) || 0));
+    tech.maxRepeat = max;
+    if (max > 1) tech.repeatable = true;
+  }
+  if (Array.isArray(row.repeatCosts)) {
+    tech.repeatCosts = cloneCostList(row.repeatCosts);
+    if (tech.maxRepeat > 0) {
+      while (tech.repeatCosts.length < tech.maxRepeat) tech.repeatCosts.push({});
+      tech.repeatCosts = tech.repeatCosts.slice(0, tech.maxRepeat);
+    }
+    tech.cost = { ...(tech.repeatCosts[0] || row.cost || {}) };
+  } else if (row.cost && typeof row.cost === 'object') {
+    tech.cost = { ...row.cost };
+    if (tech.repeatable && tech.maxRepeat > 0) {
+      if (!Array.isArray(tech.repeatCosts)) tech.repeatCosts = [];
+      while (tech.repeatCosts.length < tech.maxRepeat) {
+        tech.repeatCosts.push({ ...tech.cost });
+      }
+      tech.repeatCosts[0] = { ...tech.cost };
+      tech.repeatCosts = tech.repeatCosts.slice(0, tech.maxRepeat);
+    }
+  }
+
+  if (Object.prototype.hasOwnProperty.call(row, 'description') && row.description != null) {
+    tech.description = String(row.description);
+  }
+  if (Array.isArray(row.levelEffects)) {
+    const max = Math.max(
+      1,
+      Number(tech.maxRepeat) || 0,
+      row.levelEffects.length || 0
+    );
+    tech.levelEffects = normalizeLevelEffects(row.levelEffects, max, tech.description || '');
+    if (tech.levelEffects[0]?.description) {
+      tech.description = tech.levelEffects[0].description;
+    }
+  } else if (
+    (tech.repeatable || Number(tech.maxRepeat) > 1)
+    && !Array.isArray(tech.levelEffects)
+    && tech.description
+  ) {
+    // 表未写 levelEffects 时，用总描述垫出每级，便于编辑器展示
+    const max = Math.max(1, Number(tech.maxRepeat) || 1);
+    tech.levelEffects = normalizeLevelEffects([], max, tech.description);
+  }
+
+  if (Array.isArray(row.effects)) {
+    tech.effects = cloneEffectList(row.effects);
+  }
+
+  // 从 effects 同步关键机械字段（便于旧逻辑 / 编辑器识别）
+  if (Array.isArray(tech.effects)) {
+    tech.effects.forEach((e) => {
+      if (e.type === 'gateLevel' && e.level != null) tech.gateLevel = Number(e.level);
+      if (e.type === 'pointUpgrade') {
+        if (e.pointId) tech.pointId = e.pointId;
+        if (e.upgrade) tech.upgradeType = e.upgrade === 'double' ? 'refine' : e.upgrade;
+      }
+    });
+  }
+
+  if (tech.pointId && tech.upgradeType) syncPointUpgradeMetaFromTech(tech);
+}
+
+/**
+ * 应用科技树数据表（布局 / 费用 / 多级升级 / 每级作用）
  * 由 config/tech-tree-table.js 或编辑器导出覆盖 data.js 中的默认值
  */
 function applyTechTreeTable(table) {
@@ -2665,18 +2867,11 @@ function applyTechTreeTable(table) {
 
   Object.entries(table.techs).forEach(([id, row]) => {
     if (!row) return;
-    // point_up：仅覆盖仍存在的升级科技布局；已删高级矿点的 point_up 丢弃
-    if (id.startsWith('point_up_')) {
-      if (byId[id]) applyLayoutRow(id, row);
-      return;
-    }
     const tech = byId[id];
     // 表里残留的已删科技：不写入布局，避免「幽灵连线」
     if (!tech) return;
-    if (row.cost && typeof row.cost === 'object') {
-      tech.cost = { ...row.cost };
-    }
-    if (Object.prototype.hasOwnProperty.call(row, 'requires')) {
+    applyTechCostRow(tech, row);
+    if (!id.startsWith('point_up_') && Object.prototype.hasOwnProperty.call(row, 'requires')) {
       tech.requires = Array.isArray(row.requires) ? [...row.requires] : row.requires;
     }
     applyLayoutRow(id, row);
@@ -2690,10 +2885,11 @@ function applyTechTreeTable(table) {
   if (typeof rebalancePointUpgradeClusters === 'function') {
     rebalancePointUpgradeClusters();
   }
-  // rebalance 可能改写 point_up 布局：再覆盖一次表内仍有效的坐标/多父节点
+  // rebalance 可能改写 point_up 布局：再覆盖一次表内仍有效的坐标/多父节点/费用
   Object.entries(table.techs).forEach(([id, row]) => {
     if (!row || !byId[id]) return;
     applyLayoutRow(id, row);
+    applyTechCostRow(byId[id], row);
   });
   // 解锁依赖不再独立维护：完全跟随布局父节点
   syncTechRequiresWithLayout();

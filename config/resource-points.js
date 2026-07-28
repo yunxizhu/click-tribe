@@ -2,7 +2,7 @@
  * 资源点完整定义表（名称/图标/解锁/产量/冷却/升级上限等）
  * 改这里即可，无需改 data.js / 重打 exe（打包后位于 exe 同级 config/）
  *
- * 采集/恢复/精炼费用见 point-upgrade-costs.js
+ * 采集/恢复/精炼费用见 tech-tree-table.js（point_up_*）
  * maxUpgrades 常用：采集 count=5、资源恢复 cooldown=5、精炼 double=1（仅 low/mid 资源点）
  */
 window.RESOURCE_POINTS = {

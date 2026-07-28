@@ -1708,6 +1708,8 @@
 
   /** 修门效率倍率（抢修训练科技） */
   P.getGateRepairEfficiencyMult = function getGateRepairEfficiencyMult() {
+    const { add } = this.sumTechStat?.('gateRepairMultAdd') || { add: 0 };
+    if (add > 0) return 1 + add;
     const per = GAME_DATA.defense?.gate?.repairEfficiencyPerTechLevel ?? 0.25;
     const lv = this.getTechRepeatLevel?.('unlock_gate_repair_speed')?.current || 0;
     return 1 + lv * per;

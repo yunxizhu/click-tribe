@@ -6,7 +6,7 @@
  *   - 白天轨 6:00~18:00  曲目随机（音量 0.3 / 倍速 1.1）
  *   - 黄昏轨 18:00~22:00 曲目随机（音量 0.25 / 倍速 0.8）
  *   - 夜间轨 19:00~6:00  曲目随机（音量 0.65 / 倍速 1.0）
- *   - 休息轨 22:00~6:00  Satie Gymnopedie No 1（0.5x, 0.20 音量）
+ *   - 休息轨 22:00~6:00  曲目随机（0.5x, 0.20 音量）
  *   - 袭击轨 任意时段    Suspense7（叠加在背景轨之上；袭击期间暂停白天/黄昏轨）
  *   - 战斗轨 战斗期间      Fight（独占播放，暂停其他所有音轨）
  */
@@ -49,6 +49,9 @@
       ];
       this._nightTrackFiles = [
         'night_bgm.mp3',
+      ];
+      this._restTrackFiles = [
+        'Satie Gymnopedie No 1.mp3',
         'Shizima3 _ ピアノの静謐な和風曲_PerituneMaterial_Shizima3_Piano_loop.mp3',
       ];
 
@@ -80,6 +83,7 @@
       this._lastDayFile = '';
       this._lastDuskFile = '';
       this._lastNightFile = '';
+      this._lastRestFile = '';
 
       this._userPlayBgm = true;
       this._userMaster = 1;
@@ -333,7 +337,7 @@
       (this._dayTrackFiles || []).forEach((f) => this._preloadAudio(musicUrl(f)));
       (this._duskTrackFiles || []).forEach((f) => this._preloadAudio(musicUrl(f)));
       (this._nightTrackFiles || []).forEach((f) => this._preloadAudio(musicUrl(f)));
-      this._preloadAudio(musicUrl('Satie Gymnopedie No 1.mp3'));
+      (this._restTrackFiles || []).forEach((f) => this._preloadAudio(musicUrl(f)));
       this._preloadAudio(musicUrl('Suspense7_PerituneMaterial_Suspense7_loop.mp3'));
       this._preloadAudio(musicUrl('Fight」_PerituneMaterial_Fight_loop.mp3'));
       // 立即执行一次 tick，按当前时间马上开始播放（无淡入）
@@ -767,10 +771,13 @@
       }
       const restOn = this._shouldRestPlay() && !this._shouldFightPlay() && this._restAudio;
       if (restOn) {
-        const file = 'Satie Gymnopedie No 1.mp3';
+        const file = this._lastRestFile || '';
         return {
-          playing: true, canCycle: false, period: 'rest', file,
-          name: this._trackDisplayName(file),
+          playing: true,
+          canCycle: (this._restTrackFiles || []).length > 1,
+          period: 'rest',
+          file,
+          name: this._trackDisplayName(file) || '休息 BGM',
         };
       }
       return { playing: false, canCycle: false, period: '', file: '', name: '暂无 BGM' };
@@ -791,6 +798,10 @@
       }
       if (info.period === 'night') {
         this._startNight({ fresh: true, preferNext: true });
+        return true;
+      }
+      if (info.period === 'rest') {
+        this._startRest({ fresh: true, preferNext: true });
         return true;
       }
       return false;
@@ -990,6 +1001,14 @@
 
     // ========== 休息轨（22:00~6:00） ==========
 
+    _pickRestTrackFile(opts = {}) {
+      const fallback = 'Satie Gymnopedie No 1.mp3';
+      if (opts.preferNext) {
+        return this._pickNextFromList(this._restTrackFiles, this._lastRestFile) || fallback;
+      }
+      return this._pickFromList(this._restTrackFiles, this._lastRestFile) || fallback;
+    }
+
     _killRestAudioImmediate() {
       const a = this._restAudio;
       this._restAudio = null;
@@ -1002,11 +1021,14 @@
       if (opts.fresh) this._killRestAudioImmediate();
       else if (this._restAudio) return;
       console.log('[BGM] 启动休息音轨（22:00~6:00）');
-      const url = musicUrl('Satie Gymnopedie No 1.mp3');
+      const file = this._pickRestTrackFile(opts);
+      this._lastRestFile = file;
+      const url = musicUrl(file);
       const vol = 0.20;
       this._restVol = vol;
       const a = this._createAudio(url, true, 0.5);
       this._restAudio = a;
+      this._notifyNowPlaying();
       try { a.volume = 0; a.currentTime = 0; } catch (_) { /* ignore */ }
       a.play().then(() => {
         if (this._restAudio !== a) {
@@ -1015,9 +1037,12 @@
         }
         this._onTrackReady(a, '_restAudio', vol);
         if (this._restAudio === a && this._initialFade !== 0) this._fadeIn(a, vol, '_restAudio');
+        console.log('[BGM] 休息音轨选用:', file);
+        this._notifyNowPlaying();
       }).catch(e => {
         console.warn('[BGM] 休息音轨播放失败:', e);
         if (this._restAudio === a) this._restAudio = null;
+        this._notifyNowPlaying();
       });
     }
 

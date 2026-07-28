@@ -21,8 +21,54 @@ function getSavesDir() {
   return dir;
 }
 
-function getSaveFilePath() {
+const SAVE_SLOTS = ['a', 'b', 'c'];
+
+function normalizeSaveSlot(slot) {
+  const s = String(slot || 'a').toLowerCase();
+  return SAVE_SLOTS.includes(s) ? s : 'a';
+}
+
+function getSaveFilePath(slot) {
+  return path.join(getSavesDir(), `slot-${normalizeSaveSlot(slot)}.json`);
+}
+
+function getLegacySaveFilePath() {
   return path.join(getSavesDir(), 'factoryGame.json');
+}
+
+/** 旧单档 factoryGame.json → A 档（仅当三档皆空时迁移） */
+function migrateLegacySaveFile() {
+  const legacy = getLegacySaveFilePath();
+  if (!fs.existsSync(legacy)) return;
+  const anySlot = SAVE_SLOTS.some((s) => fs.existsSync(getSaveFilePath(s)));
+  if (anySlot) return;
+  try {
+    fs.renameSync(legacy, getSaveFilePath('a'));
+  } catch (_) {
+    try {
+      fs.copyFileSync(legacy, getSaveFilePath('a'));
+      fs.unlinkSync(legacy);
+    } catch (__) { /* ignore */ }
+  }
+}
+
+function readSaveMeta(slot) {
+  const p = getSaveFilePath(slot);
+  if (!fs.existsSync(p)) return { slot, empty: true };
+  try {
+    const data = JSON.parse(fs.readFileSync(p, 'utf8'));
+    return {
+      slot,
+      empty: false,
+      day: Number(data.day) || 1,
+      difficulty: data.difficulty || 'normal',
+      lastSaveTime: data.lastSaveTime || null,
+      gameOver: !!data.gameOver,
+      villagers: Number(data.workers?.total) || 0,
+    };
+  } catch (_) {
+    return { slot, empty: false, corrupt: true };
+  }
 }
 
 function getSettingsFilePath() {
@@ -37,28 +83,56 @@ function getMainWindow() {
 }
 
 function registerSaveIpc() {
-  ipcMain.handle('tribe-save-read', () => {
-    const p = getSaveFilePath();
+  migrateLegacySaveFile();
+
+  ipcMain.handle('tribe-save-read', (_evt, slot) => {
+    migrateLegacySaveFile();
+    const p = getSaveFilePath(slot);
     if (!fs.existsSync(p)) return null;
     return fs.readFileSync(p, 'utf8');
   });
-  ipcMain.handle('tribe-save-write', (_evt, raw) => {
+  ipcMain.handle('tribe-save-write', (_evt, slot, raw) => {
+    // 兼容旧调用：只传 raw 字符串时写入 A 档
+    if (typeof slot === 'string' && raw === undefined && slot.trim().startsWith('{')) {
+      raw = slot;
+      slot = 'a';
+    }
     if (typeof raw !== 'string') throw new Error('save payload must be string');
     if (Buffer.byteLength(raw, 'utf8') > SAVE_MAX_BYTES) {
       throw new Error('save too large');
     }
-    const p = getSaveFilePath();
+    const p = getSaveFilePath(slot);
     const tmp = `${p}.${process.pid}.tmp`;
     fs.writeFileSync(tmp, raw, 'utf8');
     fs.renameSync(tmp, p);
     return true;
   });
-  ipcMain.handle('tribe-save-clear', () => {
-    const p = getSaveFilePath();
+  ipcMain.handle('tribe-save-clear', (_evt, slot) => {
+    migrateLegacySaveFile();
+    if (slot == null || slot === '' || slot === '*') {
+      SAVE_SLOTS.forEach((s) => {
+        const p = getSaveFilePath(s);
+        if (fs.existsSync(p)) fs.unlinkSync(p);
+      });
+      const legacy = getLegacySaveFilePath();
+      if (fs.existsSync(legacy)) fs.unlinkSync(legacy);
+      return true;
+    }
+    const p = getSaveFilePath(slot);
     if (fs.existsSync(p)) fs.unlinkSync(p);
     return true;
   });
-  ipcMain.handle('tribe-save-exists', () => fs.existsSync(getSaveFilePath()));
+  ipcMain.handle('tribe-save-exists', (_evt, slot) => {
+    migrateLegacySaveFile();
+    if (slot == null || slot === '' || slot === '*') {
+      return SAVE_SLOTS.some((s) => fs.existsSync(getSaveFilePath(s)));
+    }
+    return fs.existsSync(getSaveFilePath(slot));
+  });
+  ipcMain.handle('tribe-save-list-meta', () => {
+    migrateLegacySaveFile();
+    return SAVE_SLOTS.map((s) => readSaveMeta(s));
+  });
   ipcMain.handle('tribe-app-quit', () => {
     app.quit();
     return true;

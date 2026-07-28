@@ -13,6 +13,39 @@
   const NODE_RADII = { small: 30, medium: 45, large: 60 };
   const CENTER_RADII = { small: 38, medium: 56, large: 75 };
 
+  /**
+   * 布局以 config/tech-tree-table.js 为准。
+   * 本机 localStorage 仅在「草稿 version > 文件 version」时覆盖（未提交的本机编辑）。
+   * 否则用文件并回写 localStorage，避免换电脑 git 同步后被旧缓存打乱。
+   */
+  function reconcileTechTreeTableFromStorage() {
+    const file = window.TECH_TREE_TABLE;
+    if (!file?.techs || typeof applyTechTreeTable !== 'function') return { source: 'none' };
+    try {
+      const raw = localStorage.getItem(STORAGE_KEY);
+      if (raw) {
+        const local = JSON.parse(raw);
+        const fileVer = Number(file.version) || 0;
+        const localVer = Number(local?.version) || 0;
+        if (localVer > fileVer && local?.techs) {
+          const valid = new Set((GAME_DATA.techTree || []).map((t) => t.id));
+          Object.keys(local.techs).forEach((id) => {
+            if (!valid.has(id)) delete local.techs[id];
+          });
+          applyTechTreeTable(local);
+          window.TECH_TREE_TABLE = local;
+          try { localStorage.setItem(STORAGE_KEY, JSON.stringify(local)); } catch (_) { /* ignore */ }
+          return { source: 'local', fileVer, localVer };
+        }
+      }
+      // 文件为准（含 version 相等）：清掉过期草稿
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(file));
+      return { source: 'file', fileVer: Number(file.version) || 0 };
+    } catch (_) {
+      return { source: 'error' };
+    }
+  }
+
   function normalizeNodeSize(size) {
     return size === 'small' || size === 'large' ? size : 'medium';
   }
@@ -112,9 +145,51 @@
       row.size = getLayoutNodeSize(n);
       const parents = getLayoutParents(n);
       if (parents.length > 1) row.parents = parents;
-      if (tech && !isPointUpgradeTechId(id)) {
-        row.cost = tech.cost ? { ...tech.cost } : {};
-        if (tech.requires) {
+      if (tech) {
+        const multiLevel = !!(tech.repeatable || (Number(tech.maxRepeat) > 1)
+          || (isPointUpgradeTechId(id) && tech.upgradeType && tech.upgradeType !== 'refine'));
+        if (multiLevel) {
+          const max = Math.max(1, Number(tech.maxRepeat) || 1);
+          row.maxRepeat = max;
+          if (!tech.dynamicCost) {
+            const costs = Array.isArray(tech.repeatCosts) ? tech.repeatCosts : [];
+            row.repeatCosts = [];
+            for (let i = 0; i < max; i++) {
+              row.repeatCosts.push(costs[i] && typeof costs[i] === 'object' ? { ...costs[i] } : {});
+            }
+            row.cost = { ...(row.repeatCosts[0] || tech.cost || {}) };
+          } else {
+            row.cost = {};
+          }
+          const effects = Array.isArray(tech.levelEffects) ? tech.levelEffects : [];
+          row.levelEffects = [];
+          for (let i = 0; i < max; i++) {
+            const e = effects[i];
+            const levelRow = {
+              ...(e && typeof e === 'object' ? { ...e } : {}),
+              description: String(e?.description || tech.description || ''),
+            };
+            if (Array.isArray(e?.effects)) {
+              levelRow.effects = typeof cloneEffectList === 'function'
+                ? cloneEffectList(e.effects)
+                : e.effects.map((x) => ({ ...x }));
+            }
+            row.levelEffects.push(levelRow);
+          }
+          row.description = row.levelEffects[0]?.description || tech.description || '';
+        } else {
+          row.cost = tech.cost ? { ...tech.cost } : {};
+          if (Number(tech.maxRepeat) > 0 && (tech.repeatable || isPointUpgradeTechId(id))) {
+            row.maxRepeat = Number(tech.maxRepeat);
+          }
+          row.description = String(tech.description || '');
+        }
+        if (Array.isArray(tech.effects) && tech.effects.length) {
+          row.effects = typeof cloneEffectList === 'function'
+            ? cloneEffectList(tech.effects)
+            : tech.effects.map((x) => ({ ...x }));
+        }
+        if (!isPointUpgradeTechId(id) && tech.requires) {
           row.requires = Array.isArray(tech.requires) ? [...tech.requires] : tech.requires;
         }
       }
@@ -129,7 +204,7 @@
 
   Ctor.prototype.exportTechTreeTableFile = function exportTechTreeTableFile(table) {
     const body = [
-      '/** Tech tree table: layout / requires / cost. Runtime reads this first. */',
+      '/** Tech tree table: layout / requires / cost / maxRepeat / repeatCosts / description / levelEffects / effects. */',
       `window.TECH_TREE_TABLE = ${JSON.stringify(table, null, 2)};`,
       'if (typeof applyTechTreeTable === "function") applyTechTreeTable(window.TECH_TREE_TABLE);',
       '',
@@ -192,7 +267,7 @@
       const table = this.buildTechTreeTableSnapshot();
       this.exportTechTreeTableFile(table);
       applyTechTreeTable(table);
-      this.showNotification('已导出 tech-tree-table.js（请放到 config/ 目录替换）+ localStorage');
+      this.showNotification('已导出 tech-tree-table.js：请替换 config/ 后提交 git（本机草稿已写入 localStorage）');
     }
 
     this._techTreeInited = false;
@@ -255,7 +330,12 @@
         </div>
         <div class="tech-edit-current">
           <span class="tech-edit-current-label">科技作用</span>
-          <div id="tech-edit-desc" class="tech-edit-current-value tech-edit-desc">(点击科技树节点查看作用)</div>
+          <textarea id="tech-edit-desc" class="tech-edit-desc-input" rows="3" spellcheck="false" placeholder="该科技的作用说明"></textarea>
+        </div>
+        <div class="tech-edit-current">
+          <span class="tech-edit-current-label">机械 effects（JSON）</span>
+          <textarea id="tech-edit-effects" class="tech-edit-desc-input tech-edit-effects-input" rows="5" spellcheck="false" placeholder='[{"type":"stat","stat":"...","op":"add","value":0.05}]'></textarea>
+          <div class="tech-edit-cost-hint" id="tech-edit-effects-hint">运行时权威实现；非法 type/stat 保存时会提示</div>
         </div>
         <div class="tech-edit-xy-row">
           <label>X
@@ -278,11 +358,15 @@
         <label>解锁依赖（独立于布局父节点，多个用逗号）
           <input id="tech-edit-requires" type="text" spellcheck="false" placeholder="id_a, id_b">
         </label>
+        <label id="tech-edit-max-wrap">最高等级
+          <input id="tech-edit-max-repeat" type="number" min="1" max="99" step="1" value="1">
+        </label>
+        <div class="tech-edit-cost-hint" id="tech-edit-max-hint">单级科技保持 1；大于 1 时下方按级编辑花费</div>
         <div class="tech-edit-cost-head">
-          <span>材料费用</span>
+          <span id="tech-edit-cost-title">材料费用</span>
           <button type="button" class="dev-btn" id="tech-edit-cost-add">+材料</button>
         </div>
-        <div class="tech-edit-cost-hint">清空或全为 0 = 父节点解锁时自动解锁（改动即时生效）</div>
+        <div class="tech-edit-cost-hint" id="tech-edit-cost-hint">清空或全为 0 = 父节点解锁时自动解锁（改动即时生效）</div>
         <div id="tech-edit-cost-list" class="tech-edit-cost-list"></div>
         <div class="tech-edit-hud-actions">
           <button type="button" class="dev-btn" id="tech-edit-link-mode">点选添加父节点</button>
@@ -301,7 +385,14 @@
     document.body.classList.add('tech-edit-mode');
 
     document.getElementById('tech-edit-cost-add').addEventListener('click', () => {
-      this._addTechEditCostRow();
+      const list = document.getElementById('tech-edit-cost-list');
+      const levelBlock = list?.querySelector('.tech-edit-level-block[data-active="1"]')
+        || list?.querySelector('.tech-edit-level-block');
+      if (levelBlock) {
+        this._addTechEditCostRow(levelBlock.querySelector('.tech-edit-level-costs'), '', 0);
+      } else {
+        this._addTechEditCostRow(list);
+      }
       this._applyTechEditForm({ pushUndo: true, silent: true, refreshHud: false });
     });
     document.getElementById('tech-edit-distribute-x')?.addEventListener('click', () => {
@@ -354,12 +445,19 @@
       this._applyTechEditForm({ pushUndo, silent: true, refreshHud: false });
     };
 
-    ['tech-edit-x', 'tech-edit-y', 'tech-edit-parents', 'tech-edit-requires'].forEach((id) => {
+    ['tech-edit-x', 'tech-edit-y', 'tech-edit-parents', 'tech-edit-requires', 'tech-edit-desc', 'tech-edit-effects'].forEach((id) => {
       const el = document.getElementById(id);
       if (!el) return;
       el.addEventListener('focus', markUndo);
       el.addEventListener('input', liveApply);
       el.addEventListener('change', liveApply);
+    });
+
+    const maxRepeatInput = document.getElementById('tech-edit-max-repeat');
+    maxRepeatInput?.addEventListener('focus', markUndo);
+    maxRepeatInput?.addEventListener('change', () => {
+      if (this._techEditHudSyncing || !this._techEditSelectedId) return;
+      this._applyTechEditForm({ pushUndo: true, silent: true, refreshHud: true });
     });
 
     const sizeInput = document.getElementById('tech-edit-size');
@@ -372,6 +470,13 @@
     costList?.addEventListener('focusin', markUndo);
     costList?.addEventListener('input', liveApply);
     costList?.addEventListener('change', liveApply);
+    costList?.addEventListener('focusin', (ev) => {
+      const block = ev.target?.closest?.('.tech-edit-level-block');
+      if (!block) return;
+      costList.querySelectorAll('.tech-edit-level-block').forEach((el) => {
+        el.dataset.active = el === block ? '1' : '0';
+      });
+    });
   };
 
   Ctor.prototype._getTechEditSelectedIds = function _getTechEditSelectedIds() {
@@ -406,10 +511,188 @@
     this._setTechEditSelection(cur, id);
   };
 
+  Ctor.prototype._formatTechEffectsJson = function _formatTechEffectsJson(effects) {
+    const list = Array.isArray(effects) ? effects : [];
+    try {
+      return JSON.stringify(list, null, 2);
+    } catch (_) {
+      return '[]';
+    }
+  };
+
+  Ctor.prototype._parseTechEffectsJson = function _parseTechEffectsJson(text, path = 'effects') {
+    const raw = String(text || '').trim();
+    if (!raw) return { ok: true, effects: [] };
+    let parsed;
+    try {
+      parsed = JSON.parse(raw);
+    } catch (err) {
+      return { ok: false, error: `${path}: JSON 解析失败（${err.message || 'syntax'}）` };
+    }
+    if (!Array.isArray(parsed)) {
+      return { ok: false, error: `${path}: 必须是数组` };
+    }
+    const effects = typeof cloneEffectList === 'function' ? cloneEffectList(parsed) : parsed.map((e) => ({ ...e }));
+    for (let i = 0; i < effects.length; i++) {
+      if (typeof validateTechEffectShape === 'function') {
+        const err = validateTechEffectShape(effects[i], `${path}[${i}]`);
+        if (err) return { ok: false, error: err };
+      }
+    }
+    return { ok: true, effects };
+  };
+
   Ctor.prototype._getTechEditDescription = function _getTechEditDescription(id) {
     const tech = GAME_DATA.techTree.find((t) => t.id === id);
     if (!tech) return id || '';
     return tech.description || '(无描述)';
+  };
+
+  Ctor.prototype._techEditSupportsMultiLevel = function _techEditSupportsMultiLevel(tech) {
+    if (!tech) return false;
+    if (tech.dynamicCost) return true;
+    if (tech.repeatable) return true;
+    if (tech.pointId && tech.upgradeType && tech.upgradeType !== 'refine') return true;
+    return Number(tech.maxRepeat) > 1;
+  };
+
+  Ctor.prototype._readCostRowsFromEl = function _readCostRowsFromEl(container) {
+    const cost = {};
+    if (!container) return cost;
+    container.querySelectorAll(':scope > .tech-edit-cost-row').forEach((rowEl) => {
+      const res = rowEl.querySelector('.tech-edit-cost-res')?.value;
+      const amt = Number(rowEl.querySelector('.tech-edit-cost-amt')?.value);
+      if (res && Number.isFinite(amt) && amt > 0) cost[res] = Math.floor(amt);
+    });
+    return cost;
+  };
+
+  Ctor.prototype._renderTechEditCostEditor = function _renderTechEditCostEditor(tech, opts = {}) {
+    const costList = document.getElementById('tech-edit-cost-list');
+    const costAdd = document.getElementById('tech-edit-cost-add');
+    const costTitle = document.getElementById('tech-edit-cost-title');
+    const costHint = document.getElementById('tech-edit-cost-hint');
+    const maxWrap = document.getElementById('tech-edit-max-wrap');
+    const maxInput = document.getElementById('tech-edit-max-repeat');
+    const maxHint = document.getElementById('tech-edit-max-hint');
+    const descInput = document.getElementById('tech-edit-desc');
+    if (!costList) return;
+
+    const multiSelected = !!opts.multiSelected;
+    const supportsMulti = this._techEditSupportsMultiLevel(tech);
+    const dynamic = !!tech?.dynamicCost;
+    const max = supportsMulti ? Math.max(1, Number(tech?.maxRepeat) || 1) : 1;
+    const showPerLevelEffects = supportsMulti && max > 1 && !multiSelected;
+
+    if (maxWrap) maxWrap.style.display = supportsMulti && !multiSelected ? '' : 'none';
+    if (maxHint) {
+      maxHint.style.display = supportsMulti && !multiSelected ? '' : 'none';
+      maxHint.textContent = dynamic
+        ? '效率升级可改最高等级与每级作用；花费由扩建座数动态计算'
+        : '大于 1 时下方按级列出花费与作用；改动即时生效';
+    }
+    if (maxInput) {
+      maxInput.disabled = multiSelected || !supportsMulti;
+      maxInput.value = Math.max(1, Number(tech?.maxRepeat) || 1);
+    }
+    if (descInput) {
+      descInput.disabled = multiSelected;
+      descInput.style.display = showPerLevelEffects ? 'none' : '';
+      if (!showPerLevelEffects) {
+        descInput.value = tech?.description || '';
+        descInput.placeholder = multiSelected ? '多选时不可编辑作用' : '该科技的作用说明';
+      }
+    }
+
+    costList.innerHTML = '';
+    if (multiSelected) {
+      if (costAdd) costAdd.disabled = true;
+      if (costTitle) costTitle.textContent = '材料费用';
+      if (costHint) costHint.textContent = '当前为多选：可左键拖动整组节点；表单仍仅编辑主选中节点。';
+      const hint = document.createElement('div');
+      hint.className = 'tech-edit-cost-hint';
+      hint.textContent = '请单选节点以编辑费用与作用。';
+      costList.appendChild(hint);
+      return;
+    }
+
+    const effects = Array.isArray(tech?.levelEffects) ? tech.levelEffects : [];
+
+    if (dynamic && max <= 1) {
+      if (costAdd) costAdd.disabled = true;
+      if (costTitle) costTitle.textContent = '材料费用';
+      if (costHint) costHint.textContent = '动态费用：由资源点 efficiencyUpgradeBuilds 决定';
+      const hint = document.createElement('div');
+      hint.className = 'tech-edit-cost-hint';
+      hint.textContent = '此科技花费不在此编辑。';
+      costList.appendChild(hint);
+      return;
+    }
+
+    if (costAdd) costAdd.disabled = !!dynamic;
+    if (costTitle) {
+      costTitle.textContent = max > 1
+        ? (dynamic ? '各级作用（花费动态）' : '各级花费与作用')
+        : '材料费用';
+    }
+    if (costHint) {
+      costHint.textContent = max > 1
+        ? (dynamic
+          ? '每一级可单独写作用说明；花费由扩建座数决定'
+          : '每一级单独配置花费与作用；费用全空/全 0 表示该级免费')
+        : '清空或全为 0 = 父节点解锁时自动解锁（改动即时生效）';
+    }
+
+    if (max <= 1) {
+      if (dynamic) return;
+      const costEntries = Object.entries(tech?.cost || {}).filter(([, amt]) => Number(amt) > 0);
+      if (!costEntries.length && Array.isArray(tech?.repeatCosts) && tech.repeatCosts[0]) {
+        Object.entries(tech.repeatCosts[0]).filter(([, amt]) => Number(amt) > 0)
+          .forEach(([res, amt]) => this._addTechEditCostRow(costList, res, amt));
+      } else {
+        costEntries.forEach(([res, amt]) => this._addTechEditCostRow(costList, res, amt));
+      }
+      return;
+    }
+
+    const costs = Array.isArray(tech?.repeatCosts) ? tech.repeatCosts : [];
+    for (let i = 0; i < max; i++) {
+      const block = document.createElement('div');
+      block.className = 'tech-edit-level-block';
+      block.dataset.level = String(i);
+      block.dataset.active = i === 0 ? '1' : '0';
+      const head = document.createElement('div');
+      head.className = 'tech-edit-level-head';
+      head.textContent = `第 ${i + 1} 级`;
+      block.appendChild(head);
+
+      const effectLabel = document.createElement('div');
+      effectLabel.className = 'tech-edit-level-effect-label';
+      effectLabel.textContent = '作用';
+      block.appendChild(effectLabel);
+      const effectInput = document.createElement('textarea');
+      effectInput.className = 'tech-edit-level-effect';
+      effectInput.rows = 2;
+      effectInput.spellcheck = false;
+      effectInput.placeholder = `第 ${i + 1} 级作用说明`;
+      effectInput.value = String(effects[i]?.description || tech?.description || '');
+      block.appendChild(effectInput);
+
+      if (!dynamic) {
+        const rows = document.createElement('div');
+        rows.className = 'tech-edit-level-costs';
+        block.appendChild(rows);
+        const entry = costs[i] || {};
+        const entries = Object.entries(entry).filter(([, amt]) => Number(amt) > 0);
+        if (entries.length) {
+          entries.forEach(([res, amt]) => this._addTechEditCostRow(rows, res, amt));
+        } else {
+          this._addTechEditCostRow(rows, '', 0);
+        }
+      }
+
+      costList.appendChild(block);
+    }
   };
 
   Ctor.prototype._refreshTechEditHud = function _refreshTechEditHud() {
@@ -417,6 +700,8 @@
     const selectedIds = this._getTechEditSelectedIds();
     const cur = document.getElementById('tech-edit-current');
     const desc = document.getElementById('tech-edit-desc');
+    const effectsInput = document.getElementById('tech-edit-effects');
+    const effectsHint = document.getElementById('tech-edit-effects-hint');
     const xInput = document.getElementById('tech-edit-x');
     const yInput = document.getElementById('tech-edit-y');
     const sizeInput = document.getElementById('tech-edit-size');
@@ -432,13 +717,25 @@
     const rotateRightBtn = document.getElementById('tech-edit-rotate-right');
     const flipHBtn = document.getElementById('tech-edit-flip-h');
     const flipVBtn = document.getElementById('tech-edit-flip-v');
+    const maxInput = document.getElementById('tech-edit-max-repeat');
     if (!cur || !desc || !xInput || !yInput || !sizeInput || !parentsInput || !reqInput || !costList) return;
 
     this._techEditHudSyncing = true;
     try {
       if (!id) {
         cur.textContent = '(点击科技树节点选择)';
-        desc.textContent = '(点击科技树节点查看作用)';
+        if (desc) {
+          desc.value = '';
+          desc.disabled = true;
+          desc.style.display = '';
+          desc.placeholder = '点击科技树节点编辑作用';
+        }
+        if (effectsInput) {
+          effectsInput.value = '';
+          effectsInput.disabled = true;
+          effectsInput.placeholder = '点击科技树节点编辑 effects';
+        }
+        if (effectsHint) effectsHint.textContent = '运行时权威实现；非法 type/stat 保存时会提示';
         xInput.value = '';
         yInput.value = '';
         sizeInput.value = 'medium';
@@ -447,6 +744,10 @@
         costList.innerHTML = '';
         reqInput.disabled = true;
         if (costAdd) costAdd.disabled = false;
+        if (maxInput) {
+          maxInput.value = 1;
+          maxInput.disabled = true;
+        }
         if (distributeXBtn) distributeXBtn.disabled = true;
         if (distributeYBtn) distributeYBtn.disabled = true;
         if (alignXBtn) alignXBtn.disabled = true;
@@ -466,9 +767,6 @@
       cur.textContent = selectedIds.length > 1
         ? `${currentLabel} · 已选 ${selectedIds.length} 个`
         : currentLabel;
-      desc.textContent = selectedIds.length > 1
-        ? `主选中：${this._getTechEditDescription(id)}\n批量拖动：${selectedIds.length} 个节点`
-        : this._getTechEditDescription(id);
       xInput.value = Math.round(node.x || 0);
       yInput.value = Math.round(node.y || 0);
       sizeInput.value = getLayoutNodeSize(node);
@@ -477,7 +775,6 @@
       const isPointUp = isPointUpgradeTechId(id);
       const multiSelected = selectedIds.length > 1;
       reqInput.disabled = isPointUp || multiSelected;
-      if (costAdd) costAdd.disabled = isPointUp || multiSelected;
       if (distributeXBtn) distributeXBtn.disabled = !multiSelected;
       if (distributeYBtn) distributeYBtn.disabled = !multiSelected;
       if (alignXBtn) alignXBtn.disabled = !multiSelected;
@@ -491,44 +788,49 @@
       sizeInput.disabled = false;
       parentsInput.disabled = false;
 
-      if (isPointUp) {
-        reqInput.value = getLayoutParents(node).join(', ');
-        costList.innerHTML = '';
-        const hint = document.createElement('div');
-        hint.className = 'tech-edit-cost-hint';
-        hint.textContent = '资源点升级节点：可改坐标与多父连线；费用/依赖由数据生成';
-        costList.appendChild(hint);
-        return;
-      }
+      reqInput.value = isPointUp
+        ? getLayoutParents(node).join(', ')
+        : getTechRequiresList(tech).join(', ');
 
-      costList.innerHTML = '';
-      if (multiSelected) {
-        const hint = document.createElement('div');
-        hint.className = 'tech-edit-cost-hint';
-        hint.textContent = '当前为多选：可左键拖动整组节点；表单仍仅编辑主选中节点。';
-        costList.appendChild(hint);
+      this._renderTechEditCostEditor(tech, { multiSelected });
+      if (effectsInput) {
+        effectsInput.disabled = multiSelected || !tech;
+        effectsInput.value = multiSelected
+          ? ''
+          : this._formatTechEffectsJson(tech?.effects);
+        effectsInput.placeholder = multiSelected
+          ? '多选时不可编辑 effects'
+          : '[{"type":"stat","stat":"...","op":"add","value":0.05}]';
       }
-
-      reqInput.value = getTechRequiresList(tech).join(', ');
-      const costEntries = Object.entries(tech?.cost || {}).filter(([, amt]) => Number(amt) > 0);
-      costEntries.forEach(([res, amt]) => this._addTechEditCostRow(res, amt));
+      if (effectsHint) {
+        effectsHint.textContent = multiSelected
+          ? '请单选节点以编辑机械 effects'
+          : '运行时权威实现；非法 type/stat 保存时会提示';
+      }
     } finally {
       this._techEditHudSyncing = false;
       this._techEditFormUndoReady = false;
     }
   };
 
-  Ctor.prototype._addTechEditCostRow = function _addTechEditCostRow(resId = '', amt = 0) {
-    const list = document.getElementById('tech-edit-cost-list');
+  Ctor.prototype._addTechEditCostRow = function _addTechEditCostRow(listOrRes = '', resId = '', amt = 0) {
+    let list = listOrRes;
+    let res = resId;
+    let amount = amt;
+    if (typeof listOrRes === 'string') {
+      list = document.getElementById('tech-edit-cost-list');
+      res = listOrRes;
+      amount = resId || 0;
+    }
     if (!list) return;
     const row = document.createElement('div');
     row.className = 'tech-edit-cost-row';
     const resOptions = Object.entries(GAME_DATA.resources)
-      .map(([id, def]) => `<option value="${id}" ${id === resId ? 'selected' : ''}>${def.icon} ${def.name}</option>`)
+      .map(([rid, def]) => `<option value="${rid}" ${rid === res ? 'selected' : ''}>${def.icon} ${def.name}</option>`)
       .join('');
     row.innerHTML = `
       <select class="tech-edit-cost-res">${resOptions}</select>
-      <input type="number" class="tech-edit-cost-amt" min="0" step="1" value="${amt || 0}">
+      <input type="number" class="tech-edit-cost-amt" min="0" step="1" value="${amount || 0}">
       <button type="button" class="dev-btn tech-edit-cost-del">x</button>
     `;
     row.querySelector('.tech-edit-cost-del').addEventListener('click', () => {
@@ -547,6 +849,23 @@
     const tech = GAME_DATA.techTree.find((t) => t.id === id);
     const node = GAME_DATA.techTreeLayout.nodes[id];
     if (!node) return;
+
+    const effectsInput = document.getElementById('tech-edit-effects');
+    let parsedEffects = null;
+    if (tech && effectsInput && !effectsInput.disabled) {
+      const parsed = this._parseTechEffectsJson(effectsInput.value, `${id}.effects`);
+      if (!parsed.ok) {
+        if (!silent) this.showNotification(parsed.error);
+        else if (effectsInput.dataset.lastErr !== parsed.error) {
+          effectsInput.dataset.lastErr = parsed.error;
+          this.showNotification(parsed.error);
+        }
+        return;
+      }
+      delete effectsInput.dataset.lastErr;
+      parsedEffects = parsed.effects;
+    }
+
     if (pushUndo) this._pushTechEditUndo();
 
     const x = Number(document.getElementById('tech-edit-x')?.value);
@@ -565,15 +884,81 @@
       tech.requires = requireIds.length === 0
         ? null
         : (requireIds.length === 1 ? requireIds[0] : [...requireIds]);
+    }
 
-      const cost = {};
-      document.querySelectorAll('#tech-edit-cost-list .tech-edit-cost-row').forEach((rowEl) => {
-        const res = rowEl.querySelector('.tech-edit-cost-res')?.value;
-        const amt = Number(rowEl.querySelector('.tech-edit-cost-amt')?.value);
-        if (res && Number.isFinite(amt) && amt > 0) cost[res] = Math.floor(amt);
-      });
-      tech.cost = cost;
-      if (typeof this._autoUnlockFreeTechs === 'function') this._autoUnlockFreeTechs();
+    if (tech) {
+      const supportsMulti = this._techEditSupportsMultiLevel(tech);
+      let max = 1;
+      if (supportsMulti) {
+        max = Math.max(1, Math.floor(Number(document.getElementById('tech-edit-max-repeat')?.value) || 1));
+        tech.maxRepeat = max;
+        if (max > 1) tech.repeatable = true;
+      }
+
+      const list = document.getElementById('tech-edit-cost-list');
+      const levelBlocks = list ? [...list.querySelectorAll('.tech-edit-level-block')] : [];
+      const descInput = document.getElementById('tech-edit-desc');
+      if (parsedEffects) tech.effects = parsedEffects;
+
+      if (supportsMulti && max > 1) {
+        const repeatCosts = [];
+        const levelEffects = [];
+        for (let i = 0; i < max; i++) {
+          const block = levelBlocks.find((el) => Number(el.dataset.level) === i);
+          const effectText = block?.querySelector('.tech-edit-level-effect')?.value;
+          const prevEffect = Array.isArray(tech.levelEffects) ? tech.levelEffects[i] : null;
+          levelEffects.push({
+            ...(prevEffect && typeof prevEffect === 'object' ? { ...prevEffect } : {}),
+            description: effectText != null
+              ? String(effectText)
+              : String(prevEffect?.description || tech.description || ''),
+          });
+          if (!tech.dynamicCost) {
+            if (block) {
+              repeatCosts.push(this._readCostRowsFromEl(block.querySelector('.tech-edit-level-costs')));
+            } else if (Array.isArray(tech.repeatCosts) && tech.repeatCosts[i]) {
+              repeatCosts.push({ ...tech.repeatCosts[i] });
+            } else {
+              repeatCosts.push({});
+            }
+          }
+        }
+        tech.levelEffects = levelEffects;
+        tech.description = levelEffects[0]?.description || tech.description || '';
+        if (!tech.dynamicCost) {
+          tech.repeatCosts = repeatCosts;
+          tech.cost = { ...(repeatCosts[0] || {}) };
+        }
+      } else {
+        if (!tech.dynamicCost) {
+          const cost = this._readCostRowsFromEl(list);
+          tech.cost = cost;
+          if (supportsMulti) {
+            tech.repeatCosts = [{ ...cost }];
+            tech.maxRepeat = Math.max(1, Number(tech.maxRepeat) || 1);
+          }
+        }
+        if (descInput && descInput.style.display !== 'none') {
+          tech.description = String(descInput.value || '');
+          if (supportsMulti) {
+            tech.levelEffects = [{
+              ...(Array.isArray(tech.levelEffects) && tech.levelEffects[0]
+                ? { ...tech.levelEffects[0] }
+                : {}),
+              description: tech.description,
+            }];
+          } else {
+            delete tech.levelEffects;
+          }
+        }
+      }
+
+      if (typeof syncPointUpgradeMetaFromTech === 'function') {
+        syncPointUpgradeMetaFromTech(tech);
+      }
+      if (!tech.dynamicCost && typeof this._autoUnlockFreeTechs === 'function') {
+        this._autoUnlockFreeTechs();
+      }
     }
 
     const half = nodeHalf(id);
@@ -1134,28 +1519,26 @@
     return box;
   };
 
+  // 脚本加载后立刻对齐：优先文件，避免旧 localStorage 盖掉 git 拉取结果
+  reconcileTechTreeTableFromStorage();
+
   let bootPatched = false;
   const _origResume = Ctor.prototype.resumeAfterDifficultySetup;
   if (_origResume && !bootPatched) {
     bootPatched = true;
     Ctor.prototype.resumeAfterDifficultySetup = function resumeAfterDifficultySetupPatched(...args) {
-      try {
-        const raw = localStorage.getItem(STORAGE_KEY);
-        if (raw) {
-          const table = JSON.parse(raw);
-          if (table?.techs) {
-            // 丢掉已删科技 / 已删高级矿 point_up，避免幽灵连线写回布局
-            const valid = new Set((GAME_DATA.techTree || []).map((t) => t.id));
-            Object.keys(table.techs).forEach((id) => {
-              if (!valid.has(id)) delete table.techs[id];
-            });
-            applyTechTreeTable(table);
-            window.TECH_TREE_TABLE = table;
-            try { localStorage.setItem(STORAGE_KEY, JSON.stringify(table)); } catch (_) { /* ignore */ }
-          }
-        }
-      } catch (_) { /* ignore */ }
+      reconcileTechTreeTableFromStorage();
       return _origResume.apply(this, args);
+    };
+  }
+
+  const _origLoad = Ctor.prototype.load;
+  if (_origLoad && !Ctor.prototype._techTreeStorageLoadPatched) {
+    Ctor.prototype._techTreeStorageLoadPatched = true;
+    Ctor.prototype.load = async function loadPatched(...args) {
+      const ok = await _origLoad.apply(this, args);
+      reconcileTechTreeTableFromStorage();
+      return ok;
     };
   }
 })();

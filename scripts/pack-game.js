@@ -24,6 +24,7 @@ const KEEP_FILES = new Set([
   'index.html',
   'boot.js',
   'data.js',
+  'i18n.js',
   'game.js',
   'defense.js',
   'bgm.js',
@@ -35,10 +36,11 @@ const KEEP_FILES = new Set([
 const CONFIG_FILES = [
   'tool-recipes.js',
   'resource-points.js',
-  'point-upgrade-costs.js',
   'combat-units.js',
   'tech-tree-table.js',
-  'gameplay.js',
+  'lang/zh-CN.js',
+  'lang/en.js',
+  'lang/ja.js',
 ];
 
 const KEEP_LOCALES = new Set(['zh-CN.pak', 'en-US.pak']);
@@ -248,7 +250,8 @@ async function main() {
     [
       '游戏存档目录（与 exe 同级）',
       '',
-      '  factoryGame.json  — 主存档（运行后自动生成）',
+      '  factoryGame.json  — 旧单档（启动时自动迁到 slot-a.json）',
+      '  slot-a/b/c.json   — A/B/C 三档存档（运行后自动生成）',
       '  settings.json     — 显示/音量设置（运行后自动生成）',
       '',
       '打包时此目录为空；首次运行后生成上述文件。',
